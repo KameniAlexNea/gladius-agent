@@ -1,5 +1,7 @@
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+
 from gladius.state import GraphState
 
 OOF_DIR = Path("state/oof")

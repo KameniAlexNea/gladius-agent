@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+
 from gladius.state import GraphState
 
 KNOWLEDGE_PATH = Path("state/knowledge.json")
@@ -31,8 +32,7 @@ class ContextBuilder:
         target_model = directive.get("target_model", "")
         # Filter knowledge for this model
         relevant_knowledge = [
-            k for k in knowledge
-            if k.get("scope", {}).get("model_type") == target_model
+            k for k in knowledge if k.get("scope", {}).get("model_type") == target_model
         ]
         return {
             "directive": directive,

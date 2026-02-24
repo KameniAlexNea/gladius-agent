@@ -1,6 +1,7 @@
 import subprocess
 import sys
 from pathlib import Path
+
 from gladius.state import GraphState
 
 LOGS_DIR = Path("logs")

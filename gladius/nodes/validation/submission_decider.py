@@ -19,7 +19,10 @@ def submission_decider_node(state: GraphState) -> GraphState:
 
     if len(gap_history) >= GAP_WIDENING_THRESHOLD:
         recent_gaps = gap_history[-GAP_WIDENING_THRESHOLD:]
-        if all(recent_gaps[i] > recent_gaps[i-1] - 1e-6 for i in range(1, len(recent_gaps))):
+        if all(
+            recent_gaps[i] > recent_gaps[i - 1] - 1e-6
+            for i in range(1, len(recent_gaps))
+        ):
             return {
                 "experiment_status": "held",
                 "next_node": "router",

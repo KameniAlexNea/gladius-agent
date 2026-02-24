@@ -1,11 +1,12 @@
-import time
 import json
 import subprocess
+import time
 from pathlib import Path
+
 from gladius.state import GraphState
 
 LB_HISTORY_PATH = Path("state/leaderboard.json")
-POLL_INTERVAL = 900   # 15 min
+POLL_INTERVAL = 900  # 15 min
 SCORE_TIMEOUT = 10800  # 3 hours
 
 
@@ -47,7 +48,9 @@ def _poll_lb_score(competition_name: str, run_id: str) -> float | None:
     try:
         result = subprocess.run(
             ["kaggle", "competitions", "submissions", "-c", competition_name, "-v"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode == 0:
             for line in result.stdout.splitlines():

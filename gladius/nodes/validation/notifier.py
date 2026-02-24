@@ -1,5 +1,7 @@
 import os
+
 import requests
+
 from gladius.state import GraphState
 
 

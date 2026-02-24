@@ -6,7 +6,10 @@ def error_handler_node(state: GraphState) -> GraphState:
     retries = state.get("node_retry_counts", {}).get(node, 0)
     if retries < 3:
         return {
-            "node_retry_counts": {**state.get("node_retry_counts", {}), node: retries + 1},
+            "node_retry_counts": {
+                **state.get("node_retry_counts", {}),
+                node: retries + 1,
+            },
             "next_node": node,
         }
     else:

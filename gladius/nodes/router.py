@@ -1,4 +1,4 @@
-from gladius.state import GraphState, ExperimentStatus
+from gladius.state import ExperimentStatus, GraphState
 
 
 def router_node(state: GraphState) -> str:

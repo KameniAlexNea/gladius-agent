@@ -1,31 +1,29 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-from typing import Any
 
-from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph
 
-from gladius.state import GraphState
-from gladius.nodes.router import router_node
-from gladius.nodes.error_handler import error_handler_node
-from gladius.nodes.strategy.strategy_agent import strategy_node
-from gladius.nodes.strategy.hypothesis_generator import hypothesis_node
-from gladius.nodes.strategy.lb_tracker import lb_tracker_node
-from gladius.nodes.strategy.ensemble_agent import ensemble_node
-from gladius.nodes.strategy.knowledge_extractor import knowledge_extractor_node
 from gladius.nodes.code.code_generator import code_generator_node
 from gladius.nodes.code.code_reviewer import code_reviewer_node
 from gladius.nodes.code.versioning_agent import versioning_node
+from gladius.nodes.error_handler import error_handler_node
 from gladius.nodes.execution.executor import executor_node
-from gladius.nodes.execution.watchdog import watchdog_node
 from gladius.nodes.execution.resource_manager import resource_manager_node
-from gladius.nodes.validation.validation_agent import validation_node
-from gladius.nodes.validation.submission_decider import submission_decider_node
-from gladius.nodes.validation.submission_agent import submission_agent_node
+from gladius.nodes.execution.watchdog import watchdog_node
+from gladius.nodes.router import router_node
+from gladius.nodes.strategy.ensemble_agent import ensemble_node
+from gladius.nodes.strategy.hypothesis_generator import hypothesis_node
+from gladius.nodes.strategy.knowledge_extractor import knowledge_extractor_node
+from gladius.nodes.strategy.lb_tracker import lb_tracker_node
+from gladius.nodes.strategy.strategy_agent import strategy_node
 from gladius.nodes.validation.notifier import notifier_node
+from gladius.nodes.validation.submission_agent import submission_agent_node
+from gladius.nodes.validation.submission_decider import submission_decider_node
+from gladius.nodes.validation.validation_agent import validation_node
+from gladius.state import GraphState
 
 
 def build_competition_graph() -> StateGraph:
@@ -74,7 +72,7 @@ def build_competition_graph() -> StateGraph:
             "knowledge_extractor": "knowledge_extractor",
             "error_handler": "error_handler",
             "ensemble_agent": "ensemble_agent",
-        }
+        },
     )
 
     # Direct edges (non-conditional flows)
@@ -88,7 +86,7 @@ def build_competition_graph() -> StateGraph:
             "versioning_agent": "versioning_agent",
             "hypothesis": "hypothesis",
             "strategy": "strategy",
-        }
+        },
     )
     graph.add_edge("versioning_agent", "executor")
     graph.add_edge("executor", "watchdog")
@@ -98,7 +96,7 @@ def build_competition_graph() -> StateGraph:
         {
             "validation_agent": "validation_agent",
             "knowledge_extractor": "knowledge_extractor",
-        }
+        },
     )
     graph.add_edge("validation_agent", "submission_decider")
     graph.add_conditional_edges(
@@ -107,7 +105,7 @@ def build_competition_graph() -> StateGraph:
         {
             "submission_agent": "submission_agent",
             "router": "router",
-        }
+        },
     )
     graph.add_edge("submission_agent", "lb_tracker")
     graph.add_conditional_edges(
@@ -116,7 +114,7 @@ def build_competition_graph() -> StateGraph:
         {
             "router": "router",
             "notifier": "notifier",
-        }
+        },
     )
     graph.add_edge("notifier", "router")
     graph.add_edge("knowledge_extractor", "router")
@@ -133,7 +131,7 @@ def build_competition_graph() -> StateGraph:
             "validation_agent": "validation_agent",
             "submission_agent": "submission_agent",
             "lb_tracker": "lb_tracker",
-        }
+        },
     )
     graph.add_edge("ensemble_agent", "hypothesis")
 
@@ -189,7 +187,9 @@ def main(competition_config_path: str = "competition.json"):
     app = graph.compile(checkpointer=checkpointer)
 
     initial_state = create_initial_state(competition_config)
-    run_config = {"configurable": {"thread_id": competition_config.get("name", "gladius_run")}}
+    run_config = {
+        "configurable": {"thread_id": competition_config.get("name", "gladius_run")}
+    }
 
     for event in app.stream(initial_state, config=run_config):
         node_name = list(event.keys())[0] if event else "unknown"
@@ -198,5 +198,6 @@ def main(competition_config_path: str = "competition.json"):
 
 if __name__ == "__main__":
     import sys
+
     cfg = sys.argv[1] if len(sys.argv) > 1 else "competition.json"
     main(cfg)

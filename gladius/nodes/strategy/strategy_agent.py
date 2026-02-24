@@ -1,13 +1,13 @@
 from gladius.state import GraphState
-from gladius.utils.llm import call_llm
 from gladius.utils.context_builder import ContextBuilder
+from gladius.utils.llm import call_llm
 
 DIRECTIVE_SCHEMA = {
     "directive_type": "tune_existing | new_features | new_model_type | ensemble | seed_average",
     "target_model": "catboost | lgbm | xgboost | nn | blend",
     "rationale": "one sentence",
     "exploration_flag": True,
-    "priority": 3
+    "priority": 3,
 }
 
 

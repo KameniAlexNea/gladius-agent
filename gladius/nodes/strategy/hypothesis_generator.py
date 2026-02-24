@@ -1,12 +1,12 @@
 from gladius.state import GraphState
-from gladius.utils.llm import call_llm
 from gladius.utils.context_builder import ContextBuilder
+from gladius.utils.llm import call_llm
 
 SPEC_SCHEMA = {
     "parent_version": "v41",
     "changes": [],
     "estimated_runtime_multiplier": 1.0,
-    "rationale": "..."
+    "rationale": "...",
 }
 
 

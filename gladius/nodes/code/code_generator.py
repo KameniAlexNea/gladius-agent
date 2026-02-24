@@ -1,8 +1,7 @@
 import re
-import os
 from pathlib import Path
+
 from gladius.state import GraphState
-from gladius.utils.llm import call_llm
 
 SCRIPTS_DIR = Path("state/scripts")
 
@@ -19,7 +18,11 @@ def code_generator_node(state: GraphState) -> GraphState:
         output_path = SCRIPTS_DIR / f"{run_id}.py"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(modified)
-        return {"generated_script_path": str(output_path), "next_node": "code_reviewer", "code_retry_count": 0}
+        return {
+            "generated_script_path": str(output_path),
+            "next_node": "code_reviewer",
+            "code_retry_count": 0,
+        }
     except Exception as e:
         return {
             "error_message": str(e),
@@ -50,8 +53,8 @@ def _apply_changes(script: str, changes: list, state: GraphState) -> str:
 def _apply_param_change(script: str, change: dict) -> str:
     param = change["param"]
     new_val = change["new"]
-    pattern = rf'({re.escape(param)}\s*=\s*)[^\n,\)]*'
-    replacement = rf'\g<1>{new_val}'
+    pattern = rf"({re.escape(param)}\s*=\s*)[^\n,\)]*"
+    replacement = rf"\g<1>{new_val}"
     return re.sub(pattern, replacement, script)
 
 
@@ -66,12 +69,12 @@ def _apply_feature_add(script: str, change: dict, state: GraphState) -> str:
 def _apply_feature_remove(script: str, change: dict) -> str:
     feature_name = change.get("feature_name", "")
     lines = script.splitlines()
-    filtered = [l for l in lines if feature_name not in l]
+    filtered = [line for line in lines if feature_name not in line]
     return "\n".join(filtered)
 
 
 def _default_template() -> str:
-    return '''import pandas as pd
+    return """import pandas as pd
 import numpy as np
 
 # --- FEATURES START ---
@@ -82,4 +85,4 @@ def train():
 
 if __name__ == "__main__":
     train()
-'''
+"""

@@ -1,6 +1,7 @@
 import subprocess
 import time
 from pathlib import Path
+
 from gladius.state import GraphState
 
 PREDICTIONS_DIR = Path("state/predictions")
@@ -24,11 +25,20 @@ def submission_agent_node(state: GraphState) -> GraphState:
     for attempt in range(MAX_RETRIES):
         try:
             result = subprocess.run(
-                ["kaggle", "competitions", "submit",
-                 "-c", competition_name,
-                 "-f", str(pred_path),
-                 "-m", f"gladius run {run_id}"],
-                capture_output=True, text=True, timeout=120,
+                [
+                    "kaggle",
+                    "competitions",
+                    "submit",
+                    "-c",
+                    competition_name,
+                    "-f",
+                    str(pred_path),
+                    "-m",
+                    f"gladius run {run_id}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             if result.returncode == 0:
                 return {

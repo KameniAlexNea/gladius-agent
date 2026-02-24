@@ -1,5 +1,7 @@
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+
 from gladius.state import GraphState
 
 OOF_DIR = Path("state/oof")
@@ -34,7 +36,9 @@ def validation_node(state: GraphState) -> GraphState:
         issues.append("OOF contains NaN values")
 
     if np.any(oof < 0) or np.any(oof > 1):
-        issues.append(f"OOF values out of [0,1] range: min={oof.min():.4f}, max={oof.max():.4f}")
+        issues.append(
+            f"OOF values out of [0,1] range: min={oof.min():.4f}, max={oof.max():.4f}"
+        )
 
     if issues:
         return {

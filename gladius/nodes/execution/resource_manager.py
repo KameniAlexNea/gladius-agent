@@ -1,5 +1,6 @@
 import shutil
 from pathlib import Path
+
 from gladius.state import GraphState
 
 CACHE_DIR = Path("state/cache")

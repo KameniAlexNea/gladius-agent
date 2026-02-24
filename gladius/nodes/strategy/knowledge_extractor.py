@@ -1,6 +1,7 @@
 import json
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
+
 from gladius.state import GraphState
 
 KNOWLEDGE_PATH = Path("state/knowledge.json")
@@ -32,7 +33,9 @@ def knowledge_extractor_node(state: GraphState) -> GraphState:
             "gap_vs_best": _compute_gap(state),
             "failure_reason": error_message or status,
         },
-        "conclusion": _build_conclusion(finding_type, spec or {}, error_message, directive),
+        "conclusion": _build_conclusion(
+            finding_type, spec or {}, error_message, directive
+        ),
     }
 
     _append_knowledge(finding)

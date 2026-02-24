@@ -1,7 +1,8 @@
+import py_compile
 import subprocess
 import sys
-import py_compile
 from pathlib import Path
+
 from gladius.state import GraphState
 
 
@@ -22,7 +23,9 @@ def code_reviewer_node(state: GraphState) -> GraphState:
     # 2. Pylint errors-only
     result = subprocess.run(
         [sys.executable, "-m", "pylint", "--errors-only", script_path],
-        capture_output=True, text=True, timeout=30
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     if result.returncode != 0:
         issues.append(f"Pylint: {(result.stdout + result.stderr).strip()}")

@@ -1,8 +1,10 @@
 import os
-import time
 import signal
-import psutil
+import time
 from pathlib import Path
+
+import psutil
+
 from gladius.state import GraphState
 
 LOGS_DIR = Path("logs")
@@ -28,7 +30,10 @@ def watchdog_node(state: GraphState) -> GraphState:
             if exit_code == 0:
                 return {"experiment_status": "done", "next_node": "validation_agent"}
             else:
-                return {"experiment_status": "failed", "next_node": "knowledge_extractor"}
+                return {
+                    "experiment_status": "failed",
+                    "next_node": "knowledge_extractor",
+                }
 
         ram_usage = _get_ram_usage()
         if ram_usage > MAX_RAM_FRACTION:

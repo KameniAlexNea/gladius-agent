@@ -1,7 +1,8 @@
-import subprocess
 import json
-from pathlib import Path
+import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
+
 from gladius.state import GraphState
 
 VERSIONS_DIR = Path("state/versions")
@@ -38,13 +39,26 @@ def versioning_node(state: GraphState) -> GraphState:
         versioned_script.write_text(src.read_text())
 
     try:
-        subprocess.run(["git", "add", str(script_path), str(meta_path)],
-                      capture_output=True, timeout=30)
         subprocess.run(
-            ["git", "commit", "-m", f"Add experiment {version_tag}: {directive.get('directive_type', 'unknown')}"],
-            capture_output=True, timeout=30
+            ["git", "add", str(script_path), str(meta_path)],
+            capture_output=True,
+            timeout=30,
+        )
+        subprocess.run(
+            [
+                "git",
+                "commit",
+                "-m",
+                f"Add experiment {version_tag}: {directive.get('directive_type', 'unknown')}",
+            ],
+            capture_output=True,
+            timeout=30,
         )
     except Exception:
         pass  # Git failures are non-fatal
 
-    return {"run_id": version_tag, "next_node": "executor", "experiment_status": "queued"}
+    return {
+        "run_id": version_tag,
+        "next_node": "executor",
+        "experiment_status": "queued",
+    }

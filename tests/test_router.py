@@ -1,7 +1,6 @@
 """Tests for gladius.nodes.router module."""
-import pytest
+
 from gladius.nodes.router import router_node
-from gladius.state import ExperimentStatus
 
 
 def make_state(**kwargs) -> dict:

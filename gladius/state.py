@@ -1,6 +1,6 @@
-from typing import TypedDict, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
+from typing import Optional, TypedDict
 
 
 class ExperimentStatus(str, Enum):
@@ -37,11 +37,13 @@ class ExperimentSpec:
 
 @dataclass
 class DirectiveJSON:
-    directive_type: str  # tune_existing | new_features | new_model_type | ensemble | seed_average
-    target_model: str    # catboost | lgbm | xgboost | nn | blend
+    directive_type: (
+        str  # tune_existing | new_features | new_model_type | ensemble | seed_average
+    )
+    target_model: str  # catboost | lgbm | xgboost | nn | blend
     rationale: str
     exploration_flag: bool
-    priority: int        # 1-5
+    priority: int  # 1-5
 
 
 class GraphState(TypedDict):

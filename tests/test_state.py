@@ -1,18 +1,23 @@
 """Tests for gladius.state module."""
-import pytest
+
 from gladius.state import (
-    GraphState,
-    ExperimentStatus,
     CompetitionConfig,
-    ExperimentSpec,
     DirectiveJSON,
+    ExperimentSpec,
+    ExperimentStatus,
 )
 
 
 def make_state(**kwargs) -> dict:
     defaults = dict(
-        competition={"name": "test-comp", "metric": "auc", "target": "label",
-                     "deadline": "2026-01-01", "days_remaining": 30, "submission_limit": 5},
+        competition={
+            "name": "test-comp",
+            "metric": "auc",
+            "target": "label",
+            "deadline": "2026-01-01",
+            "days_remaining": 30,
+            "submission_limit": 5,
+        },
         current_experiment=None,
         experiment_status="pending",
         running_pid=None,
@@ -108,8 +113,14 @@ def test_graph_state_optional_fields():
 
 
 def test_graph_state_competition_dict():
-    comp = {"name": "house-prices", "metric": "rmse", "target": "SalePrice",
-            "deadline": "2026-06-01", "days_remaining": 60, "submission_limit": 5}
+    comp = {
+        "name": "house-prices",
+        "metric": "rmse",
+        "target": "SalePrice",
+        "deadline": "2026-06-01",
+        "days_remaining": 60,
+        "submission_limit": 5,
+    }
     state = make_state(competition=comp)
     assert state["competition"]["name"] == "house-prices"
     assert state["competition"]["submission_limit"] == 5
