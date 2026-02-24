@@ -89,6 +89,7 @@ def test_router_budget_not_exceeded_allows_submission_decider():
 
 
 def test_router_status_takes_priority_over_next_node():
+    """Status hard-overrides beat soft next_node routing."""
     state = make_state(experiment_status="running", next_node="strategy")
     assert _resolve_next_node(state) == "watchdog"
 

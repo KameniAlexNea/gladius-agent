@@ -84,9 +84,12 @@ def _type_distribution(experiments: list) -> dict:
     return dist
 
 
+_DAYS_PER_EXPERIMENT_ESTIMATE = 0.1  # rough estimate when timestamps are unavailable
+
+
 def _days_elapsed(experiments: list) -> float:
     # TODO: use actual experiment timestamps for accurate elapsed-days calculation
-    return len(experiments) * 0.1  # rough estimate: ~0.1 days per experiment
+    return len(experiments) * _DAYS_PER_EXPERIMENT_ESTIMATE
 
 
 def _exploration_budget(competition: dict, total_days: float) -> float:
