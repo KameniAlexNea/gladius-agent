@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from gladius.state import GraphState
 
 KNOWLEDGE_PATH = Path("state/knowledge.json")
@@ -19,7 +19,7 @@ def knowledge_extractor_node(state: GraphState) -> GraphState:
 
     finding = {
         "experiment_id": run_id,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "finding_type": finding_type,
         "scope": {
             "model_type": directive.get("target_model", "unknown"),

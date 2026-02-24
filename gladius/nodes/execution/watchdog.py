@@ -35,7 +35,7 @@ def watchdog_node(state: GraphState) -> GraphState:
             _kill(pid)
             return {
                 "experiment_status": "killed",
-                "error_message": f"RAM usage {ram_usage:.0%} exceeded limit",
+                "error_message": f"RAM usage {ram_usage:.0%} exceeded limit of {MAX_RAM_FRACTION:.0%}",
                 "next_node": "knowledge_extractor",
             }
 

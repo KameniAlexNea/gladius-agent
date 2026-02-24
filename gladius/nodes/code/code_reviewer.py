@@ -25,7 +25,7 @@ def code_reviewer_node(state: GraphState) -> GraphState:
         capture_output=True, text=True, timeout=30
     )
     if result.returncode != 0:
-        issues.append(f"Pylint: {result.stdout.strip()}")
+        issues.append(f"Pylint: {(result.stdout + result.stderr).strip()}")
 
     # 3. No hardcoded paths (basic check)
     content = Path(script_path).read_text()

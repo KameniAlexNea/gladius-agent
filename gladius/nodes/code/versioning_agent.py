@@ -1,7 +1,7 @@
 import subprocess
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from gladius.state import GraphState
 
 VERSIONS_DIR = Path("state/versions")
@@ -22,7 +22,7 @@ def versioning_node(state: GraphState) -> GraphState:
     metadata = {
         "version": version_tag,
         "run_id": run_id,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "parent_version": spec.get("parent_version") if spec else None,
         "directive": directive,
         "what_changed": spec.get("changes", []) if spec else [],

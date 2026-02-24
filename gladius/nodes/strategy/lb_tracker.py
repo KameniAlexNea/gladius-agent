@@ -55,6 +55,8 @@ def _poll_lb_score(competition_name: str, run_id: str) -> float | None:
                     parts = line.split(",")
                     if len(parts) >= 5:
                         try:
+                            # Expected CSV columns from `kaggle competitions submissions -v`:
+                            # fileName,date,description,status,publicScore,privateScore
                             return float(parts[4])
                         except ValueError:
                             pass

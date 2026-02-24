@@ -246,6 +246,7 @@ class TestCodeGenerator:
                 "rationale": "test",
             }
             state = make_state(current_experiment=spec, run_id="test_run")
+            from gladius.nodes.code.code_generator import code_generator_node
             result = code_generator_node(state)
             assert result["next_node"] == "code_reviewer"
             assert result["generated_script_path"] is not None
@@ -268,16 +269,12 @@ class TestCodeGenerator:
                 "rationale": "test",
             }
             state = make_state(current_experiment=spec, run_id="test_param")
+            from gladius.nodes.code.code_generator import code_generator_node
             result = code_generator_node(state)
             content = Path(result["generated_script_path"]).read_text()
             assert "0.001" in content
         finally:
             code_generator.SCRIPTS_DIR = original
-
-
-def code_generator_node(state):
-    from gladius.nodes.code.code_generator import code_generator_node as _node
-    return _node(state)
 
 
 # --- notifier tests ---
