@@ -22,6 +22,7 @@ def make_state(**kwargs) -> dict:
         run_id="v1",
         oof_score=None,
         lb_score=None,
+        best_oof=None,
         gap_history=[],
         submissions_today=0,
         last_submission_time=None,
@@ -133,10 +134,11 @@ class TestSubmissionDecider:
     def test_submitted_when_ok(self):
         from gladius.nodes.validation.submission_decider import submission_decider_node
 
-        state = make_state(oof_score=0.85, submissions_today=2)
+        state = make_state(oof_score=0.85, submissions_today=2, best_oof=0.0)
         result = submission_decider_node(state)
         assert result["experiment_status"] == "submitted"
         assert result["next_node"] == "submission_agent"
+        assert result["best_oof"] == 0.85
 
     def test_held_on_gap_widening(self):
         from gladius.nodes.validation.submission_decider import submission_decider_node
@@ -144,6 +146,7 @@ class TestSubmissionDecider:
         state = make_state(
             oof_score=0.85,
             submissions_today=1,
+            best_oof=0.0,
             gap_history=[0.01, 0.02, 0.03],  # widening gaps
         )
         result = submission_decider_node(state)
@@ -155,10 +158,33 @@ class TestSubmissionDecider:
         state = make_state(
             oof_score=0.85,
             submissions_today=1,
+            best_oof=0.0,
             gap_history=[0.03, 0.02, 0.01],  # narrowing gaps
         )
         result = submission_decider_node(state)
         assert result["experiment_status"] == "submitted"
+
+    def test_held_when_no_oof_improvement(self):
+        from gladius.nodes.validation.submission_decider import submission_decider_node
+
+        # best_oof=0.85, new oof=0.85 — not enough improvement
+        state = make_state(oof_score=0.85, submissions_today=1, best_oof=0.85)
+        result = submission_decider_node(state)
+        assert result["experiment_status"] == "held"
+
+    def test_held_within_cooldown_period(self):
+        import time
+
+        from gladius.nodes.validation.submission_decider import submission_decider_node
+
+        state = make_state(
+            oof_score=0.90,
+            submissions_today=1,
+            best_oof=0.0,
+            last_submission_time=time.time() - 60,  # 1 minute ago, within 2h cooldown
+        )
+        result = submission_decider_node(state)
+        assert result["experiment_status"] == "held"
 
 
 # --- validation_agent tests ---
@@ -269,6 +295,7 @@ class TestCodeGenerator:
 
         original = code_generator.SCRIPTS_DIR
         code_generator.SCRIPTS_DIR = tmp_path
+        code_generator.STAGING_PATH = tmp_path / "pending.py"
         try:
             spec = {
                 "parent_version": "v0",
@@ -283,14 +310,17 @@ class TestCodeGenerator:
             assert result["next_node"] == "code_reviewer"
             assert result["generated_script_path"] is not None
             assert Path(result["generated_script_path"]).exists()
+            assert "code_retry_count" not in result
         finally:
             code_generator.SCRIPTS_DIR = original
+            code_generator.STAGING_PATH = original / "pending.py"
 
     def test_param_change_applied(self, tmp_path):
         from gladius.nodes.code import code_generator
 
         original = code_generator.SCRIPTS_DIR
         code_generator.SCRIPTS_DIR = tmp_path
+        code_generator.STAGING_PATH = tmp_path / "pending.py"
         try:
             # Create a parent script
             parent = tmp_path / "v0.py"
@@ -311,6 +341,7 @@ class TestCodeGenerator:
             assert "0.001" in content
         finally:
             code_generator.SCRIPTS_DIR = original
+            code_generator.STAGING_PATH = original / "pending.py"
 
 
 # --- notifier tests ---
@@ -399,3 +430,105 @@ class TestEnsembleAgent:
                 assert result["directive"]["directive_type"] == "ensemble"
         finally:
             ensemble_agent.OOF_DIR = original
+
+
+# --- code_reviewer tests ---
+
+
+class TestCodeReviewer:
+    def test_routes_to_code_generator_on_first_retry(self, tmp_path):
+        from gladius.nodes.code.code_reviewer import code_reviewer_node
+
+        script = tmp_path / "pending.py"
+        script.write_text("import nonexistent_pkg_xyz\n\ndef train():\n    pass\n")
+        state = make_state(generated_script_path=str(script), code_retry_count=0)
+        result = code_reviewer_node(state)
+        assert result["next_node"] == "code_generator"
+        assert result["code_retry_count"] == 1
+
+    def test_routes_to_hypothesis_on_second_retry(self, tmp_path):
+        from gladius.nodes.code.code_reviewer import code_reviewer_node
+
+        script = tmp_path / "pending.py"
+        script.write_text("import nonexistent_pkg_xyz\n\ndef train():\n    pass\n")
+        state = make_state(generated_script_path=str(script), code_retry_count=1)
+        result = code_reviewer_node(state)
+        assert result["next_node"] == "hypothesis"
+        assert result["code_retry_count"] == 2
+
+    def test_routes_to_strategy_on_third_retry(self, tmp_path):
+        from gladius.nodes.code.code_reviewer import code_reviewer_node
+
+        script = tmp_path / "pending.py"
+        script.write_text("import nonexistent_pkg_xyz\n\ndef train():\n    pass\n")
+        state = make_state(generated_script_path=str(script), code_retry_count=2)
+        result = code_reviewer_node(state)
+        assert result["next_node"] == "strategy"
+        assert result["code_retry_count"] == 3
+
+    def test_approves_valid_script(self, tmp_path):
+        from gladius.nodes.code.code_reviewer import code_reviewer_node
+
+        script = tmp_path / "pending.py"
+        script.write_text("import os\n\ndef train():\n    pass\n")
+        state = make_state(generated_script_path=str(script), code_retry_count=0)
+        result = code_reviewer_node(state)
+        assert result["next_node"] == "versioning_agent"
+        assert result["reviewer_feedback"] is None
+
+
+# --- code_reader tests ---
+
+
+class TestCodeReader:
+    def test_validate_syntax_valid(self):
+        from gladius.utils.code_reader import validate_syntax
+
+        assert validate_syntax("x = 1\n") == []
+
+    def test_validate_syntax_invalid(self):
+        from gladius.utils.code_reader import validate_syntax
+
+        errors = validate_syntax("def foo(:\n    pass\n")
+        assert len(errors) > 0
+        assert "SyntaxError" in errors[0]
+
+    def test_list_functions(self, tmp_path):
+        from gladius.utils.code_reader import list_functions
+
+        f = tmp_path / "sample.py"
+        f.write_text("def foo():\n    pass\n\ndef bar():\n    pass\n")
+        funcs = list_functions(f)
+        assert "foo" in funcs
+        assert "bar" in funcs
+
+    def test_read_function(self, tmp_path):
+        from gladius.utils.code_reader import read_function
+
+        f = tmp_path / "sample.py"
+        f.write_text("def foo():\n    return 42\n\ndef bar():\n    pass\n")
+        src = read_function(f, "foo")
+        assert "return 42" in src
+
+    def test_read_function_not_found(self, tmp_path):
+        from gladius.utils.code_reader import read_function
+
+        f = tmp_path / "sample.py"
+        f.write_text("def foo():\n    pass\n")
+        try:
+            read_function(f, "missing")
+            assert False, "Expected KeyError"
+        except KeyError:
+            pass
+
+    def test_check_imports_missing(self):
+        from gladius.utils.code_reader import check_imports
+
+        issues = check_imports("import nonexistent_pkg_xyz\n")
+        assert any("nonexistent_pkg_xyz" in i for i in issues)
+
+    def test_check_imports_valid(self):
+        from gladius.utils.code_reader import check_imports
+
+        issues = check_imports("import os\nimport sys\n")
+        assert issues == []

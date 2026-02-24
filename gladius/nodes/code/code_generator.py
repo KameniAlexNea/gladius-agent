@@ -4,6 +4,7 @@ from pathlib import Path
 from gladius.state import GraphState
 
 SCRIPTS_DIR = Path("state/scripts")
+STAGING_PATH = SCRIPTS_DIR / "pending.py"
 
 
 def code_generator_node(state: GraphState) -> GraphState:
@@ -14,14 +15,15 @@ def code_generator_node(state: GraphState) -> GraphState:
         parent_version = spec.get("parent_version", "v0")
         parent_script = _load_parent_script(parent_version)
         modified = _apply_changes(parent_script, spec.get("changes", []), state)
-        run_id = state.get("run_id", "run_001")
-        output_path = SCRIPTS_DIR / f"{run_id}.py"
+        reviewer_feedback = state.get("reviewer_feedback")
+        if reviewer_feedback:
+            modified = _apply_llm_correction(modified, reviewer_feedback, spec)
+        output_path = STAGING_PATH
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(modified)
         return {
             "generated_script_path": str(output_path),
             "next_node": "code_reviewer",
-            "code_retry_count": 0,
         }
     except Exception as e:
         return {
@@ -29,6 +31,24 @@ def code_generator_node(state: GraphState) -> GraphState:
             "next_node_before_error": "code_generator",
             "next_node": "error_handler",
         }
+
+
+def _apply_llm_correction(script: str, feedback: str, spec: dict) -> str:
+    """Call LLM to fix issues identified by the code reviewer."""
+    try:
+        from gladius.utils.llm import call_llm
+
+        prompt = (
+            f"Fix the following issues in this Python ML script.\n\n"
+            f"Issues identified by code reviewer:\n{feedback}\n\n"
+            f"Current script:\n```python\n{script}\n```\n\n"
+            f"Return a JSON object with key \"fixed_script\" containing the corrected Python code. "
+            f"Only fix the reported issues. Do not change anything else."
+        )
+        result = call_llm(prompt, schema={"fixed_script": "..."})
+        return result.get("fixed_script", script)
+    except Exception:
+        return script  # graceful fallback — reviewer will re-check
 
 
 def _load_parent_script(version: str) -> str:

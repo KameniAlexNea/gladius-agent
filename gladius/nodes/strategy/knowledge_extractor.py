@@ -5,6 +5,8 @@ from pathlib import Path
 from gladius.state import GraphState
 
 KNOWLEDGE_PATH = Path("state/knowledge.json")
+EXPERIMENTS_DIR = Path("state/experiments")
+SESSION_SUMMARY_INTERVAL = 10
 
 
 def knowledge_extractor_node(state: GraphState) -> GraphState:
@@ -39,8 +41,12 @@ def knowledge_extractor_node(state: GraphState) -> GraphState:
     }
 
     _append_knowledge(finding)
+    _archive_experiment(state, finding)
 
-    return {
+    all_findings = _load_knowledge()
+    new_summary = _maybe_refresh_summary(all_findings, state.get("session_summary"))
+
+    updates = {
         "next_node": "router",
         "error_message": None,
         "experiment_status": "pending",
@@ -50,6 +56,9 @@ def knowledge_extractor_node(state: GraphState) -> GraphState:
         "oof_score": None,
         "lb_score": None,
     }
+    if new_summary is not None:
+        updates["session_summary"] = new_summary
+    return updates
 
 
 def _classify_finding(status, error, oof, lb, state):
@@ -95,3 +104,38 @@ def _append_knowledge(finding: dict):
             pass
     findings.append(finding)
     KNOWLEDGE_PATH.write_text(json.dumps(findings, indent=2))
+
+
+def _load_knowledge() -> list:
+    if KNOWLEDGE_PATH.exists():
+        try:
+            return json.loads(KNOWLEDGE_PATH.read_text())
+        except Exception:
+            pass
+    return []
+
+
+def _maybe_refresh_summary(findings: list, current_summary: "str | None") -> "str | None":
+    """Returns a new summary string every SESSION_SUMMARY_INTERVAL findings, else None."""
+    if not findings or len(findings) % SESSION_SUMMARY_INTERVAL != 0:
+        return None
+    recent = findings[-SESSION_SUMMARY_INTERVAL:]
+    parts = [
+        f"[{f['experiment_id']}] {f['finding_type']}: {f['conclusion']}"
+        for f in recent
+    ]
+    return " | ".join(parts)
+
+
+def _archive_experiment(state: GraphState, finding: dict):
+    """Write a per-experiment archive record for future context loading."""
+    EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    run_id = state.get("run_id", "unknown")
+    record = {
+        "run_id": run_id,
+        "directive": state.get("directive", {}),
+        "oof_score": state.get("oof_score"),
+        "lb_score": state.get("lb_score"),
+        "finding": finding,
+    }
+    (EXPERIMENTS_DIR / f"{run_id}.json").write_text(json.dumps(record, indent=2))

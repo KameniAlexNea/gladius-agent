@@ -22,6 +22,8 @@ def strategy_node(state: GraphState) -> GraphState:
             "directive": directive,
             "exploration_flag": exploration_flag,
             "consecutive_same_directive": _count_same(state, directive),
+            "code_retry_count": 0,
+            "reviewer_feedback": None,
             "next_node": "hypothesis",
         }
     except Exception as e:

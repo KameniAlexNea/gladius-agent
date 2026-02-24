@@ -59,6 +59,7 @@ class GraphState(TypedDict):
     # Scores
     oof_score: Optional[float]
     lb_score: Optional[float]
+    best_oof: Optional[float]
     gap_history: list  # OOF-LB gaps for last N scored submissions
 
     # Budget

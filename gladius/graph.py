@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import StateGraph
 
 from gladius.nodes.code.code_generator import code_generator_node
@@ -24,6 +24,8 @@ from gladius.nodes.validation.submission_agent import submission_agent_node
 from gladius.nodes.validation.submission_decider import submission_decider_node
 from gladius.nodes.validation.validation_agent import validation_node
 from gladius.state import GraphState
+
+CHECKPOINT_DB_PATH = "state/checkpoint.db"
 
 
 def build_competition_graph() -> StateGraph:
@@ -55,7 +57,7 @@ def build_competition_graph() -> StateGraph:
     # Add edges using conditional routing from the router
     graph.add_conditional_edges(
         "router",
-        router_node,
+        lambda s: s.get("next_node", "strategy"),
         {
             "strategy": "strategy",
             "hypothesis": "hypothesis",
@@ -84,6 +86,7 @@ def build_competition_graph() -> StateGraph:
         lambda s: s.get("next_node", "hypothesis"),
         {
             "versioning_agent": "versioning_agent",
+            "code_generator": "code_generator",
             "hypothesis": "hypothesis",
             "strategy": "strategy",
         },
@@ -148,6 +151,7 @@ def create_initial_state(competition_config: dict) -> GraphState:
         run_id=None,
         oof_score=None,
         lb_score=None,
+        best_oof=None,
         gap_history=[],
         submissions_today=0,
         last_submission_time=None,
@@ -182,7 +186,7 @@ def main(competition_config_path: str = "competition.json"):
             "submission_limit": 5,
         }
 
-    checkpointer = MemorySaver()
+    checkpointer = SqliteSaver.from_conn_string(CHECKPOINT_DB_PATH)
     graph = build_competition_graph()
     app = graph.compile(checkpointer=checkpointer)
 

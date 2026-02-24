@@ -1,6 +1,6 @@
+import ast
+import importlib.util
 import py_compile
-import subprocess
-import sys
 from pathlib import Path
 
 from gladius.state import GraphState
@@ -20,18 +20,11 @@ def code_reviewer_node(state: GraphState) -> GraphState:
     except py_compile.PyCompileError as e:
         issues.append(f"Syntax error: {e}")
 
-    # 2. Pylint errors-only
-    result = subprocess.run(
-        [sys.executable, "-m", "pylint", "--errors-only", script_path],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if result.returncode != 0:
-        issues.append(f"Pylint: {(result.stdout + result.stderr).strip()}")
+    # 2. AST-based import availability check
+    content = Path(script_path).read_text()
+    issues.extend(_check_imports(content))
 
     # 3. No hardcoded paths (basic check)
-    content = Path(script_path).read_text()
     for line_no, line in enumerate(content.splitlines(), 1):
         if "/home/" in line or "/root/" in line or "C:\\" in line:
             issues.append(f"line {line_no}: possible hardcoded path")
@@ -45,13 +38,40 @@ def code_reviewer_node(state: GraphState) -> GraphState:
                 "code_retry_count": retry,
                 "next_node": "strategy",
             }
+        if retry == 2:
+            return {
+                "reviewer_feedback": feedback,
+                "code_retry_count": retry,
+                "next_node": "hypothesis",
+            }
+        # retry < 2: send feedback back to code_generator for correction
         return {
             "reviewer_feedback": feedback,
             "code_retry_count": retry,
-            "next_node": "hypothesis",
+            "next_node": "code_generator",
         }
 
     return {
         "reviewer_feedback": None,
         "next_node": "versioning_agent",
     }
+
+
+def _check_imports(content: str) -> list[str]:
+    """Check that all imports in the script are available."""
+    issues = []
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return []  # already caught by py_compile
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".")[0]
+                if importlib.util.find_spec(top) is None:
+                    issues.append(f"import not found: {top}")
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            top = node.module.split(".")[0]
+            if importlib.util.find_spec(top) is None:
+                issues.append(f"import not found: {top}")
+    return issues
