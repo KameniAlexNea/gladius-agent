@@ -38,7 +38,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("gladius.orchestrator")
 
-# ── Optional Kaggle submission helper ─────────────────────────────────────────
+# ── Platform submission helpers ───────────────────────────────────────────────
 def _submit_to_kaggle(
     competition_id: str, submission_path: str, message: str
 ) -> None:
@@ -61,6 +61,55 @@ def _submit_to_kaggle(
         logger.info(f"Submission accepted: {result.stdout.strip()}")
 
 
+def _submit_to_zindi(
+    competition_id: str, submission_path: str, message: str
+) -> None:
+    """Fire-and-forget Zindi API submission."""
+    import os
+
+    try:
+        from zindi.user import Zindian
+    except ImportError:
+        logger.error("zindi package not installed. Run: pip install zindi")
+        return
+
+    username = os.getenv("ZINDI_USERNAME") or os.getenv("USER_NAME")
+    password = os.getenv("ZINDI_PASSWORD") or os.getenv("PASSWORD")
+    if not username or not password:
+        logger.error("Missing Zindi credentials (ZINDI_USERNAME / ZINDI_PASSWORD).")
+        return
+
+    try:
+        challenge_index = int(os.getenv("ZINDI_CHALLENGE_INDEX", "0"))
+        user = Zindian(username=username, fixed_password=password)
+        user.select_a_challenge(fixed_index=challenge_index)
+
+        remaining = user.remaining_subimissions
+        if remaining <= 0:
+            logger.warning("Zindi: no remaining submissions today.")
+            return
+
+        user.submit(
+            filepaths=[submission_path],
+            comments=[message],
+        )
+        logger.info(
+            f"Zindi submission accepted ({user.remaining_subimissions} remaining today)"
+        )
+    except Exception as exc:
+        logger.error(f"Zindi submission error: {exc}")
+
+
+def _submit(
+    platform: str, competition_id: str, submission_path: str, message: str
+) -> None:
+    """Route submission to the correct platform."""
+    if platform == "zindi":
+        _submit_to_zindi(competition_id, submission_path, message)
+    else:
+        _submit_to_kaggle(competition_id, submission_path, message)
+
+
 # ── Main competition loop ─────────────────────────────────────────────────────
 async def run_competition(
     competition_id: str,
@@ -73,6 +122,7 @@ async def run_competition(
     ensemble_every_n: int = 5,
     max_runtime_minutes: int = 90,
     auto_submit: bool = True,
+    platform: str = "kaggle",
 ) -> CompetitionState:
     """
     Run the autonomous competition loop.
@@ -205,8 +255,9 @@ async def run_competition(
                     state.submission_count += 1
                     sub_path = validation.get("submission_path") or submission_path
                     state.best_submission_path = sub_path
-                    logger.info(f"Submitting: {sub_path}")
-                    _submit_to_kaggle(
+                    logger.info(f"Submitting [{platform}]: {sub_path}")
+                    _submit(
+                        platform=platform,
                         competition_id=state.competition_id,
                         submission_path=sub_path,
                         message=f"iter-{state.iteration} oof={oof_score:.6f}",
@@ -247,7 +298,8 @@ async def run_competition(
                         and auto_submit
                     ):
                         state.submission_count += 1
-                        _submit_to_kaggle(
+                        _submit(
+                            platform=platform,
                             competition_id=state.competition_id,
                             submission_path=ensemble_result["submission_path"],
                             message=f"ensemble iter-{state.iteration} oof={ensemble_result['oof_score']:.6f}",
@@ -325,9 +377,15 @@ async def run_parallel_experiments(
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="gladius",
-        description="Autonomous Kaggle competition agent (Claude Agent SDK)",
+        description="Autonomous ML competition agent (Kaggle & Zindi) powered by Claude Agent SDK",
     )
-    p.add_argument("--competition", required=True, help="Kaggle competition slug")
+    p.add_argument("--competition", required=True, help="Competition slug (Kaggle) or challenge name (Zindi)")
+    p.add_argument(
+        "--platform",
+        default="kaggle",
+        choices=["kaggle", "zindi"],
+        help="Competition platform (default: kaggle)",
+    )
     p.add_argument("--data-dir", required=True, help="Path to downloaded competition data")
     p.add_argument("--project-dir", default=".", help="Working directory (default: cwd)")
     p.add_argument("--metric", default="auc_roc", help="Target metric name")
@@ -346,7 +404,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--no-submit",
         action="store_true",
-        help="Dry-run: do not actually submit to Kaggle",
+        help="Dry-run: do not actually submit to the platform",
     )
     p.add_argument(
         "--ensemble-every",
@@ -376,6 +434,7 @@ async def _amain() -> None:
         ensemble_every_n=args.ensemble_every,
         max_runtime_minutes=args.max_runtime,
         auto_submit=not args.no_submit,
+        platform=args.platform,
     )
 
 
