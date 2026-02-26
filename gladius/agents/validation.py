@@ -102,6 +102,7 @@ Context:
 4. Return the structured JSON result
 """
     result, _ = await run_agent(
+        agent_name="validation",
         prompt=prompt,
         system_prompt=SYSTEM_PROMPT,
         allowed_tools=["Read", "Bash"],

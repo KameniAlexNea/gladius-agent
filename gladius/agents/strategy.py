@@ -120,29 +120,16 @@ Progress: iteration {state.iteration} / {state.max_iterations}
 
 Return structured JSON matching the schema.
 """
-    from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions, ResultMessage, query
+    from claude_agent_sdk import AgentDefinition
 
-    options = ClaudeAgentOptions(
+    return await run_agent(
+        agent_name="strategy",
+        prompt=prompt,
         system_prompt=SYSTEM_PROMPT,
         allowed_tools=["Read", "Glob", "Grep", "WebSearch", "Task"],
-        permission_mode="acceptEdits",
-        output_format={"type": "json_schema", "schema": OUTPUT_SCHEMA},
+        output_schema=OUTPUT_SCHEMA,
         cwd=data_dir,
         resume=state.strategy_session_id,
-        agents={
-            "knowledge_extractor": AgentDefinition(**KNOWLEDGE_EXTRACTOR_DEF)
-        },
         max_turns=30,
+        agents={"knowledge_extractor": AgentDefinition(**KNOWLEDGE_EXTRACTOR_DEF)},
     )
-
-    result_msg = None
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, ResultMessage):
-            result_msg = message
-
-    if result_msg is None or result_msg.is_error:
-        raise RuntimeError(f"StrategyAgent failed: {result_msg}")
-    if result_msg.structured_output is None:
-        raise RuntimeError("StrategyAgent returned no structured_output")
-
-    return result_msg.structured_output, result_msg.session_id

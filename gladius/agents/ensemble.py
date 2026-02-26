@@ -108,6 +108,7 @@ Labels (if needed) : .gladius/train_labels.npy
 Return the JSON result.
 """
     result, _ = await run_agent(
+        agent_name="ensemble",
         prompt=prompt,
         system_prompt=SYSTEM_PROMPT,
         allowed_tools=[

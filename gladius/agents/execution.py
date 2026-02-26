@@ -105,6 +105,7 @@ Project dir   : {project_dir}
 Note: the solution writes predictions to .gladius/ automatically.
 """
     result, _ = await run_agent(
+        agent_name="execution",
         prompt=prompt,
         system_prompt=SYSTEM_PROMPT,
         allowed_tools=["Bash", "Read"],

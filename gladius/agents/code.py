@@ -118,6 +118,7 @@ Target metric     : {state.target_metric} ({state.metric_direction})
 Return the JSON output now.
 """
     return await run_agent(
+        agent_name="code",
         prompt=prompt,
         system_prompt=SYSTEM_PROMPT,
         allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
