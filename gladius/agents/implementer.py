@@ -89,7 +89,9 @@ Report the final {state.target_metric} score in oof_score.
             "You are an expert ML engineer executing a competition experiment. "
             "You implement, run, debug, and iterate until the experiment completes. "
             "You measure results yourself and report them accurately. "
-            "Always read CLAUDE.md at the start for competition context."
+            "Always read CLAUDE.md at the start for competition context. "
+            "Before reporting your final result, read .claude/skills/code-review/SKILL.md "
+            "and fix every CRITICAL item (leakage, metric correctness, submission format)."
         ),
         allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
         output_schema=OUTPUT_SCHEMA,

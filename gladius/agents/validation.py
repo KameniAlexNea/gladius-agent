@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """\
-You are responsible for validating ML experiment results and deciding on Kaggle submissions.
+You are responsible for validating ML experiment results and deciding on competition submissions.
 
 Given the OOF score of a new experiment, you will:
 1. Compare it against the provided current best OOF score
@@ -50,7 +50,7 @@ OUTPUT_SCHEMA = {
         },
         "submit": {
             "type": "boolean",
-            "description": "True if a Kaggle submission should be made",
+            "description": "True if a platform submission should be made",
         },
         "submission_path": {
             "type": ["string", "null"],

@@ -61,6 +61,27 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
             for f in state.failed_runs[-5:]
         )
 
+    # Stagnation detection — warn planner if last 3 experiments barely moved
+    stagnation_block = ""
+    scored = [e for e in state.experiments if e.get("oof_score") is not None]
+    if len(scored) >= 3:
+        last3 = [e["oof_score"] for e in scored[-3:]]
+        span = max(last3) - min(last3)
+        stagnation_threshold = 0.001
+        if span < stagnation_threshold:
+            stagnation_block = f"""
+## ⚠️ STAGNATION WARNING
+
+> The last **{len(last3)} experiments** moved the {state.target_metric} score by only
+> **{span:.6f}** (threshold: {stagnation_threshold}). Incremental tweaks are not working.
+>
+> **Planner: stop tuning. Go back to first principles.**
+> - Re-examine raw data (distributions, leakage, target encoding issues).
+> - Try a completely different model family or feature representation.
+> - Consider if the metric is being computed correctly.
+> - WebSearch for breakthrough techniques specific to this competition type.
+"""
+
     content = f"""\
 # Competition: {state.competition_id}
 
@@ -93,7 +114,7 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
 ## Failed Approaches (avoid repeating)
 
 {failed_lines}
-
+{stagnation_block}
 ## Data Files
 
 ```bash
@@ -147,6 +168,7 @@ def setup_project_dir(state: "CompetitionState", project_dir: str) -> None:
     _write_skill_submit_check(root)
     _write_skill_git_workflow(root)
     _write_skill_uv_venv(root)
+    _write_skill_code_review(root)
     _write_claude_settings(root, state)
     _write_mcp_json(root, state)
     _write_hook_after_edit(root)
@@ -233,7 +255,11 @@ You are an expert ML engineer executing a competition experiment.
 - Always validate submission shape against `sample_submission.csv`.
 - Keep all created files; never delete previous solutions.
 
-**When you're done, report:**
+**When you're done, before reporting results:**
+- Invoke the `code-review` skill (read `.claude/skills/code-review/SKILL.md`) and
+  fix every CRITICAL item before finalising.
+
+**Report:**
 - `status`: success | error | timeout | oom
 - `oof_score`: the OOF metric value you measured (-1 on failure)
 - `solution_files`: list of all files you created or modified
@@ -337,6 +363,59 @@ Steps:
 Output:
 - `VALID` if all checks pass
 - `INVALID: <reason>` listing specific issues
+""", encoding="utf-8")
+
+
+def _write_skill_code_review(root: Path) -> None:
+    path = root / ".claude" / "skills" / "code-review" / "SKILL.md"
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("""\
+---
+name: code-review
+description: Review ML solution code before finalising — catch leakage, metric errors, and format bugs
+allowed-tools: Read, Bash
+---
+
+Before finalising any solution script, review it against this checklist.
+Fix every item marked CRITICAL before reporting results.
+
+## CRITICAL — data leakage
+
+- [ ] Target-based encodings (mean encoding, target encoding) are computed
+      **inside** each CV fold, never on the full training set.
+- [ ] Temporal features (lag, rolling stats) use only past data — no future leakage.
+- [ ] No test-set rows accidentally appear in the training fold.
+- [ ] StandardScaler / other transformers are fit on train fold only, then applied to val/test.
+- [ ] `train_test_split` is NOT used instead of proper k-fold CV.
+
+## CRITICAL — metric correctness
+
+- [ ] The OOF metric is computed on out-of-fold predictions, not train predictions.
+- [ ] The metric function matches the competition definition exactly
+      (e.g. `average='macro'` vs `average='binary'` for F1).
+- [ ] For probability metrics (AUC, log-loss): predictions are probabilities, not class labels.
+- [ ] The metric direction (maximize/minimize) is respected when comparing scores.
+
+## CRITICAL — submission format
+
+- [ ] Submission CSV column names match `sample_submission.csv` exactly.
+- [ ] Submission row count matches `sample_submission.csv` exactly.
+- [ ] No NaN or Inf in prediction column.
+- [ ] File is saved to the path reported in `submission_file`.
+
+## Important — robustness
+
+- [ ] No hard-coded file paths — use variables from CLAUDE.md context.
+- [ ] Random seeds set for reproducibility (`random_state=42`, `np.random.seed(42)`).
+- [ ] OOF score is printed as `OOF {metric}: {score:.6f}` so it appears in logs.
+- [ ] Script runs end-to-end without manual intervention.
+
+## Style
+
+- [ ] Each feature engineering step has a comment explaining the hypothesis.
+- [ ] File name is descriptive: `solution_lgbm_v2.py`, not `solution.py`.
 """, encoding="utf-8")
 
 
