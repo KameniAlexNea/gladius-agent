@@ -21,7 +21,7 @@ class CompetitionState:
     # Loop control
     iteration: int = 0
     max_iterations: int = 20
-    phase: str = "strategy"     # strategy | coding | execution | validation | ensemble | done
+    phase: str = "planning"     # planning | implementing | validation | ensemble | done
 
     # Best known performance
     best_oof_score: float = -1.0
@@ -30,18 +30,18 @@ class CompetitionState:
     submission_count: int = 0
     max_submissions_per_day: int = 5
 
-    # Hypothesis / strategy memory
-    current_hypothesis: Optional[dict] = None
-    completed_hypotheses: list = field(default_factory=list)
-    failed_hypotheses: list = field(default_factory=list)
+    # Current plan from planner agent
+    current_plan: Optional[dict] = None   # {plan: [...], approach_summary: str}
 
-    # Experiment registry
-    # Each entry: {solution_path, oof_score, iteration, hypothesis, runtime_seconds}
+    # Experiment registry — each entry is whatever the implementer reported
+    # {oof_score, solution_files, submission_file, notes, iteration}
     experiments: list = field(default_factory=list)
 
-    # Session IDs for resumable agents
-    strategy_session_id: Optional[str] = None
-    code_session_id: Optional[str] = None
+    # Failed run summaries (error_message, iteration, approach_summary)
+    failed_runs: list = field(default_factory=list)
+
+    # Session ID for the planner (resumed every iteration)
+    planner_session_id: Optional[str] = None
 
     # Error tracking
     consecutive_errors: int = 0
