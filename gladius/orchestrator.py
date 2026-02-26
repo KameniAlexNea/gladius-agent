@@ -10,10 +10,9 @@ Design rules:
   - State is saved to SQLite after every phase (crash-safe).
 
 Usage:
-    gladius --competition fake_binary --platform fake \
-            --data-dir examples/fake_competition/data \
-            --project-dir examples/fake_competition \
-            --metric auc_roc --direction maximize --iterations 5
+    gladius --competition-dir examples/fake_competition
+    gladius --competition-dir examples/fake_competition --iterations 10 --no-resume
+    gladius --competition-dir examples/fake_competition --parallel 2
 """
 from __future__ import annotations
 
@@ -28,6 +27,7 @@ from gladius.agents.planner import run_planner
 from gladius.agents.summarizer import run_summarizer
 from gladius.agents.validation import run_validation_agent
 from gladius.state import CompetitionState, StateStore
+from gladius.utils.competition_config import load_competition_config
 from gladius.utils.project_setup import setup_project_dir, write_claude_md
 
 logging.basicConfig(
@@ -102,17 +102,19 @@ def _is_better(new_score: float, best_score: float, direction: str, threshold: f
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 async def run_competition(
-    competition_id: str,
-    data_dir: str,
-    project_dir: str,
-    target_metric: str = "auc_roc",
-    metric_direction: str = "maximize",
+    competition_dir: str,
     max_iterations: int = 20,
     resume_from_db: bool = True,
     auto_submit: bool = True,
-    platform: str = "kaggle",
     n_parallel: int = 1,
 ) -> CompetitionState:
+    cfg = load_competition_config(competition_dir)
+    competition_id   = cfg["competition_id"]
+    platform         = cfg["platform"]
+    data_dir         = cfg["data_dir"]
+    target_metric    = cfg["metric"]
+    metric_direction = cfg["direction"]
+    project_dir      = competition_dir
     gladius_dir = Path(project_dir) / ".gladius"
     gladius_dir.mkdir(parents=True, exist_ok=True)
 
@@ -333,15 +335,11 @@ async def run_competition(
 # ── CLI ───────────────────────────────────────────────────────────────────────
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="gladius", description="Autonomous ML competition agent")
-    p.add_argument("--competition", required=True, help="Competition slug / challenge name")
-    p.add_argument("--data-dir",    required=True, help="Path to competition data")
-    p.add_argument("--project-dir", default=".",   help="Working directory (default: cwd)")
-    p.add_argument("--metric",      default="auc_roc")
-    p.add_argument("--direction",   default="maximize", choices=["maximize", "minimize"])
+    p.add_argument("--competition-dir", required=True,
+                   help="Path to the competition directory (must contain README.md with frontmatter)")
     p.add_argument("--iterations",  type=int, default=20)
-    p.add_argument("--platform",    default="kaggle", choices=["kaggle", "zindi", "fake"])
-    p.add_argument("--no-resume",   action="store_true", help="Start fresh")
-    p.add_argument("--no-submit",   action="store_true", help="Dry-run, skip submissions")
+    p.add_argument("--no-resume",   action="store_true", help="Start fresh, ignore saved state")
+    p.add_argument("--no-submit",   action="store_true", help="Dry-run, skip platform submissions")
     p.add_argument("--parallel",    type=int, default=1, metavar="N",
                    help="Run N implementers in parallel with different approaches (default: 1)")
     return p
@@ -350,15 +348,10 @@ def _build_parser() -> argparse.ArgumentParser:
 async def _amain() -> None:
     args = _build_parser().parse_args()
     await run_competition(
-        competition_id=args.competition,
-        data_dir=args.data_dir,
-        project_dir=args.project_dir,
-        target_metric=args.metric,
-        metric_direction=args.direction,
+        competition_dir=args.competition_dir,
         max_iterations=args.iterations,
         resume_from_db=not args.no_resume,
         auto_submit=not args.no_submit,
-        platform=args.platform,
         n_parallel=args.parallel,
     )
 

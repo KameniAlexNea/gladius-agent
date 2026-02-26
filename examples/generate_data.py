@@ -44,7 +44,7 @@ y_train, y_test = y[:TRAIN_SIZE], y[TRAIN_SIZE:]
 train_ids = np.arange(1, TRAIN_SIZE + 1)
 test_ids  = np.arange(TRAIN_SIZE + 1, TRAIN_SIZE + TEST_SIZE + 1)
 
-data_dir = Path(__file__).parent / "data"
+data_dir = Path(__file__).parent / "fake_competition/data"
 data_dir.mkdir(exist_ok=True)
 
 # ── train.csv ─────────────────────────────────────────────────────────────────

@@ -1,73 +1,59 @@
-# Fake Competition — local end-to-end test
+---
+competition_id: fake_binary
+platform: fake
+metric: auc_roc
+direction: maximize
+data_dir: data
+---
 
-A self-contained binary-classification problem you can use to test Gladius
-without a real Kaggle or Zindi account.
+# Customer Churn Prediction Challenge
 
-## Setup
+## Overview
 
-```bash
-# 1. Install dependencies (from the repo root)
-pip install -e ".[dev]"
+A telecom operator wants to identify customers likely to cancel their subscription
+in the next 30 days so that the retention team can intervene proactively.
+Your task is to build a binary classifier that predicts churn probability for
+each customer in the test set.
 
-# 2. Generate data
-cd examples/fake_competition
-python generate_data.py
+## Task
+
+Binary classification — predict the probability that a customer will churn.
+
+## Evaluation
+
+Submissions are scored using **Area Under the ROC Curve (AUC-ROC)**.
+Higher is better. A random predictor scores ≈ 0.50.
+
+The submission file must contain exactly two columns:
+
+```
+customer_id,target
+12345,0.82
+12346,0.14
+...
 ```
 
-This writes four files inside `data/`:
+## Data
 
 | File | Description |
 |---|---|
-| `train.csv` | 800 rows · 20 features · `target` column |
-| `test.csv` | 200 rows · 20 features · no target |
-| `sample_submission.csv` | Trivial 0.5 baseline (AUC ≈ 0.50) |
-| `.answers.csv` | Hidden test labels used by the fake scorer |
+| `train.csv` | 800 customers with known churn outcome (`target` = 0 or 1) |
+| `test.csv` | 200 customers — predict churn probability for each |
+| `sample_submission.csv` | Correct format with a 0.5 baseline |
 
-## Run the agent
+### Features
 
-```bash
-# From the repo root
-gladius \
-  --competition fake_binary \
-  --platform fake \
-  --data-dir examples/fake_competition/data \
-  --project-dir examples/fake_competition \
-  --metric auc_roc \
-  --direction maximize \
-  --iterations 5
+20 anonymised numerical features (`feature_0` … `feature_19`) derived from:
+- Usage patterns (call volume, data consumption, support contacts)
+- Account tenure and contract type
+- Billing history (late payments, plan changes)
 
-# Or without installing the package:
-python -m gladius.orchestrator \
-  --competition fake_binary \
-  --platform fake \
-  --data-dir examples/fake_competition/data \
-  --project-dir examples/fake_competition \
-  --metric auc_roc \
-  --direction maximize \
-  --iterations 5
-```
+The target column is `target` (1 = churned, 0 = retained).
+Class balance: approximately 30 % positive (churned).
 
-The fake platform (`platform=fake`) behaves like Kaggle/Zindi but:
+## Notes
 
-- **Submission** → scores the CSV against `.answers.csv` using AUC-ROC and records the result locally in `.fake_platform/history.json`. No internet required.
-- **Leaderboard** → returns a seeded fake leaderboard plus your best score.
-- **Status** → always shows unlimited remaining submissions.
-
-## Environment variables
-
-The fake platform reads:
-
-| Variable | Default | Description |
-|---|---|---|
-| `FAKE_ANSWERS_PATH` | `data/.answers.csv` | Path to hidden answer key |
-| `FAKE_PLATFORM_DIR` | `.fake_platform/` | Where history is stored |
-
-## What to expect
-
-| Model | Expected AUC |
-|---|---|
-| Trivial 0.5 baseline | ≈ 0.50 |
-| Logistic Regression | ≈ 0.87 |
-| Gradient Boosting | ≈ 0.92 |
-
-The agent should iterate from a weak baseline up toward the XGBoost/LightGBM range.
+- No missing values in this dataset.
+- Features are on different scales — normalisation may help linear models.
+- Some features are correlated; feature selection or regularisation is advised.
+- Tree-based models (LightGBM, XGBoost) typically outperform linear baselines here.
