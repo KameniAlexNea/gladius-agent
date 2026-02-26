@@ -40,6 +40,14 @@ OUTPUT_SCHEMA = {
             "type": "number",
             "description": "Rough estimate of OOF improvement. Can be 0 if unknown.",
         },
+        "suggest_ensemble": {
+            "type": "boolean",
+            "description": (
+                "Set true if there are ≥3 diverse experiments (pairwise OOF correlation < 0.97) "
+                "and an ensemble is likely to improve on the best individual model. "
+                "The orchestrator will run the ensemble agent immediately after implementation."
+            ),
+        },
         "plans": {
             "type": "array",
             "description": (

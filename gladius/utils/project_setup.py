@@ -145,6 +145,8 @@ def setup_project_dir(state: "CompetitionState", project_dir: str) -> None:
     _write_agent_implementer(root)
     _write_skill_ml_pipeline(root)
     _write_skill_submit_check(root)
+    _write_skill_git_workflow(root)
+    _write_skill_uv_venv(root)
     _write_claude_settings(root, state)
     _write_mcp_json(root, state)
     _write_hook_after_edit(root)
@@ -335,6 +337,96 @@ Steps:
 Output:
 - `VALID` if all checks pass
 - `INVALID: <reason>` listing specific issues
+""", encoding="utf-8")
+
+
+def _write_skill_git_workflow(root: Path) -> None:
+    path = root / ".claude" / "skills" / "git-workflow" / "SKILL.md"
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("""\
+---
+name: git-workflow
+description: Commit every working solution version with a descriptive message
+allowed-tools: Bash
+---
+
+After implementing a solution that runs without errors and produces an OOF score,
+stage and commit it locally:
+
+```bash
+git add -A
+git commit -m "iter-{N}: {approach_summary} — OOF {score:.6f}"
+```
+
+Guidelines:
+- Commit only after the solution script runs end-to-end without errors.
+- Use `git add -A` to stage everything (solution file, submission CSV, run.sh).
+- Message format: `iter-{N}: <one-sentence approach> — OOF {metric}={score:.6f}`
+- Never force-push. Never rebase during a competition run.
+- If a run fails, do NOT commit. Just proceed to the next iteration.
+- Check `git status` before committing to avoid committing unintended files.
+- `.gladius/` and `data/` should already be in `.gitignore` — verify if unsure.
+
+Tip: use `git log --oneline -10` to review recent iteration history.
+""", encoding="utf-8")
+
+
+def _write_skill_uv_venv(root: Path) -> None:
+    path = root / ".claude" / "skills" / "uv-venv" / "SKILL.md"
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("""\
+---
+name: uv-venv
+description: Install Python packages and run scripts using uv
+allowed-tools: Bash
+---
+
+This project uses **uv** for fast Python package management.
+Never use `pip install` directly — always use `uv add` or `uv run`.
+
+## Installing packages
+
+```bash
+# Add a runtime dependency (updates pyproject.toml + uv.lock)
+uv add lightgbm scikit-learn pandas numpy
+
+# Add a dev/optional dependency
+uv add --dev pytest
+
+# Sync the environment (install all locked deps)
+uv sync
+```
+
+## Running scripts
+
+```bash
+# Run a script inside the venv without activating it
+uv run python solution_lgbm.py
+
+# Run with extra args
+uv run python solution_lgbm.py --folds 5 --seed 42
+
+# Run a one-liner
+uv run python -c "import lightgbm; print(lightgbm.__version__)"
+```
+
+## Checking installed packages
+
+```bash
+uv pip list
+uv pip show lightgbm
+```
+
+## Notes
+- `uv` is already installed. The venv is in `.venv/`.
+- Prefer `uv add` over editing `pyproject.toml` manually.
+- `uv.lock` should be committed to git for reproducibility.
+- If a package needs a non-PyPI source (e.g. GPU build), use
+  `uv add --index https://... package_name`.
 """, encoding="utf-8")
 
 

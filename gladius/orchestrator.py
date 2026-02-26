@@ -26,6 +26,7 @@ from pathlib import Path
 from gladius.agents.ensemble import run_ensemble_agent
 from gladius.agents.implementer import run_implementer
 from gladius.agents.planner import run_planner
+from gladius.agents.summarizer import run_summarizer
 from gladius.agents.validation import run_validation_agent
 from gladius.state import CompetitionState, StateStore
 from gladius.utils.project_setup import setup_project_dir, write_claude_md
@@ -291,10 +292,29 @@ async def run_competition(
 
                 state.iteration += 1
 
-                if (
-                    state.iteration % ensemble_every_n == 0
+                # Update planner memory with learnings from this iteration.
+                try:
+                    summary = await run_summarizer(
+                        state, project_dir,
+                        latest_experiment=latest,
+                        validation_notes=validation.get("notes", ""),
+                    )
+                    if summary:
+                        logger.info(f"Summarizer: {summary}")
+                except Exception as exc:
+                    logger.warning(f"Summarizer failed (non-fatal): {exc}")
+
+                # Let the planner decide whether to ensemble; fall back to
+                # every-N-iterations trigger when the planner didn't suggest it.
+                planner_wants_ensemble = bool(
+                    state.current_plan and state.current_plan.get("suggest_ensemble")
+                )
+                fallback_ensemble = (
+                    ensemble_every_n > 0
+                    and state.iteration % ensemble_every_n == 0
                     and len(state.experiments) >= 3
-                ):
+                )
+                if (planner_wants_ensemble or fallback_ensemble) and len(state.experiments) >= 3:
                     state.phase = "ensemble"
                 else:
                     state.phase = "planning"
