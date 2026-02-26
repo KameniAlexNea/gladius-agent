@@ -7,6 +7,7 @@ understanding of the competition, the data, what has worked and what hasn't.
 It is NOT told how to structure files, what to name things, or how to compute
 metrics. Its only job is to produce a concrete, ordered action plan.
 """
+
 from typing import TYPE_CHECKING
 
 from gladius.agents._base import run_agent
@@ -31,7 +32,7 @@ OUTPUT_SCHEMA = {
                 "type": "object",
                 "required": ["step", "description"],
                 "properties": {
-                    "step":        {"type": "integer"},
+                    "step": {"type": "integer"},
                     "description": {"type": "string"},
                 },
             },
@@ -58,7 +59,7 @@ OUTPUT_SCHEMA = {
                             "type": "object",
                             "required": ["step", "description"],
                             "properties": {
-                                "step":        {"type": "integer"},
+                                "step": {"type": "integer"},
                                 "description": {"type": "string"},
                             },
                         },
@@ -144,14 +145,17 @@ def _build_platform_mcp(platform: str, data_dir: str) -> dict:
     try:
         if platform == "fake":
             import os
+
             os.environ.setdefault(
                 "FAKE_ANSWERS_PATH",
                 str(__import__("pathlib").Path(data_dir) / ".answers.csv"),
             )
             from gladius.tools.fake_platform_tools import fake_server
+
             servers["fake_platform"] = fake_server
         elif platform == "kaggle":
             from gladius.tools.kaggle_tools import kaggle_server
+
             servers["kaggle"] = kaggle_server
         # zindi: no leaderboard MCP yet, skip
     except Exception:

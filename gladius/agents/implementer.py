@@ -7,6 +7,7 @@ Fresh session every iteration (not resumed) — it works from the plan alone.
 No naming conventions. No forced output format. Claude decides everything
 about file structure, libraries, and how to measure the metric.
 """
+
 from typing import TYPE_CHECKING
 
 from gladius.agents._base import run_agent

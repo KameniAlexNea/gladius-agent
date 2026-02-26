@@ -10,6 +10,7 @@ was writing best_oof_score itself, breaking the submission gate permanently.
 
 No session continuity: each validation is an independent, stateless task.
 """
+
 from typing import TYPE_CHECKING
 
 from gladius.agents._base import run_agent

@@ -5,6 +5,7 @@ Usage:
     from gladius.tools.kaggle_tools import kaggle_server
     options = ClaudeAgentOptions(mcp_servers={"kaggle": kaggle_server}, ...)
 """
+
 import subprocess
 from typing import Any
 
@@ -19,10 +20,15 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 async def kaggle_submit(args: dict[str, Any]) -> dict[str, Any]:
     result = subprocess.run(
         [
-            "kaggle", "competitions", "submit",
-            "-c", args["competition"],
-            "-f", args["file_path"],
-            "-m", args["message"],
+            "kaggle",
+            "competitions",
+            "submit",
+            "-c",
+            args["competition"],
+            "-f",
+            args["file_path"],
+            "-m",
+            args["message"],
         ],
         capture_output=True,
         text=True,
@@ -39,9 +45,13 @@ async def kaggle_submit(args: dict[str, Any]) -> dict[str, Any]:
 async def kaggle_leaderboard(args: dict[str, Any]) -> dict[str, Any]:
     result = subprocess.run(
         [
-            "kaggle", "competitions", "leaderboard",
-            "-c", args["competition"],
-            "--show", "--csv",
+            "kaggle",
+            "competitions",
+            "leaderboard",
+            "-c",
+            args["competition"],
+            "--show",
+            "--csv",
         ],
         capture_output=True,
         text=True,
@@ -59,8 +69,11 @@ async def kaggle_leaderboard(args: dict[str, Any]) -> dict[str, Any]:
 async def kaggle_submission_history(args: dict[str, Any]) -> dict[str, Any]:
     result = subprocess.run(
         [
-            "kaggle", "competitions", "submissions",
-            "-c", args["competition"],
+            "kaggle",
+            "competitions",
+            "submissions",
+            "-c",
+            args["competition"],
             "--csv",
         ],
         capture_output=True,

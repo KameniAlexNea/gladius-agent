@@ -7,6 +7,7 @@ returns (structured_output, session_id).
 All messages (tool calls, text, tool results, thinking) are streamed to the
 console in real-time so you can see exactly what Claude is doing.
 """
+
 import asyncio
 import json
 import logging
@@ -14,9 +15,9 @@ import textwrap
 from typing import Any
 
 from claude_agent_sdk import (
+    ClaudeAgentOptions,
     CLIJSONDecodeError,
     CLINotFoundError,
-    ClaudeAgentOptions,
     ProcessError,
     ResultMessage,
     query,
@@ -33,15 +34,16 @@ from claude_agent_sdk.types import (
 logger = logging.getLogger(__name__)
 
 # ── Console colours (degrade gracefully in non-TTY) ───────────────────────────
-_RESET  = "\033[0m"
-_BOLD   = "\033[1m"
-_DIM    = "\033[2m"
-_CYAN   = "\033[36m"
-_GREEN  = "\033[32m"
+_RESET = "\033[0m"
+_BOLD = "\033[1m"
+_DIM = "\033[2m"
+_CYAN = "\033[36m"
+_GREEN = "\033[32m"
 _YELLOW = "\033[33m"
-_RED    = "\033[31m"
-_BLUE   = "\033[34m"
-_GREY   = "\033[90m"
+_RED = "\033[31m"
+_BLUE = "\033[34m"
+_GREY = "\033[90m"
+
 
 def _c(color: str, text: str) -> str:
     """Wrap text in ANSI color codes."""
@@ -121,12 +123,13 @@ def _log_message(agent_name: str, message: Any) -> None:
             _c(_BOLD, f"  ━━ [{agent_name}] done")
             + f"  status={status}"
             + f"  turns={message.num_turns}"
-            + f"  {message.duration_ms/1000:.1f}s"
+            + f"  {message.duration_ms / 1000:.1f}s"
             + _c(_DIM, cost)
         )
 
 
 # ── Main helper ───────────────────────────────────────────────────────────────
+
 
 async def run_agent(
     *,
@@ -185,7 +188,9 @@ async def run_agent(
             if result_msg.is_error:
                 raise RuntimeError(f"Agent returned error result: {result_msg.result}")
             if result_msg.structured_output is None:
-                raise RuntimeError("Agent returned no structured_output (schema not satisfied?)")
+                raise RuntimeError(
+                    "Agent returned no structured_output (schema not satisfied?)"
+                )
 
             return result_msg.structured_output, result_msg.session_id
 
@@ -196,22 +201,21 @@ async def run_agent(
             stderr = e.stderr or ""
             if "rate limit" in stderr.lower() and attempt < max_retries - 1:
                 wait = 60 * (2**attempt)
-                logger.warning(f"Rate-limited, waiting {wait}s (attempt {attempt+1})")
+                logger.warning(f"Rate-limited, waiting {wait}s (attempt {attempt + 1})")
                 await asyncio.sleep(wait)
             elif attempt == max_retries - 1:
                 raise
             else:
-                logger.warning(f"ProcessError on attempt {attempt+1}: {e}")
+                logger.warning(f"ProcessError on attempt {attempt + 1}: {e}")
 
         except CLIJSONDecodeError:
             if attempt == max_retries - 1:
                 raise
-            logger.warning(f"JSON decode error on attempt {attempt+1}, retrying")
+            logger.warning(f"JSON decode error on attempt {attempt + 1}, retrying")
 
         except RuntimeError as e:
             if attempt == max_retries - 1:
                 raise
-            logger.warning(f"RuntimeError on attempt {attempt+1}: {e}, retrying")
+            logger.warning(f"RuntimeError on attempt {attempt + 1}: {e}, retrying")
 
     raise RuntimeError("run_agent: max retries exceeded")
-

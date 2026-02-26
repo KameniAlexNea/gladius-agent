@@ -2,6 +2,7 @@
 Competition state and persistence.
 Replaces: GraphState TypedDict + LangGraph SqliteSaver
 """
+
 import json
 import sqlite3
 from dataclasses import dataclass, field
@@ -15,13 +16,13 @@ class CompetitionState:
     competition_id: str
     data_dir: str
     output_dir: str
-    target_metric: str          # "auc_roc" | "rmse" | "logloss" | etc.
-    metric_direction: str       # "maximize" | "minimize"
+    target_metric: str  # "auc_roc" | "rmse" | "logloss" | etc.
+    metric_direction: str  # "maximize" | "minimize"
 
     # Loop control
     iteration: int = 0
     max_iterations: int = 20
-    phase: str = "planning"     # planning | implementing | validation | done
+    phase: str = "planning"  # planning | implementing | validation | done
 
     # Best known performance
     best_oof_score: float = -1.0
@@ -76,7 +77,8 @@ class StateStore:
     # ── Schema ────────────────────────────────────────────────────────────────
 
     def _init_schema(self) -> None:
-        self.conn.executescript("""
+        self.conn.executescript(
+            """
             CREATE TABLE IF NOT EXISTS competition (
                 competition_id      TEXT PRIMARY KEY,
                 data_dir            TEXT NOT NULL,
@@ -145,7 +147,8 @@ class StateStore:
                 experiments_count       INTEGER NOT NULL,
                 failed_runs_count       INTEGER NOT NULL
             );
-        """)
+        """
+        )
         self.conn.commit()
 
     # ── Save ──────────────────────────────────────────────────────────────────
@@ -153,73 +156,126 @@ class StateStore:
     def save(self, state: CompetitionState) -> None:
         with self.conn:
             # Static settings (INSERT OR IGNORE — written once)
-            self.conn.execute("""
+            self.conn.execute(
+                """
                 INSERT OR IGNORE INTO competition
                     (competition_id, data_dir, output_dir, target_metric,
                      metric_direction, max_iterations, max_submissions_per_day)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (state.competition_id, state.data_dir, state.output_dir,
-                  state.target_metric, state.metric_direction,
-                  state.max_iterations, state.max_submissions_per_day))
+            """,
+                (
+                    state.competition_id,
+                    state.data_dir,
+                    state.output_dir,
+                    state.target_metric,
+                    state.metric_direction,
+                    state.max_iterations,
+                    state.max_submissions_per_day,
+                ),
+            )
 
             # Mutable scalars (single row, always id=1)
-            self.conn.execute("""
+            self.conn.execute(
+                """
                 INSERT OR REPLACE INTO current_state
                     (id, iteration, phase, best_oof_score, best_submission_score,
                      best_submission_path, submission_count, consecutive_errors,
                      planner_session_id, current_plan)
                 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (state.iteration, state.phase, state.best_oof_score,
-                  state.best_submission_score, state.best_submission_path,
-                  state.submission_count, state.consecutive_errors,
-                  state.planner_session_id,
-                  json.dumps(state.current_plan) if state.current_plan else None))
+            """,
+                (
+                    state.iteration,
+                    state.phase,
+                    state.best_oof_score,
+                    state.best_submission_score,
+                    state.best_submission_path,
+                    state.submission_count,
+                    state.consecutive_errors,
+                    state.planner_session_id,
+                    json.dumps(state.current_plan) if state.current_plan else None,
+                ),
+            )
 
             # List tables: clear and re-insert (runs stay small during a competition)
             self.conn.execute("DELETE FROM experiments")
             for e in state.experiments:
                 files = ",".join(e.get("solution_files") or [])
-                self.conn.execute("""
+                self.conn.execute(
+                    """
                     INSERT INTO experiments
                         (iteration, oof_score, submission_file, notes, approach, solution_files)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (e.get("iteration"), e.get("oof_score"), e.get("submission_file"),
-                      e.get("notes"), e.get("approach"), files))
+                """,
+                    (
+                        e.get("iteration"),
+                        e.get("oof_score"),
+                        e.get("submission_file"),
+                        e.get("notes"),
+                        e.get("approach"),
+                        files,
+                    ),
+                )
 
             self.conn.execute("DELETE FROM failed_runs")
             for f in state.failed_runs:
-                self.conn.execute("""
+                self.conn.execute(
+                    """
                     INSERT INTO failed_runs (iteration, status, error, approach)
                     VALUES (?, ?, ?, ?)
-                """, (f.get("iteration"), f.get("status"),
-                      f.get("error"), f.get("approach")))
+                """,
+                    (
+                        f.get("iteration"),
+                        f.get("status"),
+                        f.get("error"),
+                        f.get("approach"),
+                    ),
+                )
 
             self.conn.execute("DELETE FROM error_log")
             for e in state.error_log:
-                self.conn.execute("""
+                self.conn.execute(
+                    """
                     INSERT INTO error_log (iteration, phase, error)
                     VALUES (?, ?, ?)
-                """, (e.get("iteration"), e.get("phase"), e.get("error")))
+                """,
+                    (e.get("iteration"), e.get("phase"), e.get("error")),
+                )
 
             self.conn.execute("DELETE FROM lb_scores")
             for lb in state.lb_scores:
-                self.conn.execute("""
+                self.conn.execute(
+                    """
                     INSERT INTO lb_scores (score, timestamp, public_lb)
                     VALUES (?, ?, ?)
-                """, (lb.get("score"), lb.get("timestamp"),
-                      1 if lb.get("public_lb", True) else 0))
+                """,
+                    (
+                        lb.get("score"),
+                        lb.get("timestamp"),
+                        1 if lb.get("public_lb", True) else 0,
+                    ),
+                )
 
             # Append to audit log
-            self.conn.execute("""
+            self.conn.execute(
+                """
                 INSERT INTO state_history
                     (iteration, phase, best_oof_score, best_submission_score,
                      best_submission_path, submission_count, consecutive_errors,
                      experiments_count, failed_runs_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (state.iteration, state.phase, state.best_oof_score,
-                  state.best_submission_score, state.best_submission_path,
-                  state.submission_count, state.consecutive_errors,
-                  len(state.experiments), len(state.failed_runs)))
+            """,
+                (
+                    state.iteration,
+                    state.phase,
+                    state.best_oof_score,
+                    state.best_submission_score,
+                    state.best_submission_path,
+                    state.submission_count,
+                    state.consecutive_errors,
+                    len(state.experiments),
+                    len(state.failed_runs),
+                ),
+            )
 
     # ── Load ──────────────────────────────────────────────────────────────────
 
@@ -231,19 +287,25 @@ class StateStore:
 
         experiments = [
             {
-                "iteration":      row["iteration"],
-                "oof_score":      row["oof_score"],
+                "iteration": row["iteration"],
+                "oof_score": row["oof_score"],
                 "submission_file": row["submission_file"],
-                "notes":          row["notes"],
-                "approach":       row["approach"],
-                "solution_files": [f for f in (row["solution_files"] or "").split(",") if f],
+                "notes": row["notes"],
+                "approach": row["approach"],
+                "solution_files": [
+                    f for f in (row["solution_files"] or "").split(",") if f
+                ],
             }
             for row in self.conn.execute("SELECT * FROM experiments ORDER BY id")
         ]
 
         failed_runs = [
-            {"iteration": r["iteration"], "status": r["status"],
-             "error": r["error"], "approach": r["approach"]}
+            {
+                "iteration": r["iteration"],
+                "status": r["status"],
+                "error": r["error"],
+                "approach": r["approach"],
+            }
             for r in self.conn.execute("SELECT * FROM failed_runs ORDER BY id")
         ]
 
@@ -253,8 +315,11 @@ class StateStore:
         ]
 
         lb_scores = [
-            {"score": r["score"], "timestamp": r["timestamp"],
-             "public_lb": bool(r["public_lb"])}
+            {
+                "score": r["score"],
+                "timestamp": r["timestamp"],
+                "public_lb": bool(r["public_lb"]),
+            }
             for r in self.conn.execute("SELECT * FROM lb_scores ORDER BY id")
         ]
 
@@ -274,7 +339,9 @@ class StateStore:
             submission_count=curr["submission_count"],
             consecutive_errors=curr["consecutive_errors"],
             planner_session_id=curr["planner_session_id"],
-            current_plan=json.loads(curr["current_plan"]) if curr["current_plan"] else None,
+            current_plan=(
+                json.loads(curr["current_plan"]) if curr["current_plan"] else None
+            ),
             experiments=experiments,
             failed_runs=failed_runs,
             error_log=error_log,

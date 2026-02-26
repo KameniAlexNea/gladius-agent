@@ -8,6 +8,7 @@ Called by the orchestrator at the end of every validation phase so the planner
 accumulates knowledge across iterations without reading full experiment history
 each time.
 """
+
 from __future__ import annotations
 
 import json
@@ -88,7 +89,9 @@ async def run_summarizer(
     Update .claude/agent-memory/planner/MEMORY.md with learnings from the latest
     experiment. Returns the one-sentence summary string.
     """
-    memory_path = Path(project_dir) / ".claude" / "agent-memory" / "planner" / "MEMORY.md"
+    memory_path = (
+        Path(project_dir) / ".claude" / "agent-memory" / "planner" / "MEMORY.md"
+    )
 
     # Recent experiments context (last 10)
     recent = list(reversed(state.experiments[-10:]))

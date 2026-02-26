@@ -22,6 +22,7 @@ Fields:
 The rest of the README is the human-readable competition description that
 agents also read for context.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -57,7 +58,11 @@ def load_competition_config(competition_dir: str) -> dict:
 
     cfg = _parse_frontmatter(readme)
 
-    missing = [k for k in ("competition_id", "platform", "metric", "direction") if not cfg.get(k)]
+    missing = [
+        k
+        for k in ("competition_id", "platform", "metric", "direction")
+        if not cfg.get(k)
+    ]
     if missing:
         raise CompetitionConfigError(
             f"README.md frontmatter missing required fields: {missing}"
@@ -99,16 +104,20 @@ def _parse_frontmatter(readme: Path) -> dict:
         if not s or s.startswith("#"):
             continue
         if ":" not in s:
-            raise CompetitionConfigError(f"{readme}:{i}: expected 'key: value', got {line!r}")
+            raise CompetitionConfigError(
+                f"{readme}:{i}: expected 'key: value', got {line!r}"
+            )
         key, _, val = s.partition(":")
         val = val.strip()
-        if " #" in val:                          # strip inline comment
+        if " #" in val:  # strip inline comment
             val = val[: val.index(" #")].strip()
         if len(val) >= 2 and val[0] in ('"', "'") and val[0] == val[-1]:
-            val = val[1:-1]                      # strip surrounding quotes
+            val = val[1:-1]  # strip surrounding quotes
         cfg[key.strip()] = val
 
     if not closed:
-        raise CompetitionConfigError(f"{readme}: frontmatter block never closed with '---'.")
+        raise CompetitionConfigError(
+            f"{readme}: frontmatter block never closed with '---'."
+        )
 
     return cfg

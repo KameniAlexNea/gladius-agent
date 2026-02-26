@@ -13,6 +13,7 @@ Usage:
     from gladius.tools.metric_tools import metric_server
     options = ClaudeAgentOptions(mcp_servers={"metrics": metric_server}, ...)
 """
+
 from typing import Any
 
 import numpy as np
@@ -47,7 +48,10 @@ async def compute_oof_correlation(args: dict[str, Any]) -> dict[str, Any]:
         names = [p.split("/")[-1] for p in paths]
         lines.append("  " + "  ".join(f"{n:>12}" for n in names))
         for i, row_name in enumerate(names):
-            lines.append(f"{row_name:>12}  " + "  ".join(f"{corr[i,j]:>12.4f}" for j in range(n)))
+            lines.append(
+                f"{row_name:>12}  "
+                + "  ".join(f"{corr[i, j]:>12.4f}" for j in range(n))
+            )
 
         return {"content": [{"type": "text", "text": "\n".join(lines)}]}
     except Exception as e:

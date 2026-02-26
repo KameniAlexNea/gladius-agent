@@ -14,6 +14,7 @@ Usage:
     from gladius.tools.fake_platform_tools import fake_server
     options = ClaudeAgentOptions(mcp_servers={"fake": fake_server}, ...)
 """
+
 from __future__ import annotations
 
 import json
@@ -26,8 +27,8 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 
 # ── Seeded fake competitors on the leaderboard ────────────────────────────────
 _FAKE_LEADERBOARD = [
-    {"username": "ml_wizard",    "score": 0.9512, "submissions": 12},
-    {"username": "DataNinja42",  "score": 0.9388, "submissions": 7},
+    {"username": "ml_wizard", "score": 0.9512, "submissions": 12},
+    {"username": "DataNinja42", "score": 0.9388, "submissions": 7},
     {"username": "gradient_god", "score": 0.9201, "submissions": 21},
     {"username": "overfit_king", "score": 0.9047, "submissions": 44},
     {"username": "baseline_bob", "score": 0.8733, "submissions": 3},
@@ -80,6 +81,7 @@ def _score_submission(sub_path: str) -> float:
 
 
 # ── MCP tools ─────────────────────────────────────────────────────────────────
+
 
 @tool(
     "fake_submit",
@@ -136,7 +138,10 @@ async def fake_submit(args: dict[str, Any]) -> dict[str, Any]:
             ]
         }
     except Exception as e:
-        return {"content": [{"type": "text", "text": f"Scoring error: {e}"}], "is_error": True}
+        return {
+            "content": [{"type": "text", "text": f"Scoring error: {e}"}],
+            "is_error": True,
+        }
 
 
 @tool(
@@ -157,7 +162,9 @@ async def fake_leaderboard(args: dict[str, Any]) -> dict[str, Any]:
 
         rows = list(_FAKE_LEADERBOARD)  # copy
         if own_best is not None:
-            rows.append({"username": "YOU", "score": own_best, "submissions": len(history)})
+            rows.append(
+                {"username": "YOU", "score": own_best, "submissions": len(history)}
+            )
 
         rows.sort(key=lambda r: r["score"], reverse=True)
         rows = rows[:top_n]
@@ -200,9 +207,7 @@ async def fake_submission_history(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "fake_status",
-    (
-        "Check your current rank and submission count on the fake platform."
-    ),
+    ("Check your current rank and submission count on the fake platform."),
     {},
 )
 async def fake_status(args: dict[str, Any]) -> dict[str, Any]:
@@ -223,7 +228,11 @@ async def fake_status(args: dict[str, Any]) -> dict[str, Any]:
         lines = [
             "Platform: FAKE (local, no internet)",
             f"Total submissions: {len(history)}",
-            f"Best public score: {own_best:.6f}" if own_best else "Best public score: N/A",
+            (
+                f"Best public score: {own_best:.6f}"
+                if own_best
+                else "Best public score: N/A"
+            ),
             f"Current rank: {rank_str}",
             "Remaining submissions: unlimited",
         ]

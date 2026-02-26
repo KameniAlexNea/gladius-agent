@@ -10,6 +10,7 @@ Usage:
     from gladius.tools.zindi_tools import zindi_server
     options = ClaudeAgentOptions(mcp_servers={"zindi": zindi_server}, ...)
 """
+
 from __future__ import annotations
 
 import os
@@ -20,7 +21,9 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 
 def _get_user():
     """Authenticate and return a connected Zindian instance."""
-    from zindi.user import Zindian  # lazy import — only available when zindi is installed
+    from zindi.user import (
+        Zindian,
+    )  # lazy import — only available when zindi is installed
 
     username = os.getenv("ZINDI_USERNAME") or os.getenv("USER_NAME")
     password = os.getenv("ZINDI_PASSWORD") or os.getenv("PASSWORD")
@@ -36,6 +39,7 @@ def _get_user():
 
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
+
 
 @tool(
     "zindi_submit",
@@ -53,7 +57,12 @@ async def zindi_submit(args: dict[str, Any]) -> dict[str, Any]:
         remaining = user.remaining_subimissions
         if remaining <= 0:
             return {
-                "content": [{"type": "text", "text": "No remaining submissions today. Try again tomorrow."}],
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "No remaining submissions today. Try again tomorrow.",
+                    }
+                ],
                 "is_error": True,
             }
 
@@ -76,7 +85,10 @@ async def zindi_submit(args: dict[str, Any]) -> dict[str, Any]:
             ]
         }
     except Exception as e:
-        return {"content": [{"type": "text", "text": f"Submission error: {e}"}], "is_error": True}
+        return {
+            "content": [{"type": "text", "text": f"Submission error: {e}"}],
+            "is_error": True,
+        }
 
 
 @tool(
@@ -112,7 +124,9 @@ async def zindi_submission_history(args: dict[str, Any]) -> dict[str, Any]:
         user = _get_user()
         sb = user.submission_board()
         if sb is None:
-            return {"content": [{"type": "text", "text": "No submission history found."}]}
+            return {
+                "content": [{"type": "text", "text": "No submission history found."}]
+            }
         return {"content": [{"type": "text", "text": sb.to_string()}]}
     except Exception as e:
         return {"content": [{"type": "text", "text": f"Error: {e}"}], "is_error": True}

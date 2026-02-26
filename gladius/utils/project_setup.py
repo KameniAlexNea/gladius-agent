@@ -11,10 +11,10 @@ Called by the orchestrator to:
 All writes are idempotent for bootstrap files (skip if already exist), but
 CLAUDE.md is always overwritten because it carries live competition state.
 """
+
 from __future__ import annotations
 
 import json
-import os
 import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
 # ── CLAUDE.md ─────────────────────────────────────────────────────────────────
+
 
 def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
     """
@@ -33,9 +34,19 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
     """
     p = Path(project_dir) / "CLAUDE.md"
 
-    best_oof = f"{state.best_oof_score:.6f}" if state.best_oof_score >= 0 else "none yet"
-    best_lb  = f"{state.best_submission_score:.6f}" if state.best_submission_score >= 0 else "none yet"
-    direction_str = "↑ higher is better" if state.metric_direction == "maximize" else "↓ lower is better"
+    best_oof = (
+        f"{state.best_oof_score:.6f}" if state.best_oof_score >= 0 else "none yet"
+    )
+    best_lb = (
+        f"{state.best_submission_score:.6f}"
+        if state.best_submission_score >= 0
+        else "none yet"
+    )
+    direction_str = (
+        "↑ higher is better"
+        if state.metric_direction == "maximize"
+        else "↓ lower is better"
+    )
 
     # Top-5 experiments, newest first
     exps = list(reversed(state.experiments[-5:]))
@@ -49,15 +60,14 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
             files = ", ".join(Path(f).name for f in e.get("solution_files", []))
             rows.append(f"| iter {it} | {s} | {files} | {n} |")
         exp_lines = (
-            "| Iteration | OOF Score | Files | Notes |\n"
-            "| --- | --- | --- | --- |\n"
+            "| Iteration | OOF Score | Files | Notes |\n| --- | --- | --- | --- |\n"
         ) + "\n".join(rows)
 
     # Failed approaches to avoid
     failed_lines = "_(none)_"
     if state.failed_runs:
         failed_lines = "\n".join(
-            f"- iter {f.get('iteration','?')}: {f.get('error','?')[:80]}"
+            f"- iter {f.get('iteration', '?')}: {f.get('error', '?')[:80]}"
             for f in state.failed_runs[-5:]
         )
 
@@ -146,6 +156,7 @@ If you are an **implementer**, focus only on executing the given plan.
 
 # ── Bootstrap project .claude/ structure ──────────────────────────────────────
 
+
 def setup_project_dir(state: "CompetitionState", project_dir: str) -> None:
     """
     One-time (idempotent) setup of Claude Code native config in project_dir.
@@ -178,12 +189,14 @@ def setup_project_dir(state: "CompetitionState", project_dir: str) -> None:
 
 # ── Agent definitions ─────────────────────────────────────────────────────────
 
+
 def _write_agent_planner(root: Path) -> None:
     path = root / ".claude" / "agents" / "planner.md"
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("""\
+    path.write_text(
+        """\
 ---
 name: planner
 description: >
@@ -215,7 +228,9 @@ You are an expert ML competition analyst.
 - Plans must be specific and self-contained — no "investigate X" steps.
 - Update your memory with key insights (data quirks, what worked, what didn't).
 - WebSearch for competition-specific techniques when you lack domain knowledge.
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
 
 def _write_agent_implementer(root: Path) -> None:
@@ -223,7 +238,8 @@ def _write_agent_implementer(root: Path) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("""\
+    path.write_text(
+        """\
 ---
 name: implementer
 description: >
@@ -266,17 +282,21 @@ You are an expert ML engineer executing a competition experiment.
 - `submission_file`: path to the test-set predictions CSV
 - `notes`: brief summary of what you built and the score
 - `error_message`: (only on failure) what went wrong
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
 
 # ── Skills ────────────────────────────────────────────────────────────────────
+
 
 def _write_skill_ml_pipeline(root: Path) -> None:
     path = root / ".claude" / "skills" / "ml-pipeline" / "SKILL.md"
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("""\
+    path.write_text(
+        """\
 ---
 name: ml-pipeline
 description: >
@@ -333,7 +353,9 @@ print(f"Submission saved: {len(sub)} rows, columns: {list(sub.columns)}")
 - Name solution scripts descriptively: `solution_lgbm_baseline.py`, `solution_xgb_v2.py`
 - Keep ALL previous solution files — never delete older versions.
 - Write a `run.sh` if the solution has multiple steps.
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
 
 def _write_skill_submit_check(root: Path) -> None:
@@ -341,7 +363,8 @@ def _write_skill_submit_check(root: Path) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("""\
+    path.write_text(
+        """\
 ---
 name: submit-check
 description: Validate a submission CSV before platform upload
@@ -363,7 +386,9 @@ Steps:
 Output:
 - `VALID` if all checks pass
 - `INVALID: <reason>` listing specific issues
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
 
 def _write_skill_code_review(root: Path) -> None:
@@ -371,7 +396,8 @@ def _write_skill_code_review(root: Path) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("""\
+    path.write_text(
+        """\
 ---
 name: code-review
 description: Review ML solution code before finalising — catch leakage, metric errors, and format bugs
@@ -416,7 +442,9 @@ Fix every item marked CRITICAL before reporting results.
 
 - [ ] Each feature engineering step has a comment explaining the hypothesis.
 - [ ] File name is descriptive: `solution_lgbm_v2.py`, not `solution.py`.
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
 
 def _write_skill_git_workflow(root: Path) -> None:
@@ -424,7 +452,8 @@ def _write_skill_git_workflow(root: Path) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("""\
+    path.write_text(
+        """\
 ---
 name: git-workflow
 description: Commit every working solution version with a descriptive message
@@ -449,7 +478,9 @@ Guidelines:
 - `.gladius/` and `data/` should already be in `.gitignore` — verify if unsure.
 
 Tip: use `git log --oneline -10` to review recent iteration history.
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
 
 def _write_skill_uv_venv(root: Path) -> None:
@@ -457,7 +488,8 @@ def _write_skill_uv_venv(root: Path) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("""\
+    path.write_text(
+        """\
 ---
 name: uv-venv
 description: Install Python packages and run scripts using uv
@@ -506,10 +538,13 @@ uv pip show lightgbm
 - `uv.lock` should be committed to git for reproducibility.
 - If a package needs a non-PyPI source (e.g. GPU build), use
   `uv add --index https://... package_name`.
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
 
 # ── .claude/settings.json ─────────────────────────────────────────────────────
+
 
 def _write_claude_settings(root: Path, state: "CompetitionState") -> None:
     path = root / ".claude" / "settings.json"
@@ -527,31 +562,24 @@ def _write_claude_settings(root: Path, state: "CompetitionState") -> None:
             "PostToolUse": [
                 {
                     "matcher": "Edit|Write",
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": "scripts/after_edit.sh"
-                        }
-                    ]
+                    "hooks": [{"type": "command", "command": "scripts/after_edit.sh"}],
                 }
             ],
             "PreToolUse": [
                 {
                     "matcher": "Bash",
                     "hooks": [
-                        {
-                            "type": "command",
-                            "command": "scripts/validate_bash.sh"
-                        }
-                    ]
+                        {"type": "command", "command": "scripts/validate_bash.sh"}
+                    ],
                 }
-            ]
-        }
+            ],
+        },
     }
     path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
 
 # ── .mcp.json (for Claude Code CLI use) ──────────────────────────────────────
+
 
 def _write_mcp_json(root: Path, state: "CompetitionState") -> None:
     path = root / ".mcp.json"
@@ -569,9 +597,9 @@ def _write_mcp_json(root: Path, state: "CompetitionState") -> None:
                     (
                         "from gladius.tools.metric_tools import server; "
                         "import asyncio; asyncio.run(server.run())"
-                    )
+                    ),
                 ],
-                "env": {}
+                "env": {},
             }
         }
     }
@@ -580,12 +608,14 @@ def _write_mcp_json(root: Path, state: "CompetitionState") -> None:
 
 # ── Hook scripts ──────────────────────────────────────────────────────────────
 
+
 def _write_hook_after_edit(root: Path) -> None:
     path = root / "scripts" / "after_edit.sh"
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("""\
+    path.write_text(
+        """\
 #!/usr/bin/env bash
 # PostToolUse hook — runs after Edit or Write tool calls.
 # Compiles any modified Python file immediately so Claude sees syntax errors
@@ -617,7 +647,9 @@ if [[ "$FILE_PATH" == *.py ]] && [[ -f "$FILE_PATH" ]]; then
 fi
 
 exit 0
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     _make_executable(path)
 
 
@@ -626,7 +658,8 @@ def _write_hook_validate_bash(root: Path) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("""\
+    path.write_text(
+        """\
 #!/usr/bin/env bash
 # PreToolUse hook — runs before every Bash tool call.
 # Blocks commands that could destroy data outside the project directory.
@@ -658,11 +691,14 @@ if echo "$COMMAND" | grep -qE 'rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*f[[:space:]]+~'
 fi
 
 exit 0
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     _make_executable(path)
 
 
 # ── Agent memory directory ────────────────────────────────────────────────────
+
 
 def _make_memory_dir(root: Path) -> None:
     """Pre-create the planner's memory directory so it exists on first run."""
@@ -670,7 +706,8 @@ def _make_memory_dir(root: Path) -> None:
     mem_dir.mkdir(parents=True, exist_ok=True)
     mem_file = mem_dir / "MEMORY.md"
     if not mem_file.exists():
-        mem_file.write_text("""\
+        mem_file.write_text(
+            """\
 # Planner Memory
 
 > This file is maintained by the planner agent across competition iterations.
@@ -691,10 +728,13 @@ _(Record dead ends)_
 ## Data Insights
 
 _(Feature correlations, label distribution, data quirks, etc.)_
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
 
 
 # ── Utility ───────────────────────────────────────────────────────────────────
+
 
 def _make_executable(path: Path) -> None:
     current = path.stat().st_mode
