@@ -61,6 +61,31 @@ def _submit_to_kaggle(
         logger.info(f"Submission accepted: {result.stdout.strip()}")
 
 
+def _submit_to_fake(
+    competition_id: str, submission_path: str, message: str
+) -> None:
+    """Score a submission locally against the hidden answer key."""
+    import os
+    from pathlib import Path
+
+    try:
+        from gladius.tools.fake_platform_tools import _score_submission
+    except ImportError:
+        logger.error("fake_platform_tools not available")
+        return
+
+    answers_env = os.getenv("FAKE_ANSWERS_PATH")
+    if not answers_env:
+        # Try to resolve relative to data_dir convention
+        os.environ.setdefault("FAKE_ANSWERS_PATH", "data/.answers.csv")
+
+    try:
+        score = _score_submission(submission_path)
+        logger.info(f"[FAKE PLATFORM] Submission scored: AUC-ROC = {score:.6f}")
+    except Exception as exc:
+        logger.error(f"[FAKE PLATFORM] Scoring failed: {exc}")
+
+
 def _submit_to_zindi(
     competition_id: str, submission_path: str, message: str
 ) -> None:
@@ -106,6 +131,8 @@ def _submit(
     """Route submission to the correct platform."""
     if platform == "zindi":
         _submit_to_zindi(competition_id, submission_path, message)
+    elif platform == "fake":
+        _submit_to_fake(competition_id, submission_path, message)
     else:
         _submit_to_kaggle(competition_id, submission_path, message)
 
@@ -383,8 +410,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--platform",
         default="kaggle",
-        choices=["kaggle", "zindi"],
-        help="Competition platform (default: kaggle)",
+        choices=["kaggle", "zindi", "fake"],
+        help="Competition platform: kaggle, zindi, or fake (local, no account needed)",
     )
     p.add_argument("--data-dir", required=True, help="Path to downloaded competition data")
     p.add_argument("--project-dir", default=".", help="Working directory (default: cwd)")
