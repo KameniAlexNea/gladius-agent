@@ -65,19 +65,13 @@ async def run_implementer(
     )
 
     prompt = f"""\
-Competition : {state.competition_id}
-Metric      : {state.target_metric} ({state.metric_direction})
-Data dir    : {state.data_dir}
-Project dir : {project_dir}
+Read CLAUDE.md first — it has competition settings, best scores, and past experiment history.
 
 Planner's approach:
 {plan.get("approach_summary", "")}
 
 Steps to execute:
 {steps_text}
-
-Existing experiments for context:
-{_format_experiments(state.experiments[-3:])}
 
 Execute the plan completely:
 - Write all required code
@@ -94,7 +88,8 @@ Report the final {state.target_metric} score in oof_score.
         system_prompt=(
             "You are an expert ML engineer executing a competition experiment. "
             "You implement, run, debug, and iterate until the experiment completes. "
-            "You measure results yourself and report them accurately."
+            "You measure results yourself and report them accurately. "
+            "Always read CLAUDE.md at the start for competition context."
         ),
         allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
         output_schema=OUTPUT_SCHEMA,
@@ -102,16 +97,3 @@ Report the final {state.target_metric} score in oof_score.
         max_turns=80,
     )
     return result
-
-
-def _format_experiments(experiments: list) -> str:
-    if not experiments:
-        return "  (none yet)"
-    lines = []
-    for e in experiments:
-        lines.append(
-            f"  oof={e.get('oof_score', '?')}  "
-            f"files={', '.join(e.get('solution_files', []))}  "
-            f"notes={e.get('notes', '')}"
-        )
-    return "\n".join(lines)

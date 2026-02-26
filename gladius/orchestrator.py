@@ -28,6 +28,7 @@ from gladius.agents.implementer import run_implementer
 from gladius.agents.planner import run_planner
 from gladius.agents.validation import run_validation_agent
 from gladius.state import CompetitionState, StateStore
+from gladius.utils.project_setup import setup_project_dir, write_claude_md
 
 logging.basicConfig(
     level=logging.INFO,
@@ -111,6 +112,7 @@ async def run_competition(
     ensemble_every_n: int = 5,
     auto_submit: bool = True,
     platform: str = "kaggle",
+    n_parallel: int = 1,
 ) -> CompetitionState:
     gladius_dir = Path(project_dir) / ".gladius"
     gladius_dir.mkdir(parents=True, exist_ok=True)
@@ -134,6 +136,12 @@ async def run_competition(
             f"best={state.best_oof_score:.6f}"
         )
 
+    # Bootstrap project directory with Claude Code native config (.claude/,
+    # skills, hooks, agent definitions, MEMORY.md). Idempotent — safe to call
+    # on resume.
+    logger.info("Setting up project directory")
+    setup_project_dir(state, project_dir)
+
     while state.iteration < state.max_iterations and state.phase != "done":
         logger.info(
             f"[iter {state.iteration:02d}/{state.max_iterations}] "
@@ -141,10 +149,16 @@ async def run_competition(
             f"experiments={len(state.experiments)}"
         )
 
+        # Refresh CLAUDE.md with current state so all agents see live context.
+        write_claude_md(state, project_dir)
+
         try:
             # ── PLANNING ─────────────────────────────────────────────────────
             if state.phase == "planning":
-                plan, session_id = await run_planner(state, data_dir, project_dir)
+                plan, session_id = await run_planner(
+                    state, data_dir, project_dir,
+                    platform=platform, n_parallel=n_parallel,
+                )
                 state.current_plan = plan
                 state.planner_session_id = session_id
                 logger.info(f"Plan ready: {plan.get('approach_summary', '')[:120]}")
@@ -152,40 +166,98 @@ async def run_competition(
 
             # ── IMPLEMENTING ─────────────────────────────────────────────────
             elif state.phase == "implementing":
-                result = await run_implementer(state.current_plan, state, project_dir)
-
-                if result["status"] != "success":
-                    logger.warning(
-                        f"Implementer {result['status']}: {result.get('error_message', '')}"
+                # Gather plans: use planner’s multi-plan list when available
+                # and n_parallel > 1, otherwise fall back to single plan.
+                alt_plans: list[dict] = state.current_plan.get("plans", []) if state.current_plan else []
+                if n_parallel > 1 and len(alt_plans) > 1:
+                    plans_to_run = alt_plans[:n_parallel]
+                    logger.info(f"Running {len(plans_to_run)} parallel implementers")
+                    results = await asyncio.gather(
+                        *[run_implementer(p, state, project_dir) for p in plans_to_run],
+                        return_exceptions=True,
                     )
-                    state.failed_runs.append({
-                        "iteration": state.iteration,
-                        "status": result["status"],
-                        "error": result.get("error_message", ""),
-                        "approach": state.current_plan.get("approach_summary", "") if state.current_plan else "",
-                    })
-                    state.consecutive_errors += 1
-                    state.iteration += 1
-                    state.phase = "planning"
+                    # Flatten: keep successful results, log failures
+                    successful: list[dict] = []
+                    for i, r in enumerate(results):
+                        if isinstance(r, Exception):
+                            logger.warning(f"Parallel implementer {i} raised: {r}")
+                        elif isinstance(r, dict) and r.get("status") == "success":
+                            successful.append(r)
+                        else:
+                            err = r.get("error_message", "") if isinstance(r, dict) else str(r)
+                            state.failed_runs.append({
+                                "iteration": state.iteration,
+                                "status": r.get("status", "error") if isinstance(r, dict) else "error",
+                                "error": err,
+                                "approach": plans_to_run[i].get("approach_summary", ""),
+                            })
+                    if not successful:
+                        logger.warning("All parallel implementers failed")
+                        state.consecutive_errors += 1
+                        state.iteration += 1
+                        state.phase = "planning"
+                        store.save(state)
+                        continue
+                    # Pick the best by OOF score
+                    direction = state.metric_direction
+                    result = max(
+                        successful,
+                        key=lambda r: r["oof_score"] if direction == "maximize" else -r["oof_score"],
+                    )
+                    logger.info(
+                        f"Best parallel result: OOF {result['oof_score']:.6f} "
+                        f"(from {len(successful)}/{len(plans_to_run)} successful)"
+                    )
+                    # Record all successful runs as experiments
+                    for r in successful:
+                        state.experiments.append({
+                            "iteration":       state.iteration,
+                            "oof_score":       r["oof_score"],
+                            "solution_files":  r.get("solution_files", []),
+                            "submission_file": r.get("submission_file", ""),
+                            "notes":           r.get("notes", ""),
+                            "approach":        "",
+                        })
                 else:
-                    state.consecutive_errors = 0
-                    oof = result["oof_score"]
-                    logger.info(f"Implementation done — OOF {state.target_metric}: {oof:.6f}")
+                    # ── Sequential single implementer ─────────────────────
+                    result = await run_implementer(state.current_plan, state, project_dir)
 
+                    if result["status"] != "success":
+                        logger.warning(
+                            f"Implementer {result['status']}: {result.get('error_message', '')}"
+                        )
+                        state.failed_runs.append({
+                            "iteration": state.iteration,
+                            "status": result["status"],
+                            "error": result.get("error_message", ""),
+                            "approach": state.current_plan.get("approach_summary", "") if state.current_plan else "",
+                        })
+                        state.consecutive_errors += 1
+                        state.iteration += 1
+                        state.phase = "planning"
+                        store.save(state)
+                        continue
+
+                    # Single-run success — record experiment
                     state.experiments.append({
                         "iteration":       state.iteration,
-                        "oof_score":       oof,
+                        "oof_score":       result["oof_score"],
                         "solution_files":  result.get("solution_files", []),
                         "submission_file": result.get("submission_file", ""),
                         "notes":           result.get("notes", ""),
                         "approach":        state.current_plan.get("approach_summary", "") if state.current_plan else "",
                     })
 
-                    if _is_better(oof, state.best_oof_score, state.metric_direction):
-                        state.best_oof_score = oof
-                        logger.info(f"New best OOF: {oof:.6f}")
+                # ── Common post-implementation logic (parallel + sequential) ─
+                state.consecutive_errors = 0
+                oof = result["oof_score"]
+                logger.info(f"Implementation done — OOF {state.target_metric}: {oof:.6f}")
 
-                    state.phase = "validation"
+                if _is_better(oof, state.best_oof_score, state.metric_direction):
+                    state.best_oof_score = oof
+                    logger.info(f"New best OOF: {oof:.6f}")
+
+                state.phase = "validation"
 
             # ── VALIDATION ───────────────────────────────────────────────────
             elif state.phase == "validation":
@@ -288,6 +360,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ensemble-every", type=int, default=5)
     p.add_argument("--no-resume",   action="store_true", help="Start fresh")
     p.add_argument("--no-submit",   action="store_true", help="Dry-run, skip submissions")
+    p.add_argument("--parallel",    type=int, default=1, metavar="N",
+                   help="Run N implementers in parallel with different approaches (default: 1)")
     return p
 
 
@@ -304,6 +378,7 @@ async def _amain() -> None:
         ensemble_every_n=args.ensemble_every,
         auto_submit=not args.no_submit,
         platform=args.platform,
+        n_parallel=args.parallel,
     )
 
 
