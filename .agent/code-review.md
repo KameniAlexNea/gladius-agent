@@ -1,641 +1,367 @@
 # Code Review: Implementation vs. Design (`agentic-framework.md`)
 
-> Reviewed: 2026-02-24  
+> Reviewed: 2026-02-24 (revision 2 — post update)
 > Based on `agentic-framework.md` v2 and the current codebase (`gladius/`).
 
 ---
 
-## Summary
+## What changed since the last review
 
-The codebase is a solid scaffold. The graph wiring, state definition, and most agent logic are faithful to the design. The critical path (strategy → hypothesis → code generation → review → execute → validate → submit → LB track) is end-to-end connected and non-trivially implemented. However, several production-critical requirements from the spec are either stubs or absent.
+| Item | Was | Now |
+|---|---|---|
+| Checkpointer | `MemorySaver` — state lost on restart | ✅ `SqliteSaver` — crash recovery works |
+| Router pattern | `router_node` used as both node and edge selector | ✅ Fixed — `lambda s: s.get("next_node", "strategy")` |
+| `best_oof` in state | Missing | ✅ Added to `GraphState`, initialised in `create_initial_state` |
+| Submission Decider OOF gate | `MIN_OOF_IMPROVEMENT` defined but unused | ✅ `oof_score <= baseline + MIN_OOF_IMPROVEMENT` enforced |
+| Submission Decider 2h cooldown | Missing | ✅ `SUBMISSION_COOLDOWN_SECS = 7200` enforced |
+| `best_oof` update on submit | Never updated | ✅ Set to `oof_score` in the approve return path |
+| Code reviewer retry routing | All failures → `hypothesis` | ✅ retry 0 → `code_generator`, retry 1 → `hypothesis`, retry 2 → `strategy` |
+| Code reviewer import check | Missing | ✅ AST-based `_check_imports` added |
+| Code Generator correction loop | Ignored `reviewer_feedback` | ✅ `_apply_llm_correction` called when feedback present |
+| Code Generator staging path | Wrote using stale `run_id` | ✅ Writes to `state/scripts/pending.py` |
+| `graph.py` edge for `code_generator` retry | Missing edge | ✅ `"code_generator": "code_generator"` added to code_reviewer conditional edges |
+| `utils/code_reader.py` | Did not exist | ✅ Added: `read_function`, `read_lines`, `list_functions`, `validate_syntax`, `check_imports` |
+| ContextBuilder strategy context | 6 fields, thin | ✅ Now 13 fields: `top10_by_oof`, `last5_chronological`, `experiment_type_distribution`, `exploration_budget`, `best_oof` |
+| ContextBuilder hypothesis context | No parent script | ✅ `parent_script_source` added |
+| `session_summary` population | Never written | ✅ `_maybe_refresh_summary` every 10 findings in Knowledge Extractor |
+| Experiment archive | Never written | ✅ `_archive_experiment` writes `state/experiments/{run_id}.json` |
+| `pylint` in Code Reviewer | Present | Removed (replaced by AST import check — no subprocess dependency) |
+
+---
+
+## Current status table
 
 | Area | Status |
 |---|---|
 | Graph structure & routing | ✅ Complete |
 | State definition | ✅ Complete |
+| SqliteSaver checkpointing | ✅ Complete |
 | Strategy Agent (LLM + exploration logic) | ✅ Complete |
 | Hypothesis Generator (LLM + spec schema) | ✅ Complete |
-| Code Generator (targeted patching) | ⚠️ Partial — no LLM for complex changes |
-| Code Reviewer (static analysis) | ⚠️ Partial — missing import check + sandbox |
+| Code Generator (targeted patching) | ⚠️ Partial — patching is still regex/string, no LibCST |
+| Code Generator (LLM correction loop) | ✅ Complete |
+| Code Generator (staging path) | ✅ Complete |
+| Code Reviewer (static analysis) | ⚠️ Partial — sandbox run still missing |
+| Code Reviewer (import check) | ✅ Complete |
+| Code Reviewer (retry routing) | ✅ Complete |
 | Versioning Agent | ✅ Complete |
 | Executor | ✅ Complete |
 | Watchdog | ✅ Complete |
-| Resource Manager | ⚠️ Partial — no GPU, no running-job protection |
-| Validation Agent | ⚠️ Partial — missing leakage + metric consistency |
-| Submission Decider | ⚠️ Partial — missing `best_oof` compare + 2h buffer |
+| Resource Manager | ⚠️ Partial — no GPU monitoring |
+| Validation Agent | ⚠️ Partial — missing leakage + metric consistency checks |
+| Submission Decider | ✅ Complete (all 4 enforced gates) |
 | Submission Agent | ✅ Complete |
 | LB Tracker | ✅ Complete |
 | Ensemble Agent | ⚠️ Partial — no weight optimisation |
 | Knowledge Extractor | ✅ Complete |
 | Notifier | ✅ Complete |
-| Error Handler | ✅ Complete |
-| Conductor | ❌ Stub only |
+| Error Handler | ⚠️ `_notify_telegram` still a no-op |
+| code_reader utility | ✅ Complete |
+| ContextBuilder (strategy context) | ✅ Complete |
+| ContextBuilder (hypothesis context) | ⚠️ Partial — parent script loaded by heuristic, not by version |
+| session_summary | ✅ Populated every 10 findings |
+| Conductor | ❌ Stub — not wired into graph |
 | State Manager | ❌ Not implemented |
 | Supervisor | ❌ Not implemented |
-| ContextBuilder (LLM context quality) | ⚠️ Partial — thin context |
-| Checkpointing (SqliteSaver) | ❌ MemorySaver used instead |
+| Vector database / code index | ❌ Not implemented |
+| Diff-based patching | ❌ Not implemented |
+| Tool/dependency manifest | ❌ Not implemented |
 | Parallel execution (Send API) | ❌ Not implemented |
 
 ---
 
-## Issue Detail
+## Remaining issues
 
-### ❌ CRITICAL — Checkpointer is MemorySaver, not SqliteSaver
+### ❌ Still critical — Conductor, State Manager, Supervisor absent
 
-**File:** [gladius/graph.py](../gladius/graph.py)
+No change since the first review. Not critical for a single sequential run, but required before the system can be left unattended.
 
-The design spec is explicit:
-> "State persistence is handled by LangGraph's `SqliteSaver` checkpointer. If the process crashes, the graph resumes from the last checkpoint — no custom recovery code needed."
-
-The implementation uses `MemorySaver`, which loses all state on process exit. The `main()` function does `Path("state").mkdir(exist_ok=True)` (suggesting awareness of the state dir) but never uses it for checkpointing.
-
-**Fix:**
-```python
-from langgraph.checkpoint.sqlite import SqliteSaver
-checkpointer = SqliteSaver.from_conn_string("state/checkpoint.db")
-```
+- **Conductor** (`orchestration/conductor.py`): still 8 lines that forward `next_node` unchanged. Not wired into the graph.
+- **State Manager**: not implemented. Needed as a prerequisite for parallel `Send` branches.
+- **Supervisor**: no PID-based agent monitoring, no restart-on-crash, no `degraded` state.
 
 ---
 
-### ❌ CRITICAL — State Manager is absent
-
-**Spec:** Agent #2 — all reads/writes route through State Manager with TTL-gated locking. No agent writes directly.
-
-**Reality:** Every node returns a partial dict and LangGraph merges it. This is fine for concurrency-safe single-threaded graph execution, but there is no write validation, no TTL locking, and no stale-lock detection.
-
-**Impact:** Low for sequential graph execution. High if parallel `Send`-based execution is added later, which the spec anticipates. The missing State Manager is a prerequisite for parallel slots.
-
----
-
-### ❌ CRITICAL — Supervisor is absent
-
-**Spec:** Agent #3 — separate process, monitors agent PIDs, restarts crashed agents, marks agents `degraded` after 3 crashes in 10 min, notifies human, Conductor reroutes around degraded agents.
-
-**Reality:** Not implemented at all. The Error Handler provides node-level retry (3 attempts), but there is no PID tracking of agent processes or automatic restart logic.
-
----
-
-### ❌ Conductor is a stub
-
-**File:** [gladius/nodes/orchestration/conductor.py](../gladius/nodes/orchestration/conductor.py)
-
-```python
-def conductor_node(state: GraphState) -> GraphState:
-    """High-level conductor that monitors overall competition progress."""
-    return {"next_node": state.get("next_node", "strategy")}
-```
-
-The spec requires: per-tick health checks via Supervisor, running-job status checks, LB poll status, queue state inspection. None of this is implemented. Additionally, `conductor_node` is not wired into the graph (no edges lead to it in `graph.py`).
-
----
-
-### ⚠️ Code Generator — no LLM for complex changes
+### ❌ Code patching is still regex/string — correctness not guaranteed
 
 **File:** [gladius/nodes/code/code_generator.py](../gladius/nodes/code/code_generator.py)
 
-The design draws a sharp line: simple changes (param swap, feature add/remove) use regex/AST; **complex changes** (joins, new data sources, multi-step transforms) call the LLM with ±20 lines of context.
+All three patch functions carry the same failure modes as in the first review:
 
-The implementation handles all three change types without an LLM. For `feature_add`, it naively appends a `code_snippet` string — but that snippet has to come from somewhere (the Hypothesis Generator schema doesn't include `code_snippet` generation via LLM either). There is no fallback LLM path, so complex feature engineering will silently produce broken scripts.
+**`_apply_param_change`**: global `re.sub` matches any line containing `param =`. On a real LightGBM script with `learning_rate` mentioned in a comment, a docstring, and inside a `params = {}` dict, this rewrites every occurrence:
 
-**Specific risk:** `_apply_feature_add` splices a raw `code_snippet` string at a marker with no validation. If the snippet references columns or imports that don't exist, Code Reviewer's regex-level checks won't catch it.
+```python
+# This will rewrite ALL of these:
+# learning_rate = 0.05          ← the target
+# # old learning_rate = 0.03    ← comment — now broken
+# print(f"lr={learning_rate}")  ← reference, not assignment
+```
+
+**`_apply_feature_remove`**: `if feature_name not in line` deletes any line containing the feature name as a substring. `feature_name = "age"` removes lines with `"average"`, `"message"`, `"stage"`, `"page"`. Silent corruption.
+
+**`_apply_feature_add`**: falls back to `script + f"\n{snippet}"` when the marker is absent, appending feature code after `if __name__ == "__main__":`. Syntactically valid, logically dead.
+
+**The fix is LibCST** — a concrete syntax tree library (pip-installable, no native deps) that gives structure-aware transformers preserving formatting and failing loudly on ambiguous targets. On real competition scripts the regex patcher will corrupt code on the first non-trivial change.
 
 ---
 
-### ⚠️ Code Reviewer — missing import check and sandbox run
+### ❌ No sandbox run in Code Reviewer
 
 **File:** [gladius/nodes/code/code_reviewer.py](../gladius/nodes/code/code_reviewer.py)
 
-The spec lists four checks:
-1. `py_compile` ✅
-2. `pylint --errors-only` ✅
-3. Import check against installed packages ❌
-4. Sandbox run on 1% data with 60s timeout ❌
-5. No hardcoded paths ✅
+The import check (now present) catches missing packages. It does not catch:
+- Shape mismatches (`df['col']` where `col` doesn't exist in the data)
+- Runtime errors in feature transforms (division by zero, wrong dtypes)
+- Missing function arguments, wrong return types
+- Logic errors that produce NaN silently
 
-Missing #3: `importlib.util.find_spec` on every top-level import in the script would catch missing dependencies before execution. This is a common failure mode when Code Generator adds a new library.
+A 1%-sample sandbox run catches all of these before a 30-minute full training run. The spec requires it. What's needed:
+1. `tempfile.NamedTemporaryFile(suffix=".py", delete=True)` — ephemeral, cleaned up automatically
+2. Training script must respect `GLADIUS_SAMPLE_FRACTION=0.01` envvar — an interface contract that must be in the default template
+3. `subprocess.run([sys.executable, tmpfile.name], timeout=60, env={…, "GLADIUS_SAMPLE_FRACTION": "0.01"})`
+4. Parse output for `Traceback` / `Error` patterns
 
-Missing #4: A 1%-sample sandbox run is the only reliable way to catch shape errors, missing columns, and runtime exceptions before a full training run. Without it, the first real failure mode surfaces in the Watchdog 10–60 min later.
-
----
-
-### ⚠️ Submission Decider — incomplete gating logic
-
-**File:** [gladius/nodes/validation/submission_decider.py](../gladius/nodes/validation/submission_decider.py)
-
-The spec defines 5 conditions (truncated in the doc, but condition 1 is clearly stated):
-1. `new_oof > best_oof + min_improvement` — **missing**: there is no `best_oof` field in `GraphState` and no comparison
-2. Daily budget ✅
-3. OOF-LB gap not widening ✅
-4. (truncated in spec)
-5. `time_since_last_submission > 2h` — **missing**
-
-The `MIN_OOF_IMPROVEMENT = 1e-4` constant is defined but never used. The decider will submit any run that passes budget and gap checks regardless of whether OOF actually improved.
-
-**Fix:**
-```python
-# GraphState needs:  best_oof: Optional[float]
-best_oof = state.get("best_oof") or 0.0
-if oof_score <= best_oof + MIN_OOF_IMPROVEMENT:
-    return {"experiment_status": "held", "next_node": "router"}
-
-import time
-last_sub = state.get("last_submission_time") or 0
-if time.time() - last_sub < 7200:
-    return {"experiment_status": "held", "next_node": "router"}
-```
+This is the highest-value unimplemented check.
 
 ---
 
-### ⚠️ Validation Agent — missing leakage check and metric consistency
-
-**File:** [gladius/nodes/validation/validation_agent.py](../gladius/nodes/validation/validation_agent.py)
-
-Spec requirements:
-1. Shape, no NaN, values in `[0,1]` ✅
-2. Metric matches logged score ±1e-4 ❌ — `oof_score` in state is never verified against recomputing the metric from the OOF array
-3. Leakage check: OOF score on train folds must not significantly exceed holdout (threshold 0.01 AUC) ❌
-
-The leakage check requires per-fold OOF arrays, which means the training script must save them separately. This is an interface contract that doesn't yet exist anywhere in the codebase.
-
----
-
-### ⚠️ Ensemble Agent — missing blend weight optimisation
-
-**File:** [gladius/nodes/strategy/ensemble_agent.py](../gladius/nodes/strategy/ensemble_agent.py)
-
-The spec says: "Proposes blends using **Nelder-Mead or optuna** on OOF weights."
-
-The implementation selects uncorrelated models correctly but dispatches to Hypothesis Generator with equal-weight intent. No optimisation is performed. The blend directive contains `base_model_paths` but no `weights` field, so the Hypothesis Generator would have to invent weights — which it's not prompted to do.
-
----
-
-### ⚠️ ContextBuilder — thin LLM context
-
-**File:** [gladius/utils/context_builder.py](../gladius/utils/context_builder.py)
-
-The spec (Section 8) is specific about what context the Strategy Agent receives:
-- Top 10 experiments by OOF score (version, model_type, key_params, OOF, LB, gap) ❌
-- Last 5 experiments in chronological order ❌
-- knowledge.json (last 20 entries) ✅ (last 20 is an approximation)
-- session_summary ✅ (present but never populated — `session_summary` is always `None`)
-- Current best submission score and gap to estimated LB top ✅ (partially — gap to LB top is not computed)
-- Experiment type distribution: how many CatBoost/LGB/XGB/NN/ensemble ❌
-- exploration_budget (fraction of remaining time) ❌
-
-The Hypothesis Generator context is similarly thin — it receives the directive and relevant knowledge but not the parent script source, which the spec says is required ("full source code of the best current script of the target model type").
-
-**Impact:** The LLM is operating with less signal than the design intended. Strategy decisions will be less grounded, and Hypothesis Generator will not know what it's modifying.
-
----
-
-### ⚠️ Resource Manager — no GPU monitoring, weak running-job protection
-
-**File:** [gladius/nodes/execution/resource_manager.py](../gladius/nodes/execution/resource_manager.py)
-
-The spec: "Monitors GPU mem, disk, all PIDs."
-
-- GPU memory: not monitored (no `nvidia-smi` or `pynvml` call)
-- Running-job protection: uses `state.get("run_id")` as the only protected key. This protects the _current_ versioned run but not other running processes if parallel slots are ever used. The spec says "never evict caches referenced by current best run or any RUNNING job."
-
----
-
-### ⚠️ `session_summary` never populated
-
-**File:** [gladius/state.py](../gladius/state.py) / [gladius/utils/context_builder.py](../gladius/utils/context_builder.py)
-
-`session_summary` exists in `GraphState` and is included in the strategy context dict, but no node ever writes to it. The design says it's a "compressed strategy history" — presumably updated by Knowledge Extractor or Strategy Agent after each cycle. Without it, the LLM has no memory of the session's strategic direction beyond `knowledge.json`.
-
----
-
-### ⚠️ `graph.py` — router used as both node and routing function
-
-**File:** [gladius/graph.py](../gladius/graph.py)
-
-```python
-graph.add_conditional_edges(
-    "router",
-    router_node,          # <-- routing function
-    { ... }
-)
-```
-
-`router_node` is registered as both a node (`graph.add_node("router", router_node)`) and the conditional edge selector for that same node. In LangGraph this means the node function is called once (as a node, updating state) and then called again (as the edge selector, returning a string). Because `router_node` returns a string (the target node name) — not an updated state dict — the node invocation returns `None` and LangGraph merges nothing, which is harmless but unintentional. The correct pattern is: the node updates `state["next_node"]`, and the edge selector reads `state["next_node"]`.
-
-**Fix:**
-```python
-# router_node should remain a plain conditional function (returns str)
-# Remove it from add_node, or make it return a state update dict
-# and use a separate lambda as the edge selector:
-graph.add_conditional_edges(
-    "router",
-    lambda s: s.get("next_node", "strategy"),
-    { ... }
-)
-```
-
----
-
-### Minor issues
-
-**`_notify_telegram` in error_handler.py is a no-op**  
-[gladius/nodes/error_handler.py](../gladius/nodes/error_handler.py) — `_notify_telegram` is defined as `pass`. Escalation events will be silent. Should call `notifier_node` or directly call `_send_telegram` from `notifier.py`.
-
-**`best_oof` not tracked in GraphState**  
-There is no `best_oof` field in `GraphState`. The Submission Decider needs it but falls back to always treating the new OOF as an improvement. Add `best_oof: Optional[float]` to `GraphState` and update it in Knowledge Extractor or Submission Agent on confirmed improvement.
-
-**Watchdog uses `_get_exit_code(pid)` which calls `psutil.Process(pid).wait()`**  
-[gladius/nodes/execution/watchdog.py](../gladius/nodes/execution/watchdog.py) — `wait()` is only valid for child processes. If the executor and watchdog run in separate threads/processes (as the design intends), `wait()` will raise `psutil.AccessDenied`. Use `proc.returncode` via subprocess tracking or a shared state file instead.
-
-**`code_retry_count` is incremented but never reset on a new directive**  
-[gladius/nodes/code/code_reviewer.py](../gladius/nodes/code/code_reviewer.py) — If a new directive is issued after a code failure, `code_retry_count` carries over from the previous attempt. Strategy Agent or Hypothesis Generator should reset it.
-
-**LB Tracker parses Kaggle CSV by hardcoded column index**  
-[gladius/nodes/strategy/lb_tracker.py](../gladius/nodes/strategy/lb_tracker.py) — `parts[4]` assumes the Kaggle CLI output format is stable and that `run_id` matches a field in the submission list. Kaggle CLI output format has changed before. Prefer using the `kaggle` Python API or parsing the header row.
-
----
-
-## What to prioritise next
-
-1. **SqliteSaver** — one-line fix, un-blocks crash recovery.
-2. **`best_oof` in GraphState + Submission Decider OOF comparison** — without this, the system submits every validated run regardless of quality.
-3. **ContextBuilder: load experiment archive + parent script** — the LLM agents are operating blind without prior run results and the code they're supposed to modify.
-4. **Code Reviewer: import check + sandbox run** — catches the most common Code Generator failures cheaply.
-5. **Router pattern fix** — low effort, avoids a subtle LangGraph anti-pattern.
-6. **`session_summary` population** — populate in Knowledge Extractor as a rolling compressed string.
-
----
-
-## Deep Review: Code Handling Layer
-
-This section covers the most structurally weak area of the codebase: how scripts are searched, modified, validated, and executed. The current implementation will fail on any real competition script.
-
----
-
-### ❌ Code patching is string manipulation on an unstructured source
+### ⚠️ `_apply_llm_correction` sends the entire script and expects a full re-emit in JSON
 
 **File:** [gladius/nodes/code/code_generator.py](../gladius/nodes/code/code_generator.py)
 
-The three patch functions fail in predictable ways on real ML scripts:
-
-#### `_apply_param_change` — regex on assignment is wrong
+The correction loop is now wired correctly. But the prompt sends the entire script as a JSON string value:
 
 ```python
-pattern = rf"({re.escape(param)}\s*=\s*)[^\n,\)]*"
+f"Current script:\n```python\n{script}\n```\n\n"
+# asks for: {"fixed_script": "<entire corrected script>"}
 ```
 
-This regex will match **any** assignment to that variable name anywhere in the file — including commented-out lines, print statements, local variables in different functions, and dict keys. Given a CatBoost script with:
+Two problems:
+1. For a 400-line script, the LLM must read ~300 tokens of code to fix a single-line import error. Wasteful.
+2. Asking the LLM to return a full script as a JSON string value will break `json.loads` on any script containing double quotes, backslashes, or triple-quoted strings — unless the LLM perfectly escapes them (it won't, reliably).
+
+**Better approach**: use `code_reader.read_lines` to send only ±20 lines around each reported issue, and ask for a targeted patch (before/after the specific lines), not a full re-emit.
+
+---
+
+### ⚠️ `_load_parent_script_source` uses a content heuristic, not version lookup
+
+**File:** [gladius/utils/context_builder.py](../gladius/utils/context_builder.py)
 
 ```python
-params = {
-    "learning_rate": 0.05,       # will match
-    ...
+for f in sorted(SCRIPTS_DIR.glob("v*.py"), reverse=True):
+    content = f.read_text()
+    if target_model in content.lower():
+        return content
+```
+
+Problems:
+1. Returns the **most recently modified** matching script, not the **best-performing** one. The most recent version may be a failed experiment or a script mid-correction.
+2. `"lgbm"` won't match a script that uses `import lightgbm as lgb` or `lgb.Dataset`. Brittle heuristic.
+3. The Hypothesis Generator spec already contains `parent_version` (e.g. `"v41"`). The correct lookup is `SCRIPTS_DIR / f"{parent_version}.py"` — already implemented in `code_generator._load_parent_script`. ContextBuilder should use the same path, but there's a sequencing problem: `build_hypothesis_context` is called with the directive (before the spec exists). The parent script should be loaded in Code Generator (which has the spec) and passed to `_apply_llm_correction` there, not assembled separately in ContextBuilder.
+
+---
+
+### ⚠️ `_days_elapsed` is a constant-factor estimate, not real elapsed time
+
+**File:** [gladius/utils/context_builder.py](../gladius/utils/context_builder.py)
+
+```python
+_DAYS_PER_EXPERIMENT_ESTIMATE = 0.1
+
+def _days_elapsed(experiments: list) -> float:
+    # TODO: use actual experiment timestamps for accurate elapsed-days calculation
+    return len(experiments) * _DAYS_PER_EXPERIMENT_ESTIMATE
+```
+
+After 100 experiments this claims 10 days elapsed regardless of reality. The experiment archive now records `finding.timestamp` (written by `_archive_experiment`). Use it:
+
+```python
+def _days_elapsed(experiments: list) -> float:
+    timestamps = [e.get("finding", {}).get("timestamp") for e in experiments
+                  if e.get("finding", {}).get("timestamp")]
+    if len(timestamps) < 2:
+        return 0.0
+    from datetime import datetime
+    t0 = datetime.fromisoformat(timestamps[0])
+    t1 = datetime.fromisoformat(timestamps[-1])
+    return (t1 - t0).total_seconds() / 86400
+```
+
+---
+
+### ⚠️ `session_summary` is a pipe-joined data dump, not a synthesised summary
+
+**File:** [gladius/nodes/strategy/knowledge_extractor.py](../gladius/nodes/strategy/knowledge_extractor.py)
+
+```python
+return " | ".join([
+    f"[{f['experiment_id']}] {f['finding_type']}: {f['conclusion']}"
+    for f in recent
+])
+```
+
+Two problems:
+1. This is a flat string of 10 findings — not a distilled strategic insight. The LLM receives a data dump, not a summary.
+2. It refreshes every 10 findings with a **fixed window** (the last 10). After 20 experiments, findings 1–10 are completely discarded.
+
+The right approach: call the LLM to produce a 2–3 sentence synthesis ("We've tried X, Y failed because Z, current best is A, main open direction is B"). Prepend to the previous summary and truncate to a token budget (sliding window compression).
+
+---
+
+### ⚠️ Validation Agent: leakage check and metric consistency still missing
+
+**File:** [gladius/nodes/validation/validation_agent.py](../gladius/nodes/validation/validation_agent.py)
+
+No change since the first review. The spec requires two additional checks:
+
+**Metric consistency**: recompute the metric from the OOF array and compare to `state["oof_score"]`. Distance > 1e-4 means the logged score is from a different run, fold indexing is wrong, or the metric function is different. `competition["metric"]` is available in state.
+
+**Leakage check**: per-fold OOF scores on train folds must not significantly exceed the holdout score (threshold 0.01 AUC). Requires per-fold arrays: `{run_id}_fold_{k}_oof.npy`. This interface contract must be enforced in the default template and documented.
+
+---
+
+### ⚠️ Ensemble Agent: still no blend weight optimisation
+
+**File:** [gladius/nodes/strategy/ensemble_agent.py](../gladius/nodes/strategy/ensemble_agent.py)
+
+No change since the first review. The directive dispatched to Hypothesis Generator contains `base_model_paths` but no `weights`. The spec calls for Nelder-Mead or Optuna over OOF weights. The labels array (ground truth for OOF metric computation) must come from `competition.json`.
+
+---
+
+### ⚠️ `_notify_telegram` in Error Handler is still a no-op
+
+**File:** [gladius/nodes/error_handler.py](../gladius/nodes/error_handler.py)
+
+After 3 failures on a node, the human is never notified. `notifier._send_telegram` is already importable:
+
+```python
+from gladius.nodes.validation.notifier import _send_telegram
+
+def _notify_telegram(msg: str, node: str):
+    _send_telegram(f"❌ Node '{node}' failed 3× — escalating to strategy. Error: {msg}")
+```
+
+---
+
+### ⚠️ Watchdog `_get_exit_code` will raise on non-child processes
+
+**File:** [gladius/nodes/execution/watchdog.py](../gladius/nodes/execution/watchdog.py)
+
+```python
+def _get_exit_code(pid: int) -> int:
+    try:
+        proc = psutil.Process(pid)
+        return proc.wait(timeout=5)   # raises AccessDenied on non-child PIDs
+    except Exception:
+        return -1
+```
+
+`psutil.Process.wait()` raises `psutil.AccessDenied` when the caller is not the parent of that PID — which happens when the graph resumes from a SQLite checkpoint (the process that launched the subprocess was a different Python runtime). The `except Exception: return -1` masks this as a failure exit code. A successfully completed training run will be misrouted to `knowledge_extractor` instead of `validation_agent`.
+
+**Fix**: write the exit code to a sidecar file from the Executor subprocess:
+
+```python
+# In executor_node, wrap the subprocess call:
+# After proc exits, write: (LOGS_DIR / f"{run_id}.exitcode").write_text(str(proc.returncode))
+# Watchdog reads the file instead of calling psutil.wait()
+```
+
+---
+
+### ⚠️ `code_retry_count` not reset in Strategy Agent
+
+**File:** [gladius/nodes/strategy/strategy_agent.py](../gladius/nodes/strategy/strategy_agent.py)
+
+Code Generator resets `code_retry_count` to `0` when it successfully writes a new script. But there is no reset when a **new directive** is issued by Strategy Agent. If the previous experiment exhausted 3 retries, `code_retry_count = 3` persists. The Code Reviewer then routes immediately to Strategy on the first failure of the new experiment, skipping the 2 correction attempts the new spec deserves.
+
+**Fix**: add `"code_retry_count": 0` to `strategy_node`'s return dict.
+
+---
+
+### ⚠️ `best_oof` is updated in Submission Decider, not Validation Agent
+
+**File:** [gladius/nodes/validation/submission_decider.py](../gladius/nodes/validation/submission_decider.py)
+
+```python
+return {
+    "experiment_status": "submitted",
+    "best_oof": oof_score,  # only updated on submission approval
 }
-# learning_rate = 0.1            # will also match (commented out)
-def set_learning_rate(learning_rate=0.05): ...   # will also match
 ```
 
-The regex rewriter produces broken code silently. The right tool is `libcst` (LibCST — a concrete syntax tree library that preserves formatting) or `ast` + `astor`. LibCST allows:
+`best_oof` is only updated when the Submission Decider approves a submission. A run with the best OOF ever that is held for the 2h cooldown will not update `best_oof`. The next experiment's OOF will therefore be compared to an outdated baseline, potentially triggering a premature submission.
 
-```python
-import libcst as cst
-
-class ParamRewriter(cst.CSTTransformer):
-    def leave_Assign(self, node, updated):
-        # target-aware, scope-aware replacement
-        ...
-```
-
-This preserves formatting, handles nested dicts, and raises on ambiguous matches instead of silently corrupting code.
-
-#### `_apply_feature_add` — depends on a magic marker that won't exist
-
-```python
-marker = "# --- FEATURES END ---"
-if marker in script:
-    return script.replace(marker, f"{snippet}\n{marker}")
-return script + f"\n{snippet}"   # fallback: append to end of file
-```
-
-Real competition scripts won't have `# --- FEATURES END ---`. The fallback — appending to the end of the file — will produce code with feature engineering after `if __name__ == "__main__":`, which is syntactically valid but logically dead code. There is no check that the appended snippet actually compiles in context, or that it references only columns and variables that exist at the insertion point.
-
-The correct approach: identify the `train()` function's feature-building block via AST, find the last statement before the model call, and insert there. LibCST lets you do this structurally without string hacking.
-
-#### `_apply_feature_remove` — deletes by substring match on every line
-
-```python
-filtered = [line for line in lines if feature_name not in line]
-```
-
-If `feature_name = "age"`, this deletes every line containing the string `"age"` — including `"message"`, `"average"`, `"stage"`, and `"page_views"`. In a 300-line script this will silently corrupt the file. It also has no concept of scope: removing a feature that is referenced in five places downstream produces `NameError` at runtime, not at generation time.
-
-Correct approach: AST-walk to find all references to the feature name, remove the assignment, and either remove or replace all downstream references (or reject the change if it's too entangled).
+`best_oof` should track the best OOF across all **validated** runs, regardless of whether they were submitted. Update it in Validation Agent on a clean pass, or in Knowledge Extractor after archiving the run.
 
 ---
 
-### ❌ No vector database — code search is impossible
+### ⚠️ LB Tracker parses Kaggle CLI output by hardcoded column index
 
-The design in Section 7 says: "the LLM receives the exact lines around the insertion point (±20 lines)." There is no mechanism to locate that insertion point.
+**File:** [gladius/nodes/strategy/lb_tracker.py](../gladius/nodes/strategy/lb_tracker.py)
 
-For a 500-line LightGBM training script, how does the system answer: "Where is the feature engineering block?", "Where are the model hyperparameters defined?", "What features are currently in the feature list?", "Has a similar feature been added before in a previous version?"
-
-Without a code index, the system has two bad options:
-1. Send the entire script to the LLM (expensive, hits context limits, noise-heavy).
-2. Guess by string search (unreliable on real scripts).
-
-**What's needed: a chunked vector index over the script corpus.**
-
-Concretely:
-
-```
-state/
-  code_index/            # vector database (e.g., ChromaDB on-disk)
-    chunks/              # per-function, per-class, per-block embeddings
-```
-
-Index structure:
-- Each chunk = one logical block (function body, dict literal, import block) extracted by AST
-- Each chunk embedded with a code embedding model (e.g., `text-embedding-3-small` or a local `nomic-embed-code`)
-- Metadata: `{version, file_path, start_line, end_line, chunk_type, function_name}`
-
-Usage in Code Generator:
 ```python
-# Before: send entire 500-line file
-# After: query by intent
-chunks = code_index.query("hyperparameter dict for LightGBM", top_k=3)
-context_lines = load_lines(chunks[0].file_path, chunks[0].start_line - 20, chunks[0].end_line + 20)
+return float(parts[4])  # assumes publicScore is column index 4
 ```
 
-Usage in ContextBuilder (for Hypothesis Generator):
-```python
-# Find the best-performing feature similar to what's proposed
-similar_features = code_index.query(f"feature: {proposed_feature_name}", top_k=5, filter={"chunk_type": "feature_block"})
-```
-
-Usage in Knowledge Extractor:
-```python
-# Deduplicate: has this feature been tried before?
-existing = code_index.query(proposed_snippet, top_k=1)
-if existing[0].score > 0.95:
-    finding["conclusion"] += " (duplicate of prior attempt)"
-```
-
-Recommended library: **ChromaDB** (`chromadb`) — embeds locally, persists to disk, no server needed, has Python API. Alternatively **FAISS** + manual metadata store for lower overhead.
+Kaggle CLI output format has changed before. Use the Kaggle Python API (`kaggle.api.competitions_submissions_list(competition)`) which returns structured objects with a `.publicScore` attribute, or at minimum parse the header row to find the `publicScore` column index.
 
 ---
 
-### ❌ No mechanism to read a specific block or function from a script
+### ❌ No vector database / code index
 
-There is no utility in `utils/` to answer: "give me the body of the `train()` function from `v41.py`", or "give me lines 120–160 from `v41.py`".
+No change since the first review. Without it:
+- ContextBuilder sends entire 400-line scripts to the LLM
+- There is no way to answer "what parameters has LightGBM used across all versions?"
+- There is no deduplication of proposed features against the code history
+- `_apply_llm_correction` sends the full script to fix a one-line import error
 
-`ContextBuilder.build_hypothesis_context` is supposed to include the parent script source, but it doesn't. Even if it did, it would send the entire file to the LLM. For a real competition script this is wasteful and unreliable.
-
-**What's needed: a code reader utility using AST.**
-
-```python
-import ast
-from pathlib import Path
-
-def read_function(path: str, func_name: str) -> str:
-    """Extract source lines for a named function."""
-    source = Path(path).read_text()
-    tree = ast.parse(source)
-    lines = source.splitlines()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == func_name:
-            return "\n".join(lines[node.lineno - 1 : node.end_lineno])
-    raise KeyError(f"{func_name} not found in {path}")
-
-def read_lines(path: str, start: int, end: int) -> str:
-    lines = Path(path).read_text().splitlines()
-    return "\n".join(lines[start - 1 : end])
-
-def list_functions(path: str) -> list[str]:
-    tree = ast.parse(Path(path).read_text())
-    return [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
-```
-
-This belongs in `utils/code_reader.py` and should be the primary tool Code Generator and ContextBuilder use to extract context.
+ChromaDB (on-disk, no server, Python-native) chunked by AST block (one chunk = one function body or dict literal) is the minimum viable implementation.
 
 ---
 
-### ❌ No in-memory code execution — every validation requires a file
+### ❌ No diff / patch representation
 
-The Code Reviewer currently writes the script to `state/scripts/{run_id}.py` and runs `pylint` on it. The sandbox run (missing, but required) would also use that same file. There is no way to:
-- Run a quick smoke check without writing to disk
-- Execute a snippet to verify it compiles and runs in the current Python environment
-- Test a single function in isolation
-
-**For syntax validation, no file is needed:**
-
-```python
-import ast
-
-def validate_syntax(code: str) -> list[str]:
-    try:
-        ast.parse(code)
-        return []
-    except SyntaxError as e:
-        return [f"SyntaxError at line {e.lineno}: {e.msg}"]
-```
-
-**For import validation, no file is needed:**
-
-```python
-import importlib.util
-
-def check_imports(code: str) -> list[str]:
-    tree = ast.parse(code)
-    missing = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                top = alias.name.split(".")[0]
-                if importlib.util.find_spec(top) is None:
-                    missing.append(f"import not found: {top}")
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            top = node.module.split(".")[0]
-            if importlib.util.find_spec(top) is None:
-                missing.append(f"import not found: {top}")
-    return missing
-```
-
-**For the 1%-data sandbox, a temporary file is unavoidable — but it should be ephemeral:**
-
-```python
-import tempfile, subprocess, sys
-
-def sandbox_run(code: str, timeout: int = 60) -> tuple[bool, str]:
-    """Run code string in a subprocess using a temp file. File is deleted after."""
-    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=True) as f:
-        f.write(code)
-        f.flush()
-        result = subprocess.run(
-            [sys.executable, f.name],
-            capture_output=True, text=True, timeout=timeout,
-            env={**os.environ, "GLADIUS_SAMPLE_FRACTION": "0.01"},
-        )
-    return result.returncode == 0, (result.stdout + result.stderr).strip()
-```
-
-The training script needs to respect `GLADIUS_SAMPLE_FRACTION` — this is an interface contract that must be enforced in the Code Generator's default template and in every generated script.
-
-**For running a single function in isolation (import check + shape validation):**
-
-```python
-def exec_isolated(code: str, entry: str = "main") -> tuple[bool, str]:
-    """Execute code in an isolated namespace, call entry()."""
-    namespace = {}
-    try:
-        exec(compile(code, "<generated>", "exec"), namespace)
-        if entry in namespace:
-            namespace[entry]()
-        return True, ""
-    except Exception as e:
-        return False, f"{type(e).__name__}: {e}"
-```
-
-`exec()` in an isolated namespace (not `globals()`) is safe for shape checks and import validation. It is **not** safe for untrusted code — but in this system, the code is LLM-generated for a known ML pipeline, so the threat model is controlled.
-
----
-
-### ❌ No tool / dependency management layer
-
-The system has no concept of which Python packages a generated script requires, and no mechanism to ensure they are installed before execution.
-
-Failure scenario:
-1. Hypothesis Generator proposes adding a `polars`-based feature (reasonable for large tabular data)
-2. Code Generator adds `import polars as pl` to the script
-3. Code Reviewer's import check is missing (already noted), so it passes
-4. Executor launches the script
-5. `ModuleNotFoundError: No module named 'polars'` surfaces in the Watchdog log 5 minutes later
-6. Knowledge Extractor records a `model_failure` finding — which is wrong, it's a dependency failure
-
-**What's needed: a manifest + auto-install layer.**
-
-Each generated script should emit a machine-readable requirements comment at the top (or a sidecar `.deps` file):
-
-```python
-# GLADIUS_DEPS: lightgbm>=4.0, polars>=0.20, scikit-learn>=1.3
-```
-
-The Code Reviewer reads this block and checks each package against `importlib.util.find_spec`. If a package is missing, two paths:
-- **Auto-install**: `pip install {package}` in a subprocess, then re-run the import check. Only allowed for a whitelist of safe packages.
-- **Reject + reclassify**: return `next_node=hypothesis` with `reviewer_feedback="missing dependency: polars"`, so the Hypothesis Generator is told to use an available alternative.
-
-The whitelist approach is safer and avoids the system silently installing arbitrary packages during competition runs. The whitelist should live in `competition.json` or a `tools.json` config.
-
----
-
-### ❌ No diff / patch format — changes are opaque strings
-
-When the Hypothesis Generator produces a `changes` array like:
-
-```json
-{"type": "feature_add", "feature_name": "feat_age_x_income", "code_snippet": "df['feat_age_x_income'] = df['age'] * df['income']"}
-```
-
-There is no way to:
-- Verify the diff is minimal (didn't accidentally overwrite other features)
-- Reverse the change if the run fails (rollback to parent)
-- Display a human-readable diff in the Telegram notification
-- Detect that the same change has been applied before (deduplication)
-
-**What's needed: a unified diff representation.**
-
-Instead of a free-form `code_snippet`, the Hypothesis Generator should produce a unified diff against the parent script:
+No change since the first review. Versioning Agent stores the full modified script but not a diff. No rollback path, no deduplication, no human-readable Telegram summary of what changed.
 
 ```python
 import difflib
-
-def apply_diff(original: str, diff_str: str) -> str:
-    """Apply a unified diff string to the original source."""
-    ...
-
-def compute_diff(original: str, modified: str, from_version: str, to_version: str) -> str:
-    return "".join(difflib.unified_diff(
-        original.splitlines(keepends=True),
-        modified.splitlines(keepends=True),
-        fromfile=from_version,
-        tofile=to_version,
-    ))
-```
-
-With this, Versioning Agent stores the diff alongside the full script, Knowledge Extractor can describe what changed precisely, and the Notifier can include a short diff summary in the Telegram message.
-
----
-
-### ❌ `run_id` is reused between code generation and versioning
-
-**File:** [gladius/nodes/code/code_generator.py](../gladius/nodes/code/code_generator.py) + [gladius/nodes/code/versioning_agent.py](../gladius/nodes/code/versioning_agent.py)
-
-Code Generator writes to `state/scripts/{run_id}.py` using `state.get("run_id", "run_001")`. But `run_id` at generation time is whatever was left over from the previous experiment — it's not set to the new version until Versioning Agent runs. This means:
-
-1. Code Generator writes `state/scripts/v41.py` (the old `run_id`)
-2. Versioning Agent assigns `v42`
-3. The script path in state still points to `v41.py`
-4. A second generation attempt overwrites `v41.py` and corrupts the previous version
-
-Versioning Agent does copy the script to a new versioned path, but the Code Generator shouldn't use the old `run_id` at all. It should write to a staging path (`state/scripts/pending.py`) and let Versioning Agent be the one to assign the version tag and rename.
-
-```python
-STAGING_PATH = Path("state/scripts/pending.py")
-
-def code_generator_node(state):
-    ...
-    STAGING_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STAGING_PATH.write_text(modified)
-    return {"generated_script_path": str(STAGING_PATH), "next_node": "code_reviewer", "code_retry_count": 0}
+diff = "".join(difflib.unified_diff(
+    parent_source.splitlines(keepends=True),
+    modified_source.splitlines(keepends=True),
+    fromfile=parent_version, tofile=new_version,
+))
+(VERSIONS_DIR / f"{version_tag}.diff").write_text(diff)
 ```
 
 ---
 
-### ❌ Code Generator has no LLM correction loop
+### ❌ No tool / dependency manifest in generated scripts
 
-When Code Reviewer returns `reviewer_feedback`, the graph routes back to `hypothesis_node`. But the Hypothesis Generator re-generates a new spec from scratch — it does **not** receive the reviewer feedback as a correction prompt.
-
-The spec says:
-> "The rejection message (specific: 'line 47: hardcoded path', 'import X not installed') is fed back to the LLM as a correction prompt. Max 2 retries."
-
-The correction should go back to **Code Generator** (fix the same script), not Hypothesis Generator (which generates a new spec). The flow should be:
-
-```
-code_reviewer FAIL (retry < 2) → code_generator (with reviewer_feedback in state)
-code_reviewer FAIL (retry == 2) → hypothesis (simplify spec)
-code_reviewer FAIL (retry == 3) → strategy (give up on this directive)
-```
-
-Currently there is no "send feedback to code_generator" path at all. The Code Generator node ignores `reviewer_feedback` entirely.
+No change since the first review. Generated scripts can add arbitrary imports. There is no structured manifest, no approved-package whitelist, and no auto-install path. A `# GLADIUS_DEPS: lightgbm>=4.0` comment block parsed by Code Reviewer is the minimum viable layer.
 
 ---
 
-### ❌ No deduplication of generated features
+## Priority list (updated)
 
-There is no check that the feature proposed by Hypothesis Generator doesn't already exist in the parent script, in a prior failed experiment, or in the current script after patching.
-
-Common LLM failure mode: the model proposes `df['ratio_a_b'] = df['a'] / df['b']` repeatedly across different directives because it has no memory of having generated it before — especially once the `session_summary` gap is left unfilled.
-
-**Fix**: before `_apply_feature_add`, check whether `feature_name` already appears in the parent script via `ast.walk` on the assignment targets. If it does, return a `no-op` or flag it as a duplicate in `reviewer_feedback`.
-
----
-
-## Revised Priority List
-
-| Priority | Fix | Effort |
-|---|---|---|
-| 1 | SqliteSaver checkpointer | 5 min |
-| 2 | `best_oof` in state + Submission Decider OOF gate | 30 min |
-| 3 | Code Generator: staging path (not `run_id`) | 15 min |
-| 4 | Code Generator: reviewer feedback correction loop | 1 h |
-| 5 | Code Reviewer: AST-based import check (no temp file) | 1 h |
-| 6 | Code Reviewer: sandbox run via temp file + `GLADIUS_SAMPLE_FRACTION` | 2 h |
-| 7 | Code Generator: replace regex patching with LibCST | 2–3 h |
-| 8 | `utils/code_reader.py`: AST function/block extractor | 1 h |
-| 9 | ContextBuilder: load top-10 experiment archive + parent script body | 2 h |
-| 10 | ContextBuilder: experiment type distribution + exploration_budget | 1 h |
-| 11 | Tool whitelist + `GLADIUS_DEPS` manifest in generated scripts | 2 h |
-| 12 | Diff-based patching + diff stored in Versioning Agent | 2 h |
-| 13 | Vector index (ChromaDB) for code chunk retrieval | 3–4 h |
-| 14 | Feature deduplication check before `_apply_feature_add` | 1 h |
-| 15 | `session_summary` population in Knowledge Extractor | 1 h |
-| 16 | Ensemble Agent: Nelder-Mead weight optimisation on OOF | 2 h |
-| 17 | Router pattern fix (node vs. edge selector) | 30 min |
+| # | Item | Effort | Unblocks |
+|---|---|---|---|
+| 1 | `code_retry_count` reset in `strategy_node` | 5 min | Correct retry behaviour for all future experiments |
+| 2 | `best_oof` updated in Validation Agent (not only Submission Decider) | 20 min | Accurate OOF gating |
+| 3 | `_notify_telegram` wired to `notifier._send_telegram` | 10 min | Human visibility on node failures |
+| 4 | Sandbox run in Code Reviewer (1% sample, 60s, temp file) | 2 h | Catches all runtime errors before full training |
+| 5 | `_apply_llm_correction`: targeted context via `code_reader.read_lines`, return a patch not a full script | 1 h | Reliable LLM corrections, no JSON escaping issues |
+| 6 | Fix `_load_parent_script_source` to use `parent_version` from spec directly | 30 min | Correct parent script in Hypothesis context |
+| 7 | `_days_elapsed` using real timestamps from experiment archive | 30 min | Accurate `exploration_budget` |
+| 8 | `session_summary`: LLM-synthesised rolling summary, not pipe-join | 1 h | Useful strategic memory for LLM |
+| 9 | Watchdog: sidecar `.exitcode` file instead of `psutil.wait()` | 1 h | Correct success/failure routing after checkpoint resume |
+| 10 | Replace regex patching with LibCST in Code Generator | 3 h | Structurally correct script modification |
+| 11 | Validation Agent: metric consistency check | 1 h | Catches score logging bugs |
+| 12 | Validation Agent: per-fold leakage check (requires training script contract) | 2 h | Catches overfitting before submission |
+| 13 | LB Tracker: use Kaggle Python API instead of column-index CSV parsing | 1 h | Stable LB score retrieval |
+| 14 | Ensemble Agent: Nelder-Mead weight optimisation | 2 h | Actually useful blend proposals |
+| 15 | Diff in Versioning Agent (`difflib.unified_diff`) | 1 h | Rollback, deduplication, Telegram summaries |
+| 16 | Feature deduplication check in Code Generator before `_apply_feature_add` | 1 h | Prevents LLM re-proposing existing features |
+| 17 | Tool/dependency manifest + whitelist (`# GLADIUS_DEPS`) | 2 h | Controlled dependency management |
+| 18 | Vector index (ChromaDB, AST-chunked) | 4 h | Semantic code search, targeted LLM context |
+| 19 | Conductor wired + Supervisor implemented | ~1 week | Full unattended operation |

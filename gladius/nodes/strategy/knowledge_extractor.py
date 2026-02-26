@@ -116,13 +116,40 @@ def _load_knowledge() -> list:
 
 
 def _maybe_refresh_summary(findings: list, current_summary: "str | None") -> "str | None":
-    """Returns a new summary string every SESSION_SUMMARY_INTERVAL findings, else None."""
+    """Returns an LLM-synthesised rolling summary every SESSION_SUMMARY_INTERVAL findings."""
     if not findings or len(findings) % SESSION_SUMMARY_INTERVAL != 0:
         return None
+
     recent = findings[-SESSION_SUMMARY_INTERVAL:]
+    finding_lines = "\n".join(
+        f"- [{f['experiment_id']}] {f['finding_type']}: {f['conclusion']}"
+        for f in recent
+    )
+
+    try:
+        from gladius.utils.llm import call_llm
+
+        prompt = (
+            f"You are summarising a Kaggle competition experiment log.\n\n"
+            f"Previous summary:\n{current_summary or '(none — first batch)'}\n\n"
+            f"New findings (last {SESSION_SUMMARY_INTERVAL}):\n{finding_lines}\n\n"
+            f"Write a concise rolling summary (max 300 words) covering:\n"
+            f"1. What approaches have been tried and their outcomes\n"
+            f"2. Key learnings (what works, what doesn't)\n"
+            f"3. Recommended next directions\n\n"
+            f"Return JSON with key \"summary\" containing the summary string."
+        )
+        result = call_llm(prompt, schema={"summary": "..."})
+        return result.get("summary", _fallback_summary(recent))
+    except Exception:
+        return _fallback_summary(recent)
+
+
+def _fallback_summary(findings: list) -> str:
+    """Pipe-joined fallback when LLM is unavailable."""
     parts = [
         f"[{f['experiment_id']}] {f['finding_type']}: {f['conclusion']}"
-        for f in recent
+        for f in findings
     ]
     return " | ".join(parts)
 

@@ -26,7 +26,7 @@ def watchdog_node(state: GraphState) -> GraphState:
 
     while True:
         if not _is_running(pid):
-            exit_code = _get_exit_code(pid)
+            exit_code = _get_exit_code(pid, run_id)
             if exit_code == 0:
                 return {"experiment_status": "done", "next_node": "validation_agent"}
             else:
@@ -68,7 +68,15 @@ def _is_running(pid: int) -> bool:
         return False
 
 
-def _get_exit_code(pid: int) -> int:
+def _get_exit_code(pid: int, run_id: str) -> int:
+    """Read exit code from the sidecar file written by the executor."""
+    exitcode_path = LOGS_DIR / f"{run_id}.exitcode"
+    try:
+        if exitcode_path.exists():
+            return int(exitcode_path.read_text().strip())
+    except (ValueError, OSError):
+        pass
+    # Fallback: try psutil (works if still a child process)
     try:
         proc = psutil.Process(pid)
         return proc.wait(timeout=5)

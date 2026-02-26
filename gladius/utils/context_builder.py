@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from gladius.state import GraphState
@@ -6,6 +7,7 @@ from gladius.state import GraphState
 KNOWLEDGE_PATH = Path("state/knowledge.json")
 EXPERIMENTS_DIR = Path("state/experiments")
 SCRIPTS_DIR = Path("state/scripts")
+VERSIONS_DIR = Path("state/versions")
 
 
 class ContextBuilder:
@@ -84,12 +86,24 @@ def _type_distribution(experiments: list) -> dict:
     return dist
 
 
-_DAYS_PER_EXPERIMENT_ESTIMATE = 0.1  # rough estimate when timestamps are unavailable
-
-
 def _days_elapsed(experiments: list) -> float:
-    # TODO: use actual experiment timestamps for accurate elapsed-days calculation
-    return len(experiments) * _DAYS_PER_EXPERIMENT_ESTIMATE
+    """Compute actual elapsed days from earliest to latest experiment timestamp."""
+    if not experiments:
+        return 0.0
+    timestamps = []
+    for e in experiments:
+        # Try finding a timestamp in the experiment record or its finding
+        ts_str = e.get("timestamp") or (e.get("finding", {}) or {}).get("timestamp")
+        if ts_str:
+            try:
+                timestamps.append(datetime.fromisoformat(ts_str))
+            except (ValueError, TypeError):
+                pass
+    if len(timestamps) < 2:
+        return 0.0
+    earliest = min(timestamps)
+    latest = max(timestamps)
+    return max(0.0, (latest - earliest).total_seconds() / 86400.0)
 
 
 def _exploration_budget(competition: dict, total_days: float) -> float:
@@ -100,20 +114,31 @@ def _exploration_budget(competition: dict, total_days: float) -> float:
 
 
 def _load_parent_script_source(directive: dict) -> str:
-    """Load the source of the best script for the target model type."""
+    """Load parent script source using version metadata for accurate lookup."""
+    parent_version = directive.get("parent_version", "")
+
+    # If directive specifies a parent_version, load that specific versioned script
+    if parent_version:
+        versioned_script = SCRIPTS_DIR / f"{parent_version}.py"
+        if versioned_script.exists():
+            try:
+                return versioned_script.read_text()
+            except Exception:
+                pass
+
+    # Fall back: find best experiment for the target model via version metadata
     target_model = directive.get("target_model", "")
-    if not target_model:
-        return ""
-    # Look for a versioned script for this model type
-    for f in sorted(SCRIPTS_DIR.glob("v*.py"), reverse=True):
-        # Heuristic: check if model name appears in the script
-        try:
-            content = f.read_text()
-            if target_model in content.lower():
-                return content
-        except Exception:
-            pass
-    # Fall back to the most recent script
+    if target_model and VERSIONS_DIR.exists():
+        best_version = _find_best_version_for_model(target_model)
+        if best_version:
+            versioned_script = SCRIPTS_DIR / f"{best_version}.py"
+            if versioned_script.exists():
+                try:
+                    return versioned_script.read_text()
+                except Exception:
+                    pass
+
+    # Last resort: most recent versioned script
     scripts = sorted(SCRIPTS_DIR.glob("v*.py"), reverse=True)
     if scripts:
         try:
@@ -121,3 +146,23 @@ def _load_parent_script_source(directive: dict) -> str:
         except Exception:
             pass
     return ""
+
+
+def _find_best_version_for_model(target_model: str) -> "str | None":
+    """Find the version tag of the best OOF experiment for a given model type."""
+    if not EXPERIMENTS_DIR.exists():
+        return None
+    best_score = None
+    best_version = None
+    for f in EXPERIMENTS_DIR.glob("*.json"):
+        try:
+            record = json.loads(f.read_text())
+            model = (record.get("directive") or {}).get("target_model", "")
+            oof = record.get("oof_score")
+            if model == target_model and oof is not None:
+                if best_score is None or oof > best_score:
+                    best_score = oof
+                    best_version = record.get("run_id")
+        except Exception:
+            pass
+    return best_version
