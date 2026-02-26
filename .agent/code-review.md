@@ -1,5 +1,502 @@
 # Code Review: Implementation vs. Design (`agentic-framework.md`)
 
+> Reviewed: 2026-02-26 (revision 3 — strict re-audit post implementation session)
+> Based on the live codebase in `gladius/`. All files read from disk. 55 tests pass.
+
+---
+
+## What changed since revision 2
+
+| Item | Was | Now |
+|---|---|---|
+| `best_oof` in Validation Agent | Updated only on submission approval | ✅ Updated on every validated run |
+| Metric consistency check | Missing | ✅ Independent OOF recomputation vs script-reported score |
+| `_days_elapsed` | Constant estimate (0.1 days/experiment) | ✅ Parses real ISO timestamps from experiment archive |
+| `_load_parent_script_source` | Content heuristic, returns most-recent matching script | ✅ Version-exact lookup → best-OOF-per-model fallback |
+| `.exitcode` sidecar file | Watchdog used `psutil.wait()` (fails after resume) | ✅ Executor writes sidecar; Watchdog reads it |
+| `_apply_llm_correction` context | Sent entire script, expected full re-emit | ✅ Targeted ±20-line context; returns line-range replacements |
+| Feature deduplication | Not checked | ✅ AST-based function/variable name dedup before insert |
+| Diff in Versioning Agent | Not stored | ✅ `difflib.unified_diff` → `{version}.diff` alongside metadata |
+| Sandbox run | Missing | ✅ `GLADIUS_SANDBOX=1` subprocess, 60s timeout |
+| `session_summary` | Pipe-joined data dump | ✅ LLM-synthesised rolling summary with fallback |
+| Ensemble weights | Uniform / none | ✅ Scipy Nelder-Mead on OOF metric; labels from `state/labels.npy` |
+| `scipy` dependency | Not in pyproject.toml | ✅ Added `scipy>=1.10.0` |
+
+---
+
+## Current status table
+
+| Area | Status |
+|---|---|
+| Graph structure & routing | ⚠️ Two wiring bugs (see below) |
+| State definition | ✅ Complete |
+| SqliteSaver checkpointing | ✅ Complete |
+| Strategy Agent | ✅ Complete |
+| Hypothesis Generator | ⚠️ SPEC_SCHEMA example `"v41"` can be copied literally by LLM |
+| Code Generator — applies changes | ⚠️ Regex patching still fragile |
+| Code Generator — LLM correction | ✅ Targeted ±20-line ctx + line-range replacements |
+| Code Generator — feature dedup | ✅ AST-based |
+| Code Reviewer — static analysis | ✅ Syntax + imports + hardcoded paths |
+| Code Reviewer — sandbox run | ✅ Present; no resource limits |
+| Code Reviewer — import dedup | ⚠️ `_check_imports` duplicates `utils/code_reader.check_imports` |
+| Versioning Agent | ✅ Diff stored |
+| Executor — sidecar exitcode | ✅ Daemon thread writes `.exitcode` |
+| Executor — log mode | ⚠️ Opens log with `"w"` — overwrites on re-run |
+| Watchdog — exitcode | ✅ Reads sidecar; psutil fallback |
+| Watchdog — race condition | ⚠️ Small window between process exit and file write |
+| Resource Manager | ❌ Orphan node — never called from graph |
+| Validation Agent — OOF checks | ✅ Shape, NaN, range, metric consistency |
+| Validation Agent — OOF recomputation | ✅ AUC/logloss/RMSE/MAE |
+| Validation Agent — `best_oof` update | ✅ Updated on validated runs |
+| Validation Agent — `_auc_roc` memory | ❌ O(n²) outer product — OOM on real data |
+| Validation Agent — leakage check | ❌ Not implemented |
+| Validation Agent — edge to graph | ❌ `add_edge` unconditional — failure path broken |
+| Submission Decider — OOF gate | ❌ **REGRESSION**: gate always holds after validation_agent sets best_oof |
+| Submission Decider — 2h cooldown | ✅ |
+| Submission Decider — gap-widening | ✅ |
+| Submission Decider — budget | ✅ |
+| Submission Agent | ✅ |
+| LB Tracker — score retrieval | ⚠️ Hardcoded column index `parts[4]` |
+| LB Tracker — polling loop | ⚠️ Blocks for up to 3h in a tight loop |
+| Knowledge Extractor | ✅ |
+| Knowledge Extractor — finding classifier | ⚠️ Success classified as `model_failure` |
+| Ensemble Agent — correlation filter | ✅ |
+| Ensemble Agent — Nelder-Mead weights | ✅ |
+| Ensemble Agent — edge to graph | ❌ `add_edge` unconditional — routes to hypothesis even when no models |
+| Ensemble Agent — blend in codegen | ❌ Blend directive not handled by hypothesis/code_generator |
+| Notifier | ✅ `_send_telegram` fully implemented |
+| Error Handler — `_notify_telegram` | ❌ Still a no-op (intentionally deferred) |
+| context_builder — `parent_version` | ⚠️ First branch is dead code — directive never carries parent_version |
+| code_reader | ✅ Complete |
+| Conductor | ❌ Stub — not wired into graph |
+| State Manager | ❌ Not implemented |
+| Supervisor | ❌ Not implemented |
+| Vector database / code index | ❌ Not implemented |
+| Tool/dependency manifest | ❌ Not implemented |
+| Parallel execution (Send API) | ❌ Not implemented |
+
+---
+
+## Critical regressions introduced in last session
+
+### ❌ REGRESSION: Submission gate permanently broken
+
+**File:** [gladius/nodes/validation/validation_agent.py](../gladius/nodes/validation/validation_agent.py) + [gladius/nodes/validation/submission_decider.py](../gladius/nodes/validation/submission_decider.py)
+
+**Root cause:** Two agents now both write to `best_oof`. Validation Agent sets `best_oof = oof_score` when the run is a new best. Submission Decider then reads `best_oof` and checks:
+
+```python
+baseline = best_oof if best_oof is not None else 0.0
+if oof_score <= baseline + MIN_OOF_IMPROVEMENT:
+    return {"experiment_status": "held", ...}
+```
+
+Because Validation Agent already set `best_oof = oof_score`, the check becomes:
+
+```
+oof_score <= oof_score + 1e-4  →  True  →  ALWAYS HELD
+```
+
+**No run will ever be submitted.** Every experiment that achieves a new best OOF will be held by the gate it just tripped.
+
+**Fix:** Use two separate fields.
+- `best_oof`: best OOF across all validated runs — owned by Validation Agent, for tracking and strategy context only.
+- `best_submitted_oof`: OOF of the last approved submission — owned by Submission Decider, used as the gate baseline.
+
+In state.py add `best_submitted_oof: Optional[float]`. Change Submission Decider gate to:
+
+```python
+baseline = state.get("best_submitted_oof") or 0.0
+if oof_score <= baseline + MIN_OOF_IMPROVEMENT:
+    return {"experiment_status": "held", ...}
+# on approve:
+return {"experiment_status": "submitted", ..., "best_submitted_oof": oof_score}
+```
+
+Remove `"best_oof": oof_score` from Submission Decider's return. Validation Agent keeps its `best_oof` update unchanged.
+
+---
+
+### ❌ REGRESSION: `graph.add_edge("validation_agent", "submission_decider")` is unconditional
+
+**File:** [gladius/graph.py](../gladius/graph.py) — line 104
+
+Validation Agent returns `"next_node": "knowledge_extractor"` on failure and `"next_node": "submission_decider"` on success. But the graph has:
+
+```python
+graph.add_edge("validation_agent", "submission_decider")  # unconditional
+```
+
+LangGraph's plain `add_edge` ignores the state completely. **All validation failures bypass knowledge_extractor and go directly to submission_decider**, which then holds (because `oof_score is None`) and routes to the router, which routes to strategy. Knowledge of the failure is never extracted.
+
+**Fix:** Replace with a conditional edge:
+
+```python
+graph.add_conditional_edges(
+    "validation_agent",
+    lambda s: s.get("next_node", "knowledge_extractor"),
+    {
+        "submission_decider": "submission_decider",
+        "knowledge_extractor": "knowledge_extractor",
+    },
+)
+```
+
+---
+
+### ❌ REGRESSION: `graph.add_edge("ensemble_agent", "hypothesis")` is unconditional
+
+**File:** [gladius/graph.py](../gladius/graph.py) — line 139
+
+When Ensemble Agent finds fewer than `MIN_BASE_MODELS` uncorrelated OOF files, it returns `{"next_node": "strategy"}`. The unconditional edge ignores this and always routes to `hypothesis`. Hypothesis Generator then has no directive and returns an error → error_handler → strategy (correct destination, but via error path).
+
+**Fix:** Replace with a conditional edge:
+
+```python
+graph.add_conditional_edges(
+    "ensemble_agent",
+    lambda s: s.get("next_node", "strategy"),
+    {
+        "hypothesis": "hypothesis",
+        "strategy": "strategy",
+    },
+)
+```
+
+---
+
+## High priority bugs
+
+### ❌ `_auc_roc` creates O(n²) matrix — OOM on real datasets
+
+**File:** [gladius/nodes/validation/validation_agent.py](../gladius/nodes/validation/validation_agent.py)
+
+```python
+return float(np.mean(pos[:, None] > neg[None, :]) + 0.5 * np.mean(pos[:, None] == neg[None, :]))
+```
+
+This outer product allocates a boolean matrix of shape `(len(pos), len(neg))`. For a competition with 50K positive and 50K negative examples, that is a 50K × 50K = 2.5 billion element matrix — ~2.5 GB per call. For class-imbalanced datasets (90% negative), 10K pos × 90K neg = 900M elements = ~900 MB. This will OOM on any production machine during the first real validation.
+
+**Fix:** Use the rank-based formula which is O(n log n):
+
+```python
+def _auc_roc(labels: np.ndarray, preds: np.ndarray) -> float:
+    n_pos = np.sum(labels == 1)
+    n_neg = np.sum(labels == 0)
+    if n_pos == 0 or n_neg == 0:
+        return 0.5
+    order = np.argsort(preds)
+    ranks = np.empty_like(order)
+    ranks[order] = np.arange(1, len(preds) + 1)
+    # Handle ties: average rank for tied predictions
+    # For simplicity, np.argsort gives stable ranks; this is a good approximation
+    rank_sum = np.sum(ranks[labels == 1])
+    return (rank_sum - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
+```
+
+The same `_auc_roc` function is duplicated in `ensemble_agent.py` (`_evaluate_metric`) and should be fixed there too, or extracted to a shared utility.
+
+---
+
+### ❌ Resource Manager is an orphan node — never called
+
+**File:** [gladius/graph.py](../gladius/graph.py) + [gladius/nodes/execution/resource_manager.py](../gladius/nodes/execution/resource_manager.py)
+
+`resource_manager_node` is registered (`graph.add_node`) but has no incoming edges. No node ever routes to it. Disk cleanup never runs.
+
+**Fix:** Wire it as a pre-executor gate. After versioning and before execution, check disk space:
+
+```python
+graph.add_edge("versioning_agent", "resource_manager")
+# resource_manager sets next_node = "executor"
+graph.add_edge("resource_manager", "executor")
+```
+
+Remove `graph.add_edge("versioning_agent", "executor")`.
+
+---
+
+### ❌ Ensemble blend directive has no handler in hypothesis/code_generator
+
+**File:** [gladius/nodes/strategy/hypothesis_generator.py](../gladius/nodes/strategy/hypothesis_generator.py) + [gladius/nodes/code/code_generator.py](../gladius/nodes/code/code_generator.py)
+
+When `ensemble_agent` produces `directive_type = "ensemble"`, it passes `base_model_paths` and `blend_weights` in the directive. But Hypothesis Generator has no special branch for this — it sends the directive verbatim to the LLM and asks it to produce changes as if it were a normal experiment. Code Generator then applies regex patches to a template. The blend weights are never written into any script.
+
+An ensemble run requires a completely different code path: generate a new script that loads the OOF files at `base_model_paths`, applies `blend_weights`, and writes a submission CSV. Without this, `directive_type = "ensemble"` produces a broken script every time.
+
+**Fix:** Add a branch in `hypothesis_node` (or `code_generator_node`) that detects `directive_type == "ensemble"` and generates a blending script directly (either from a template with weights injected, or via a dedicated LLM prompt that explains it's a blend task).
+
+---
+
+## Medium priority issues
+
+### ⚠️ `_apply_param_change` global regex corrupts comments and references
+
+**File:** [gladius/nodes/code/code_generator.py](../gladius/nodes/code/code_generator.py)
+
+```python
+pattern = rf"({re.escape(param)}\s*=\s*)[^\n,\)]*"
+return re.sub(pattern, replacement, script)
+```
+
+This is a global substitution — it rewrites every occurrence of `param = ...` in the file, including:
+- Comments: `# old learning_rate = 0.03` → silently corrupted
+- Dict entries: `params = {"learning_rate": 0.03}` — the pattern won't match exactly but adjacent assignments will
+- Print statements: `print(f"lr={learning_rate}")` — won't match `=\s*` but any `lr = ...` reference will
+
+For a real LightGBM script with 200+ lines and a hyperparameter mentioned multiple times, this will produce corrupted code. The minimum fix is to restrict to assignment statements only (start of line or after indent):
+
+```python
+pattern = rf"^(\s*{re.escape(param)}\s*=\s*)[^\n,\)]*"
+re.sub(pattern, replacement, script, flags=re.MULTILINE)
+```
+
+LibCST is the correct long-term fix (see open item below).
+
+---
+
+### ⚠️ `_apply_feature_remove` uses raw substring match
+
+**File:** [gladius/nodes/code/code_generator.py](../gladius/nodes/code/code_generator.py)
+
+```python
+filtered = [line for line in lines if feature_name not in line]
+```
+
+`feature_name = "age"` removes lines containing `"average"`, `"message"`, `"stage"`, `"page_views"`. Silent, irreversible data corruption on any script with words containing the feature name as a substring. Fix: use `\b{feature_name}\b` word-boundary regex, or AST-based removal.
+
+---
+
+### ⚠️ `_apply_feature_add` falls back to appending after `__main__`
+
+**File:** [gladius/nodes/code/code_generator.py](../gladius/nodes/code/code_generator.py)
+
+When the `# --- FEATURES END ---` marker is absent (e.g., in a real competition script not generated from the template), new feature code is appended after the last line:
+
+```python
+return script + f"\n{snippet}"
+```
+
+If the script ends with `if __name__ == "__main__": train()`, any new feature function defined after this block is syntactically valid Python but will never be called — the feature is silently discarded. For top-level assignments (e.g., `new_col = df["a"] / df["b"]`), they will execute at import time but after `train()` has already run.
+
+The marker is part of the default template, but the spec says the system should work on user-provided base scripts too.
+
+---
+
+### ⚠️ LLM correction fallback still sends full script as JSON value
+
+**File:** [gladius/nodes/code/code_generator.py](../gladius/nodes/code/code_generator.py)
+
+When feedback contains no line numbers (e.g., `"import not found: nonexistent_pkg"`), the fallback path sends the entire script inside a JSON string value and expects `{"fixed_script": "<entire script>"}` back. Any script with double quotes, backslashes, or triple-quoted strings will break `json.loads` unless the LLM perfectly escapes them. The import-error case is the most common reviewer feedback and it never contains line numbers.
+
+**Fix:** In the fallback path, also get a targeted context by finding the import line via AST, then send only the import block (first ~20 lines of the script) rather than the full script.
+
+---
+
+### ⚠️ `_check_imports` is duplicated between code_reviewer and code_reader
+
+**File:** [gladius/nodes/code/code_reviewer.py](../gladius/nodes/code/code_reviewer.py) + [gladius/utils/code_reader.py](../gladius/utils/code_reader.py)
+
+`code_reviewer._check_imports(content)` and `code_reader.check_imports(code)` are byte-for-byte identical logic. They will diverge over time. Code Reviewer should import and call `from gladius.utils.code_reader import check_imports`.
+
+---
+
+### ⚠️ Executor opens log file with `"w"` — overwrites on checkpoint resume
+
+**File:** [gladius/nodes/execution/executor.py](../gladius/nodes/execution/executor.py)
+
+```python
+with open(log_path, "w") as log_file:
+```
+
+If LangGraph resumes from a checkpoint at the `executor` node (e.g., after a host reboot), it will re-execute executor_node for the same `run_id`. The log from the previous run is overwritten before the new process produces any output. Use `"a"` (append) mode with a separator line instead.
+
+---
+
+### ⚠️ Race condition: `.exitcode` file may not exist when watchdog polls
+
+**File:** [gladius/nodes/execution/watchdog.py](../gladius/nodes/execution/watchdog.py) + [gladius/nodes/execution/executor.py](../gladius/nodes/execution/executor.py)
+
+The sequence is:
+1. Process exits.
+2. `_is_running(pid)` → False (process not in ptable).
+3. Watchdog calls `_get_exit_code(pid, run_id)`.
+4. Daemon thread calls `exitcode_path.write_text(str(rc))`.
+
+Steps 2 and 4 are concurrent. There is a window between the process exiting and the daemon thread writing the file. In that window, `_get_exit_code` reads an absent file, falls through to `psutil.wait()` (which raises `NoSuchProcess`), and returns -1. A successful run (exit 0) is routed to `knowledge_extractor` as a failure.
+
+**Fix:** In `_get_exit_code`, poll the sidecar file up to ~2s before falling back:
+
+```python
+import itertools, time as _time
+for _ in range(20):  # up to 2s
+    if exitcode_path.exists():
+        break
+    _time.sleep(0.1)
+```
+
+---
+
+### ⚠️ Hypothesis Generator SPEC_SCHEMA contains a literal example version `"v41"`
+
+**File:** [gladius/nodes/strategy/hypothesis_generator.py](../gladius/nodes/strategy/hypothesis_generator.py)
+
+```python
+SPEC_SCHEMA = {
+    "parent_version": "v41",
+    ...
+}
+```
+
+The LLM is instructed to respond matching this schema. It may treat `"v41"` as a valid value rather than a placeholder. This would cause Code Generator to try to load `state/scripts/v41.py` on every new run, fall back to the default template, and produce an experiment that ignores all prior work.
+
+**Fix:** Use `"<version_tag>"` as the placeholder, and include currently available versions in the context:
+
+```python
+SPEC_SCHEMA = {
+    "parent_version": "<version_tag e.g. v3>",
+    ...
+}
+```
+
+---
+
+### ⚠️ Successful experiments classified as `model_failure`
+
+**File:** [gladius/nodes/strategy/knowledge_extractor.py](../gladius/nodes/strategy/knowledge_extractor.py)
+
+`_classify_finding` returns `"model_failure"` as the default fallback — this is what a successful run with a small OOF-LB gap lands on:
+
+```python
+def _classify_finding(status, error, oof, lb, state):
+    if status in ("killed", "failed"):
+        ...
+        return "model_failure"
+    if oof is not None and lb is not None and (oof - lb) > 0.02:
+        return "overfitting_signal"
+    if status == "failed":
+        return "feature_failure"
+    return "model_failure"  ← hit by every successful run
+```
+
+Strategy Agent reads finding_type to understand what worked vs. what failed. A successful run with OOF=0.89 is recorded as `model_failure`, poisoning the knowledge base. Add a positive classification:
+
+```python
+if status in ("validated", "submitted", "complete", "done"):
+    return "model_improvement" if (best_oof is None or oof > best_oof) else "model_result"
+```
+
+---
+
+### ⚠️ `_load_parent_script_source` first branch is dead code
+
+**File:** [gladius/utils/context_builder.py](../gladius/utils/context_builder.py)
+
+```python
+parent_version = directive.get("parent_version", "")
+if parent_version:
+    versioned_script = SCRIPTS_DIR / f"{parent_version}.py"
+    ...
+```
+
+Strategy Agent sets the `directive` with fields: `directive_type`, `target_model`, `rationale`, `exploration_flag`, `priority`. It never sets `parent_version` — that lives in the `ExperimentSpec` produced by Hypothesis Generator. `build_hypothesis_context` is called with the directive (before the spec exists), so `directive.get("parent_version")` is always `""`. The first branch is dead code. Either remove it or add `parent_version` to the directive schema.
+
+---
+
+### ⚠️ LB Tracker parses Kaggle CSV by hardcoded column index
+
+**File:** [gladius/nodes/strategy/lb_tracker.py](../gladius/nodes/strategy/lb_tracker.py)
+
+```python
+return float(parts[4])  # assumes publicScore is column index 4
+```
+
+The Kaggle CLI `competitions submissions -v` CSV header is:
+`fileName,date,description,status,publicScore,privateScore`
+
+`publicScore` is currently at index 4, but the Kaggle CLI has changed its output format before. Use the Kaggle Python API (`kaggle.api.competitions_submissions_list`) for structured access, or at minimum parse the header row to find the `publicScore` column index.
+
+---
+
+## Low priority / known open items
+
+### `_apply_feature_remove` whole-line deletion is also missing comment lines
+
+If a feature was added as a code block (function + docstring + multiple lines), `_apply_feature_remove` deletes only lines containing the feature name string, leaving orphan docstrings and blank lines. An AST-based approach that deletes entire FunctionDef nodes would be correct.
+
+### `tempfile` imported but unused in code_reviewer
+
+`import tempfile` at the top of `code_reviewer.py` — the sandbox runs the actual script, not a temp copy. Remove the import.
+
+### Versioning Agent version numbering is count-based, not max-based
+
+```python
+version_num = len(existing) + 1
+```
+
+If any `v*.json` file is deleted manually, the numbering collides with existing files. Use `max + 1` instead:
+
+```python
+version_num = max((int(f.stem[1:]) for f in existing if f.stem[1:].isdigit()), default=0) + 1
+```
+
+### GPU monitoring absent in Resource Manager
+
+`resource_manager_node` monitors only disk (no RAM, no GPU). The watchdog monitors only RAM. GPU VRAM OOM is a common cause of training script failure in Kaggle competitions and produces a confusing CUDA error rather than a clean exit code.
+
+### Leakage check still missing in Validation Agent
+
+Per-fold OOF score comparison requires a `{run_id}_fold_{k}_oof.npy` interface contract. This must also be enforced in the default script template. Not yet documented as a training script contract.
+
+### Tool/dependency manifest not implemented
+
+Generated scripts can introduce arbitrary imports. No approved-package whitelist, no `# GLADIUS_DEPS:` parsing, no auto-install. Related: `_check_imports` will flag any package not installed in the venv at review time, which is the right behavior only if the venv is the runtime environment.
+
+### Vector database / code index not implemented
+
+Without semantic code search, ContextBuilder sends entire scripts to the LLM. `_apply_llm_correction` in the no-line-number branch sends the full script for every import fix. ChromaDB (on-disk, no server) with AST-chunked functions is the minimum.
+
+### Conductor / State Manager / Supervisor not implemented
+
+Conductor is a pass-through stub. No agent restart-on-crash capability. Required for unattended multi-day runs.
+
+### `_notify_telegram` in Error Handler is a no-op
+
+After 3 consecutive failures on a node, `_notify_telegram(msg, node)` is called but does nothing. `notifier._send_telegram` is fully implemented and available. Intentionally deferred.
+
+---
+
+## Corrected priority list (revision 3)
+
+| # | Item | Effort | Severity |
+|---|---|---|---|
+| 1 | **Fix OOF submission gate**: add `best_submitted_oof` field, split semantics | 30 min | 🔴 Critical — nothing ever gets submitted |
+| 2 | **Fix `graph.add_edge("validation_agent", …)`**: replace with conditional edge | 10 min | 🔴 Critical — validation failures never extracted |
+| 3 | **Fix `graph.add_edge("ensemble_agent", …)`**: replace with conditional edge | 10 min | 🔴 Critical — ensemble routing broken |
+| 4 | **Fix `_auc_roc` O(n²) memory**: rank-based implementation | 20 min | 🔴 Critical — OOM on any real dataset |
+| 5 | **Wire Resource Manager** into graph (versioning → resource_manager → executor) | 20 min | 🟠 High — disk cleanup never runs |
+| 6 | **Fix `_apply_param_change`** regex to use `^(\s*param\s*=)` multiline | 20 min | 🟠 High — corrupts real scripts |
+| 7 | **Fix `_apply_feature_remove`** to use word-boundary regex | 15 min | 🟠 High — silent substring corruption |
+| 8 | **Handle `ensemble` directive in hypothesis/code_generator** | 2 h | 🟠 High — ensemble always produces broken scripts |
+| 9 | **Fix SPEC_SCHEMA `"v41"` placeholder** | 5 min | 🟠 High — LLM copies literal version |
+| 10 | **Fix `_classify_finding`** to not return `model_failure` for successful runs | 15 min | 🟡 Medium — poisons knowledge base |
+| 11 | **Fix `.exitcode` race**: poll with ~2s retry before fallback | 15 min | 🟡 Medium — OOM crash misrouted as failure |
+| 12 | **Fix executor log `"w"` → `"a"`** | 5 min | 🟡 Medium — loses log on resume |
+| 13 | **Fix LLM correction fallback** to also use targeted context for import errors | 1 h | 🟡 Medium — full-script JSON escaping issues |
+| 14 | **Deduplicate `_check_imports`**: use `code_reader.check_imports` in reviewer | 10 min | 🟡 Medium — divergent implementations |
+| 15 | **Fix `_load_parent_script_source` dead branch** / document directive schema | 15 min | 🟡 Medium — misleading code |
+| 16 | **Fix versioning count-based numbering** → max-based | 10 min | 🟡 Medium — collision on deletion |
+| 17 | **Remove unused `import tempfile`** from code_reviewer | 2 min | 🟢 Low — lint noise |
+| 18 | **LB Tracker**: parse CSV header instead of hardcoded `parts[4]` | 30 min | 🟡 Medium — breaks on CLI update |
+| 19 | **Add sandbox resource limits** (ulimit / `resource.setrlimit`) | 1 h | 🟡 Medium — OOM before timeout |
+| 20 | **Leakage check + per-fold OOF contract** | 2 h | 🟡 Medium — overfitting risk |
+| 21 | **LibCST for all code patching** | 3 h | 🟡 Medium — correct long-term fix for items 6/7/8 |
+| 22 | **GPU monitoring in Resource Manager / Watchdog** | 2 h | 🟢 Low |
+| 23 | **Tool/dependency manifest** | 2 h | 🟢 Low |
+| 24 | **Vector index (ChromaDB, AST-chunked)** | 4 h | 🟢 Low |
+| 25 | **Conductor / Supervisor** | ~1 week | 🟢 Low |
+
+
 > Reviewed: 2026-02-24 (revision 2 — post update)
 > Based on `agentic-framework.md` v2 and the current codebase (`gladius/`).
 
