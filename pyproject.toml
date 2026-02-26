@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gladius-agent"
+version = "0.1.0"
+description = "Fully autonomous multi-agent ML competition system"
+requires-python = ">=3.10"
+dependencies = [
+    "langgraph>=0.2.0",
+    "langgraph-checkpoint-sqlite>=1.0.0",
+    "openai>=1.0.0",
+    "numpy>=1.24.0",
+    "psutil>=5.9.0",
+    "requests>=2.31.0",
+    "tox>=4.45.0",
+    "scipy>=1.15.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+gladius = "gladius.graph:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gladius*"]
