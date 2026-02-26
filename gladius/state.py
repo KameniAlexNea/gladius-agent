@@ -21,7 +21,7 @@ class CompetitionState:
     # Loop control
     iteration: int = 0
     max_iterations: int = 20
-    phase: str = "planning"     # planning | implementing | validation | ensemble | done
+    phase: str = "planning"     # planning | implementing | validation | done
 
     # Best known performance
     best_oof_score: float = -1.0

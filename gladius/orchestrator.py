@@ -23,7 +23,6 @@ import logging
 import sys
 from pathlib import Path
 
-from gladius.agents.ensemble import run_ensemble_agent
 from gladius.agents.implementer import run_implementer
 from gladius.agents.planner import run_planner
 from gladius.agents.summarizer import run_summarizer
@@ -110,7 +109,6 @@ async def run_competition(
     metric_direction: str = "maximize",
     max_iterations: int = 20,
     resume_from_db: bool = True,
-    ensemble_every_n: int = 5,
     auto_submit: bool = True,
     platform: str = "kaggle",
     n_parallel: int = 1,
@@ -304,41 +302,6 @@ async def run_competition(
                 except Exception as exc:
                     logger.warning(f"Summarizer failed (non-fatal): {exc}")
 
-                # Let the planner decide whether to ensemble; fall back to
-                # every-N-iterations trigger when the planner didn't suggest it.
-                planner_wants_ensemble = bool(
-                    state.current_plan and state.current_plan.get("suggest_ensemble")
-                )
-                fallback_ensemble = (
-                    ensemble_every_n > 0
-                    and state.iteration % ensemble_every_n == 0
-                    and len(state.experiments) >= 3
-                )
-                if (planner_wants_ensemble or fallback_ensemble) and len(state.experiments) >= 3:
-                    state.phase = "ensemble"
-                else:
-                    state.phase = "planning"
-
-            # ── ENSEMBLE ─────────────────────────────────────────────────────
-            elif state.phase == "ensemble":
-                logger.info("Running ensemble agent")
-                ensemble_result = await run_ensemble_agent(state, project_dir)
-
-                ens_score = ensemble_result.get("oof_score", -1.0)
-                if _is_better(ens_score, state.best_oof_score, state.metric_direction):
-                    state.best_oof_score = ens_score
-                    state.best_submission_path = ensemble_result.get("submission_path", "")
-                    logger.info(f"Ensemble new best: {ens_score:.6f}")
-
-                    if state.submission_count < state.max_submissions_per_day and auto_submit:
-                        state.submission_count += 1
-                        _submit(
-                            platform=platform,
-                            competition_id=state.competition_id,
-                            submission_path=ensemble_result["submission_path"],
-                            message=f"ensemble iter-{state.iteration} oof={ens_score:.6f}",
-                        )
-
                 state.phase = "planning"
 
         except Exception as exc:
@@ -377,7 +340,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--direction",   default="maximize", choices=["maximize", "minimize"])
     p.add_argument("--iterations",  type=int, default=20)
     p.add_argument("--platform",    default="kaggle", choices=["kaggle", "zindi", "fake"])
-    p.add_argument("--ensemble-every", type=int, default=5)
     p.add_argument("--no-resume",   action="store_true", help="Start fresh")
     p.add_argument("--no-submit",   action="store_true", help="Dry-run, skip submissions")
     p.add_argument("--parallel",    type=int, default=1, metavar="N",
@@ -395,7 +357,6 @@ async def _amain() -> None:
         metric_direction=args.direction,
         max_iterations=args.iterations,
         resume_from_db=not args.no_resume,
-        ensemble_every_n=args.ensemble_every,
         auto_submit=not args.no_submit,
         platform=args.platform,
         n_parallel=args.parallel,
