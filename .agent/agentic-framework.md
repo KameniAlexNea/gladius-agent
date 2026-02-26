@@ -1,646 +1,969 @@
-# Multi-Agent ML Competition System — Design (v2, honest)
+# Gladius Agent — Claude Agent SDK Framework
+
+**Revision**: 1.0  
+**Status**: Design / Migration Plan  
+**Replaces**: LangGraph StateGraph architecture (see `code-review.md` for why it was discarded)
 
 ---
 
-## 1. Core Philosophy
+## 1. Why Replace LangGraph
 
-The system treats a competition run as a **continuous improvement loop** with no human in the critical path. Every decision that a human currently makes manually — "should I try this feature?", "is this run worth submitting?", "what did I try last week?" — is delegated to a specific agent.
+The LangGraph approach required:
+- A hand-written Python function for every agent node
+- A hand-written routing function for every conditional edge
+- A TypedDict schema that had to be kept in sync with every node
+- Custom JSON-schema validation inside `call_llm()` wrappers
 
-The human only sets initial config and reads Telegram messages.
+Every refactor touched all four layers. Critical bugs were introduced in each session because the routing edges were disconnected from the nodes (see review v3: `validation_agent→submission_decider` and `ensemble_agent→hypothesis` both used `add_edge` instead of `add_conditional_edges`). The `best_oof` gate was permanently broken, the `_auc_roc` was O(n²), and the `resource_manager` node was never wired.
 
-**What this actually requires to work**: the LLM agents (Code Generator, Strategy Agent, Knowledge Extractor) must be given carefully constructed, specific context every single time they're called — not vague prompts. If that context assembly is sloppy, the whole loop degrades into noise. Every section below that touches an LLM agent describes *exactly* what context it receives and what structured output it must produce.
+The core issue: a Kaggle competition pipeline is inherently complex, multi-step, and tool-heavy. Every LangGraph node was basically just wrapping an LLM call that should also do file I/O, run subprocess commands, and make decisions. These are exactly the things Claude Code is built to handle autonomously.
+
+**Claude Agent SDK gives us:**
+- Each "agent" is a full autonomous agent with built-in tools (Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch)
+- No hand-written tool loop — Claude handles multi-step execution internally
+- Structured JSON output via `output_format={"type":"json_schema","schema":{...}}`
+- Subagents via `AgentDefinition` in `ClaudeAgentOptions.agents`
+- Parallel execution via `asyncio.gather()`
+- Session continuity via `resume=session_id`
+- Custom tools via `@tool` decorator + `create_sdk_mcp_server()`
+- Hooks for pre/post tool auditing, blocking, and permission management
 
 ---
 
 ## 2. Architecture Overview
 
-The system is built on **LangGraph**. The Conductor is a `StateGraph`. Each agent is a node. Routing between agents is done via conditional edges on the shared graph state — not a hand-rolled event bus.
-
-```mermaid
-flowchart TD
-    router([router]) --> strategy[strategy]
-    strategy --> hypothesis[hypothesis]
-    hypothesis --> code_gen[code_generator]
-    code_gen --> code_reviewer[code_reviewer]
-    code_reviewer -- approved --> versioning[versioning_agent]
-    code_reviewer -- rejected --> hypothesis
-    versioning --> executor[executor]
-    executor --> watchdog[watchdog_node]
-    watchdog -- done --> validation[validation_agent]
-    watchdog -- killed/failed --> knowledge[knowledge_extractor]
-    knowledge --> router
-    validation --> sub_decider[submission_decider]
-    sub_decider --> sub_agent[submission_agent]
-    sub_agent --> lb_tracker[lb_tracker]
-    lb_tracker -- score received --> router
-    lb_tracker -- 3h timeout --> notifier[notifier]
-    notifier --> router
-    sub_decider -- held --> router
+```
+gladius/
+├── orchestrator.py          # Main coroutine: drives the competition loop
+├── state.py                 # SQLite-backed state (replaces TypedDict + SqliteSaver)
+├── agents/
+│   ├── strategy.py          # StrategyAgent, HypothesisGenerator, KnowledgeExtractor
+│   ├── code.py              # CodeAgent (generate + review + version in one agent)
+│   ├── execution.py         # ExecutionAgent (run experiments, manage resources)
+│   ├── validation.py        # ValidationAgent, SubmissionDecider
+│   └── ensemble.py          # EnsembleAgent
+├── tools/
+│   ├── kaggle_tools.py      # @tool wrappers for Kaggle API (submit, leaderboard)
+│   ├── metric_tools.py      # @tool wrappers for OOF scoring, AUC-ROC, etc.
+│   └── memory_tools.py      # @tool wrappers for ChromaDB similarity search
+└── config.py                # AgentConfig dataclass: model, budget, paths, etc.
 ```
 
-**Why LangGraph specifically** (not CrewAI, not AutoGen, not A2A):
-
-- **LangGraph**: stateful graph execution, built-in checkpointing, conditional edges, human interrupt/resume. The `StateGraph` is exactly the tick loop + event bus + state store in one. Best fit.
-- **CrewAI**: high-level and opinionated. You lose precise control over submission gating, state transitions, and retry logic. Wrong fit when the logic *is* the value.
-- **AutoGen**: conversational agent framework. This system isn't a conversation, it's a workflow.
-- **A2A (Google)**: inter-agent HTTP protocol for distributed services. Overkill and adds network failure modes for a single-machine setup.
-- **Prefect/Dagster**: workflow orchestration, not agent orchestration. No LLM routing, no conditional state transitions.
-
-State persistence is handled by LangGraph's `SqliteSaver` checkpointer. If the process crashes, the graph resumes from the last checkpoint — no custom recovery code needed.
+The `orchestrator.py` is the only place that knows about the competition loop flow. Agents are pure `async def` functions that call `query()` or use `ClaudeSDKClient`. The orchestrator calls them, reads their structured JSON output, and decides what to do next — it is the "graph" but written as clean Python `if/elif/await` logic instead of LangGraph edge declarations.
 
 ---
 
-## 3. The State Store
+## 3. State Management
 
-The **LangGraph graph state** is the single source of truth for runtime state. It is a typed Python dict (`TypedDict`) that every node reads from and writes to. LangGraph handles thread safety and checkpointing — no hand-rolled locks.
+Replace `GraphState` TypedDict + SqliteSaver with a `StateStore` backed by SQLite.
 
 ```python
-class GraphState(TypedDict):
-    # Competition
-    competition: CompetitionConfig        # metric, targets, deadline, days_remaining
+# gladius/state.py
+import sqlite3
+import json
+from dataclasses import dataclass, field, asdict
+from typing import Optional
+from pathlib import Path
 
-    # Experiment lifecycle
-    current_experiment: ExperimentSpec | None
-    experiment_status: ExperimentStatus   # pending|queued|running|done|failed|killed|validated|submitted|held|score_timeout|complete
-    running_pid: int | None
-    run_id: str | None
 
-    # Scores
-    oof_score: float | None
-    lb_score: float | None
-    gap_history: list[float]              # OOF-LB gaps for last N scored submissions
+@dataclass
+class CompetitionState:
+    # Competition context
+    competition_id: str
+    data_dir: str
+    output_dir: str
+    target_metric: str          # "auc_roc", "rmse", etc.
+    metric_direction: str       # "maximize" / "minimize"
 
-    # Budget
-    submissions_today: int
-    last_submission_time: float | None
+    # Progress tracking
+    iteration: int = 0
+    max_iterations: int = 20
+    phase: str = "strategy"     # strategy | coding | execution | validation | ensemble | done
 
-    # Strategy context
-    directive: DirectiveJSON | None
-    exploration_flag: bool
-    consecutive_same_directive: int
-    session_summary: str | None           # LLM-compressed strategy history, regenerated every 10 experiments
+    # Best known performance
+    best_oof_score: float = -1.0
+    best_submission_score: float = -1.0
+    best_submission_path: Optional[str] = None
+    submission_count: int = 0
+    max_submissions_per_day: int = 5
 
-    # Code
-    generated_script_path: str | None
-    reviewer_feedback: str | None
-    code_retry_count: int
+    # Hypothesis and strategy memory
+    current_hypothesis: Optional[str] = None
+    completed_hypotheses: list = field(default_factory=list)
+    failed_hypotheses: list = field(default_factory=list)
 
-    # Routing
-    next_node: str                        # LangGraph uses this for conditional edges
-    error_message: str | None
+    # Experiment registry
+    experiments: list = field(default_factory=list)  # [{path, oof, params, notes}]
+
+    # Session IDs for resumable agents
+    strategy_session_id: Optional[str] = None
+    code_session_id: Optional[str] = None
+
+    # Error tracking
+    consecutive_errors: int = 0
+    error_log: list = field(default_factory=list)
+
+    # LB tracking
+    lb_scores: list = field(default_factory=list)  # [{score, timestamp, public_lb}]
+
+
+class StateStore:
+    def __init__(self, db_path: str = ".gladius/state.db"):
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(db_path)
+        self._init_schema()
+
+    def _init_schema(self):
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.conn.commit()
+
+    def save(self, state: CompetitionState):
+        data = json.dumps(asdict(state))
+        self.conn.execute(
+            "INSERT OR REPLACE INTO state(key, value) VALUES ('current', ?)", (data,)
+        )
+        self.conn.commit()
+
+    def load(self) -> Optional[CompetitionState]:
+        row = self.conn.execute(
+            "SELECT value FROM state WHERE key='current'"
+        ).fetchone()
+        if row:
+            return CompetitionState(**json.loads(row[0]))
+        return None
 ```
 
-**Persistent files** (survive process restarts, live on disk alongside the SQLite checkpoint):
-
-```
-state/
-  knowledge.json        # appended findings from Knowledge Extractor
-  leaderboard.json      # LB score history (for gap trend analysis)
-state/experiments/
-  <run_id>.json         # archived per-experiment record after completion
-```
-
-Everything else — queue, locks, run status, budget — lives in the LangGraph state and its SQLite checkpoint. No `queue.json`, no lock files.
-
-**`score_timeout` state**: if a submitted experiment has no LB score after 3 hours, the graph routes to the `score_timeout` node, unblocks the queue, and fires a Telegram notification. The Submission Decider treats the next candidate conservatively (don't submit again until OOF improvement is unambiguous).
-
 ---
 
-## 4. Agent Catalog (18 agents)
+## 4. Agent Definitions
 
-18 agents across 5 layers. Each agent has exactly one responsibility and owns exactly one transition in the graph. The count is intentional: every agent that exists adds a failure mode. An agent is only justified if its logic cannot be absorbed as a sub-step of an adjacent node without making that node's responsibility ambiguous. Where the boundary is clear (format + validate before submitting, watch + parse logs during execution), they are merged into one node.
+### 4.1 Core Pattern
 
-### ORCHESTRATION LAYER (3)
-
-| # | Agent                   | Responsibility                                                                                                                                                                                                                      |
-| - | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 | **Conductor**     | Top-level tick loop (every 5 min). Checks agent health via Supervisor. Checks running jobs, LB polls, queue state, completed runs. Never codes, never trains.                                                                       |
-| 2 | **State Manager** | All reads/writes go here. Manages lock acquisition with TTL. Detects and releases stale locks. Single write function — no agent writes directly.                                                                                   |
-| 3 | **Supervisor**    | Separate from Conductor. Monitors all agent processes by PID. Restarts crashed agents. Reports to Conductor on each tick. If an agent crashes 3× in 10 min → marks it `degraded`, notifies human, Conductor reroutes around it. |
-
----
-
-### STRATEGY LAYER (5)
-
-| # | Agent                          | Responsibility                                                                                                                                                                                       |
-| - | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 4 | **Strategy Agent**       | Decides what kind of experiment to run next. See Section 8 for full implementation spec.                                                                                                             |
-| 5 | **Hypothesis Generator** | Translates a directive into a concrete, schema-validated experiment spec. See Section 8.                                                                                                             |
-| 6 | **Leaderboard Tracker**  | Polls Kaggle API for submission score. Handles the case where score never arrives (→`score_timeout`). Computes OOF→LB gap trend. Signals Strategy Agent if gap is widening.                      |
-| 7 | **Ensemble Agent**       | Scans completed runs. Proposes blends using Nelder-Mead or optuna on OOF weights. Schedules blend experiments only when ≥3 uncorrelated base models exist (correlation threshold: r < 0.97 on OOF). |
-| 8 | **Knowledge Extractor**  | Synthesizes experiment results into `knowledge.json`. See Section 9 for full implementation spec.                                                                                                  |
-
----
-
-### CODE LAYER (3)
-
-| #  | Agent                      | Responsibility                                                                                                                                                                                                                                                                             |
-| -- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 9  | **Code Generator**   | Takes a validated experiment spec + assembled context, produces a runnable script. See Section 7 for full implementation spec.                                                                                                                                                             |
-| 10 | **Code Reviewer**    | Static analysis:`py_compile`, `pylint --errors-only`, import check against installed packages, shape consistency checks, no hardcoded paths. Also: sandbox run on 1% data with 60s timeout. Returns `pass/fail + issues`. Dependency check is a sub-step here, not a separate agent. |
-| 11 | **Versioning Agent** | On Code Reviewer pass: assigns version tag (v42…),`git add + commit`, writes metadata JSON: `{parent_version, directive, what_changed, reviewer_output}`.                                                                                                                             |
-
----
-
-### EXECUTION LAYER (3)
-
-| #  | Agent                                 | Responsibility                                                                                                                                                                                                       |
-| -- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 12 | **Executor**                    | Launches approved scripts as subprocesses. Captures stdout/stderr to `logs/<run_id>.txt`. Returns PID to state store.                                                                                              |
-| 13 | **Watchdog + Progress Monitor** | Single process. Tails the log file every 30s. Extracts fold/epoch/metric via regex on known log patterns. Writes live progress to state. Kills if: wall-clock > 2× estimate, RAM > 90%, no log output for 30 min.   |
-| 14 | **Resource + Cache Manager**    | Single process. Monitors GPU mem, disk, all PIDs. Evicts old caches when disk > threshold, never evicts caches referenced by current best run or any RUNNING job. Signals Budget Manager on critical resource state. |
-
----
-
-### VALIDATION & SUBMISSION LAYER (4)
-
-| #  | Agent                        | Responsibility                                                                                                                                                                                                                                                                                       |
-| -- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 15 | **Validation Agent**   | Checks OOF arrays: shape, no NaN, values in [0,1], metric matches logged score ±1e-4. Leakage check: OOF score on train folds must not significantly exceed holdout (threshold = 0.01 AUC). Returns `pass/fail`.                                                                                  |
-| 16 | **Submission Decider** | See Section 10 for decision logic. Not just "OOF > best OOF."                                                                                                                                                                                                                                        |
-| 17 | **Submission Agent**   | Format + validate + submit pipeline. Formats to match `SampleSubmission.csv` (column names, ID order, clip [0,1]). Validates row count, no nulls. Calls `kaggle competitions submit`. Retry with exponential backoff (max 3×). On success: writes submission ID to state, starts LB poll timer. |
-| 18 | **Notifier**           | Subscribes to key events. Sends Telegram. The human's only touch point.                                                                                                                                                                                                                              |
-
----
-
-## 5. Communication Protocol
-
-There is no event bus. Agents don't publish to a queue. **LangGraph conditional edges are the routing layer.**
-
-Each node returns an updated `GraphState`. The router node reads `state["next_node"]` (set by the previous node) and routes accordingly:
+Every agent follows this pattern:
 
 ```python
-def router(state: GraphState) -> str:
-    """The only routing logic in the system. All transitions go through here."""
-    status = state["experiment_status"]
-    next_node = state.get("next_node")
+from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
+import asyncio
 
-    # Hard overrides based on status
-    if status == "running":       return "watchdog"
-    if status == "done":          return "validation"
-    if status == "validated":     return "submission_decider"
-    if status == "submitted":     return "lb_tracker"
-    if status == "score_timeout": return "notifier"
-
-    # Soft routing set by previous node
-    return next_node or "strategy"
+async def run_agent(
+    prompt: str,
+    system_prompt: str,
+    allowed_tools: list[str],
+    output_schema: dict,
+    cwd: str,
+    resume: str | None = None,
+    mcp_servers: dict | None = None,
+) -> tuple[dict, str]:
+    """Returns (structured_output, session_id)."""
+    options = ClaudeAgentOptions(
+        system_prompt=system_prompt,
+        allowed_tools=allowed_tools,
+        permission_mode="acceptEdits",
+        output_format={"type": "json_schema", "schema": output_schema},
+        cwd=cwd,
+        resume=resume,
+        mcp_servers=mcp_servers or {},
+    )
+    result_msg = None
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, ResultMessage):
+            result_msg = message
+    if result_msg is None or result_msg.is_error:
+        raise RuntimeError(f"Agent failed: {result_msg}")
+    return result_msg.structured_output, result_msg.session_id
 ```
 
-**What replaced each event type**:
+### 4.2 Strategy Agent
 
-| Old event               | Now                                                                                                                    |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `run.queued`          | router sees `status=queued` → executor node                                                                         |
-| `run.killed / failed` | watchdog node sets `status=killed`, `next_node=knowledge_extractor`                                                |
-| `run.completed`       | executor node sets `status=done`, router → validation                                                               |
-| `validation.passed`   | validation node sets `status=validated`, router → submission_decider                                                |
-| `submission.sent`     | submission node sets `status=submitted`, router → lb_tracker                                                        |
-| `lb.score.received`   | lb_tracker node sets `lb_score`, `status=complete`, `next_node=strategy`                                         |
-| `lb.score.timeout`    | lb_tracker node sets `status=score_timeout`, `next_node=notifier`                                                  |
-| `code.rejected`       | code_reviewer sets `next_node=hypothesis` + increments `code_retry_count`; if count ≥ 3 → `next_node=strategy` |
-| `agent.degraded`      | node raises exception → LangGraph catches → supervisor node → notifier                                              |
-| `budget.exhausted`    | router checks `submissions_today >= limit` before routing to submission_decider                                      |
-
-**Crash recovery**: LangGraph `SqliteSaver` checkpoints state after every node. On restart, the graph resumes from the last completed node. No custom recovery code, no stale event cleanup.
-
----
-
-## 6. The Main Loop
-
-There is no tick loop. **The graph runs continuously** and sleeps only when it hits a waiting node (watchdog polling, LB polling). The entry point:
+Replaces: `strategy_agent`, `hypothesis_generator`, `lb_tracker` (collapsed into one)
 
 ```python
-from langgraph.graph import StateGraph
-from langgraph.checkpoint.sqlite import SqliteSaver
+# gladius/agents/strategy.py
 
-checkpointer = SqliteSaver.from_conn_string("state/checkpoint.db")
-graph = build_competition_graph()  # all nodes + conditional edges
-app = graph.compile(checkpointer=checkpointer)
+STRATEGY_SYSTEM_PROMPT = """\
+You are an elite Kaggle Grandmaster working on a machine learning competition.
+Your role is to analyze the competition, study the leaderboard, examine existing
+experiments, and generate the most promising next hypothesis to try.
 
-# Resume from last checkpoint or start fresh
-config = {"configurable": {"thread_id": "digicow_run"}}
-for event in app.stream(initial_state, config=config):
-    pass  # events are logged; Notifier node fires Telegram as needed
-```
+You have access to:
+- The competition data directory (use Read, Glob to explore)
+- The experiments log (read .gladius/experiments.json)
+- Web search for relevant papers and winning solutions
 
-**The graph flow** (replaces the tick loop):
+Always reason about:
+1. What has been tried and what worked / failed
+2. The current leaderboard gap
+3. The most impactful next improvement (data, features, model, ensemble)
+"""
 
-```mermaid
-flowchart TD
-    router([router]) -- no experiment --> strategy
-    strategy --> hypothesis
-    hypothesis --> code_generator
-    code_generator --> code_reviewer
-    code_reviewer -- rejected retry<=2 --> hypothesis
-    code_reviewer -- rejected x3 --> strategy
-    code_reviewer -- approved --> versioning_agent
-    versioning_agent --> executor
-    executor --> watchdog_node
-    watchdog_node -. sleeps 30s, polls log .-> watchdog_node
-    router -- status=running --> watchdog_node
-    watchdog_node -- killed/failed --> knowledge_extractor
-    knowledge_extractor --> router
-    watchdog_node -- done --> validation_agent
-    router -- status=done --> validation_agent
-    validation_agent --> submission_decider
-    router -- status=validated --> submission_decider
-    submission_decider -- held --> router
-    submission_decider -- submit --> submission_agent
-    submission_agent --> lb_tracker
-    router -- status=submitted --> lb_tracker
-    lb_tracker -. sleeps 15min, polls Kaggle .-> lb_tracker
-    lb_tracker -- score received --> router
-    lb_tracker -- 3h timeout --> notifier
-    notifier --> router
-```
-
-**Parallel execution**: LangGraph supports parallel node branches natively via `Send` API. If `parallel_slots > 1`, the strategy node can dispatch multiple hypotheses simultaneously and the graph fans out.
-
----
-
-## 7. State Machine Per Experiment
-
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING : Hypothesis Generator
-    PENDING --> QUEUED : Code Generator + Reviewer pass\n(max 2 retries, then back to Strategy)
-    QUEUED --> RUNNING : Executor picks up
-    RUNNING --> KILLED : Watchdog kills
-    RUNNING --> FAILED : Runtime error
-    RUNNING --> DONE : Training complete
-    KILLED --> PENDING : Knowledge Extractor\nreads & logs finding
-    FAILED --> PENDING : Knowledge Extractor\nreads & logs finding
-    DONE --> VALIDATED : Validation passes
-    VALIDATED --> SUBMITTED : Submission Decider approves
-    VALIDATED --> HELD : Submission Decider holds
-    HELD --> [*]
-    SUBMITTED --> COMPLETE : LB score received
-    SUBMITTED --> SCORE_TIMEOUT : 3h with no score
-    SCORE_TIMEOUT --> [*] : Queue unblocked, human notified
-    COMPLETE --> [*]
-```
-
----
-
-## 8. Strategy Agent & Hypothesis Generator — Full Spec
-
-This is the most important section.
-
-### Strategy Agent
-
-The Strategy Agent is an LLM call with a structured prompt and a **required JSON output schema**. It is not a rule engine. It is not a hardcoded decision tree. It calls the LLM every tick when a new directive is needed.
-
-**Context assembled before each call** (built by a `ContextBuilder` utility, not the agent itself):
-
-```
-- competition.json (metric, target, deadline, days_remaining)
-- Top 10 experiments by OOF score: [version, model_type, key_params, OOF, LB, OOF-LB gap]
-- Last 5 experiments in chronological order (to see recent trajectory)
-- knowledge.json (what has been tried and failed)
-- session_summary (compressed strategy history from GraphState — see Section 3)
-- Current best submission score and gap to estimated LB top
-- Experiment type distribution: how many CatBoost / LGB / XGB / NN / ensemble runs so far
-- exploration_budget: what fraction of remaining time is left
-```
-
-**Output schema** (LLM must return valid JSON, otherwise retry):
-
-```json
-{
-  "directive_type": "tune_existing | new_features | new_model_type | ensemble | seed_average",
-  "target_model": "catboost | lgbm | xgboost | nn | blend",
-  "rationale": "one sentence",
-  "exploration_flag": true | false,
-  "priority": 1-5
+STRATEGY_OUTPUT_SCHEMA = {
+    "type": "object",
+    "required": ["hypothesis", "changes", "expected_improvement", "rationale", "priority"],
+    "properties": {
+        "hypothesis": {"type": "string", "description": "One-line hypothesis title"},
+        "changes": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Concrete code/config changes to make"
+        },
+        "expected_improvement": {"type": "number"},
+        "rationale": {"type": "string"},
+        "priority": {"enum": ["critical", "high", "medium", "low"]},
+        "requires_new_features": {"type": "boolean"},
+        "suggested_models": {"type": "array", "items": {"type": "string"}},
+    }
 }
+
+async def run_strategy_agent(state: CompetitionState, data_dir: str) -> tuple[dict, str]:
+    prompt = f"""\
+Competition: {state.competition_id}
+Target metric: {state.target_metric} ({state.metric_direction})
+Current best OOF: {state.best_oof_score}
+Current best LB:  {state.best_submission_score}
+Iteration: {state.iteration}/{state.max_iterations}
+
+Completed hypotheses: {json.dumps(state.completed_hypotheses[-5:], indent=2)}
+Failed hypotheses: {json.dumps(state.failed_hypotheses[-3:], indent=2)}
+
+Analyze the competition data, study what has been tried, and propose the single
+most impactful next hypothesis. Read the experiments log at .gladius/experiments.json
+and the competition description at {data_dir}/competition_description.md.
+"""
+    return await run_agent(
+        prompt=prompt,
+        system_prompt=STRATEGY_SYSTEM_PROMPT,
+        allowed_tools=["Read", "Glob", "Grep", "WebSearch"],
+        output_schema=STRATEGY_OUTPUT_SCHEMA,
+        cwd=data_dir,
+        resume=state.strategy_session_id,  # maintains memory across iterations
+    )
 ```
 
-**Exploration vs. Exploitation rule** — built into the prompt, not left to the LLM to invent:
+### 4.3 Code Agent
 
-- If `exploration_flag=false` for the last 5 consecutive directives → force `exploration_flag=true` on next call.
-- If `days_remaining < 2` → force `exploration_flag=false` (exploit mode only).
-- If OOF→LB gap has widened for 3+ consecutive submissions → block all new submission directives until gap narrows or human overrides.
+Replaces: `code_generator`, `code_reviewer`, `versioning_agent` (collapsed into one)
 
-### Hypothesis Generator
+The key insight: **Claude Code can generate, review, and version code in a single agent invocation** because it can autonomously read the existing code, write new code, run the linter, fix issues, and commit — all within one `query()` call. Three separate LangGraph nodes become one.
 
-Takes the Strategy Agent's JSON directive and produces a **concrete, schema-validated experiment spec**. Also an LLM call.
+```python
+# gladius/agents/code.py
 
-**Context assembled**:
+CODE_SYSTEM_PROMPT = """\
+You are an expert ML engineer implementing Kaggle competition solutions.
+Given a hypothesis, you will:
+1. Read the existing solution code (explore the src/ directory)
+2. Implement the required changes
+3. Write clean, well-documented Python code
+4. Run a quick syntax check (python -m py_compile)
+5. Save the new solution to a versioned file (e.g., src/solution_v{N}.py)
+6. Update .gladius/experiments.json with the new experiment entry
 
-```
-- The directive JSON from Strategy Agent
-- Parent script: full source code of the best current script of the target model type
-- knowledge.json: param regions that failed for this model + target combo
-- Current feature list (from competition.json or derived from parent script)
-- Hardware budget: estimated GPU memory available, time budget for this run
-```
+You have full filesystem access and can run bash commands.
+Always create atomic, testable experiments. Do not break existing working solutions.
+"""
 
-**Output schema**:
-
-```json
-{
-  "parent_version": "v41",
-  "changes": [
-    {"type": "param_change", "param": "depth", "old": 8, "new": 10},
-    {"type": "feature_add", "feature_name": "rolling_7d_mean_milk", "code_snippet": "..."},
-    {"type": "feature_remove", "feature_name": "svd_component_3"}
-  ],
-  "estimated_runtime_multiplier": 1.2,
-  "rationale": "..."
+CODE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "required": ["solution_path", "changes_made", "estimated_runtime_minutes"],
+    "properties": {
+        "solution_path": {"type": "string"},
+        "changes_made": {"type": "array", "items": {"type": "string"}},
+        "estimated_runtime_minutes": {"type": "number"},
+        "requires_gpu": {"type": "boolean"},
+        "new_dependencies": {"type": "array", "items": {"type": "string"}},
+        "notes": {"type": "string"},
+    }
 }
+
+async def run_code_agent(
+    hypothesis: dict,
+    state: CompetitionState,
+    project_dir: str,
+) -> tuple[dict, str]:
+    prompt = f"""\
+Hypothesis to implement:
+{json.dumps(hypothesis, indent=2)}
+
+Project directory: {project_dir}
+Current iteration: {state.iteration}
+
+Explore the existing solution (src/ directory), then implement this hypothesis
+as a new versioned solution file. The solution must:
+- Be self-contained and runnable: python solution_vN.py
+- Accept no CLI args; read data from {state.data_dir}
+- Write OOF predictions to .gladius/oof_vN.npy
+- Write test predictions to .gladius/sub_vN.csv
+- Print the OOF score on the last line as: OOF_SCORE: {{score:.6f}}
+"""
+    return await run_agent(
+        prompt=prompt,
+        system_prompt=CODE_SYSTEM_PROMPT,
+        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+        output_schema=CODE_OUTPUT_SCHEMA,
+        cwd=project_dir,
+        resume=state.code_session_id,
+    )
 ```
 
-The Code Generator receives this spec and modifies the parent script accordingly — it does **not** write from scratch. This is the key constraint. LLMs writing full ML training scripts from scratch fail constantly. LLMs making targeted, specified changes to existing working scripts fail much less often.
+### 4.4 Execution Agent
 
----
+Replaces: `executor`, `resource_manager`, `watchdog` (collapsed into one)
 
-## 9. Code Generator — Full Spec
+Claude Code has background bash process support built-in (`run_in_background: True` in Bash tool input). The agent can launch the training script, poll it with `BashOutput`, and terminate it with `KillBash` if the watchdog threshold is exceeded — all autonomously.
 
-**The single highest-risk component in the system.** If this is wrong, everything downstream is wrong.
+```python
+# gladius/agents/execution.py
 
-### What it does NOT do
+EXECUTION_SYSTEM_PROMPT = """\
+You are responsible for executing ML training runs on this machine.
+Given a solution script path, you will:
+1. Check available GPU/CPU resources before starting (nvidia-smi, free -h)
+2. Launch the training script as a background bash process
+3. Monitor it: check output every 60 seconds using BashOutput
+4. If it exceeds the time budget or produces NaN loss, kill it with KillBash
+5. When it completes, extract the OOF score from stdout (format: OOF_SCORE: X.XXXXXX)
+6. Report resource usage and any errors
+"""
 
-- Does not write scripts from scratch.
-- Does not decide what changes to make (that's Hypothesis Generator's job).
-- Does not run the script (that's Executor).
-
-### What it actually does
-
-1. Loads the parent script as a string.
-2. For each change in the `changes` array from the Hypothesis Generator spec:
-   - `param_change`: find the param by name in the source (via regex or AST), replace value.
-   - `feature_add`: insert the `code_snippet` at the feature engineering block (the parent script must have a clearly marked `# --- FEATURES START ---` / `# --- FEATURES END ---` comment block for this to work reliably).
-   - `feature_remove`: remove referenced feature from the feature list and any dependent transforms.
-3. Writes the modified script to a new versioned file.
-4. Returns the new script path to Code Reviewer.
-
-### Context given to the LLM (for non-trivial changes)
-
-If the change is complex (e.g., adding a feature that requires a new join), the LLM receives:
-
-```
-- The exact lines around the insertion point (±20 lines)
-- The change spec
-- The data schema (column names, dtypes, available tables)
-- The constraint: "Do not change anything outside the specified insertion point"
-```
-
-### What happens when Code Reviewer rejects
-
-The rejection message (specific: "line 47: hardcoded path", "import X not installed") is fed back to the LLM as a correction prompt. Max 2 retries. If still failing after 2 retries, the `code.rejected` event fires with the full error, the Hypothesis Generator simplifies the change spec, and Code Generator tries again from a simpler base.
-
----
-
-## 10. Knowledge Extractor — Full Spec
-
-The original design said "after N experiments, synthesizes patterns." That's wrong on two counts: N is arbitrary, and synthesis needs to be metric-gated.
-
-### When it runs
-
-- After every `run.killed`, `run.failed`, `validation.failed` event.
-- After every `lb.score.received` event.
-- NOT on a fixed count.
-
-### What it actually does
-
-It reads the terminal-state experiment and extracts a **structured finding**:
-
-```json
-{
-  "experiment_id": "run_042",
-  "finding_type": "param_failure | feature_failure | model_failure | overfitting_signal",
-  "scope": {
-    "model_type": "catboost",
-    "target": "07D",
-    "param": "depth",
-    "param_value": 12
-  },
-  "evidence": {
-    "oof_score": 0.7821,
-    "lb_score": null,
-    "gap_vs_best": -0.004,
-    "failure_reason": "KILLED: OOM at fold 3"
-  },
-  "conclusion": "depth=12 causes OOM on this hardware for catboost+07D. Max safe depth = 10."
+EXECUTION_OUTPUT_SCHEMA = {
+    "type": "object",
+    "required": ["status", "oof_score", "runtime_seconds"],
+    "properties": {
+        "status": {"enum": ["success", "timeout", "error", "oom"]},
+        "oof_score": {"type": ["number", "null"]},
+        "runtime_seconds": {"type": "number"},
+        "stdout_tail": {"type": "string"},
+        "error_message": {"type": ["string", "null"]},
+        "peak_memory_gb": {"type": ["number", "null"]},
+    }
 }
+
+async def run_execution_agent(
+    solution_path: str,
+    max_runtime_minutes: int,
+    state: CompetitionState,
+    project_dir: str,
+) -> dict:
+    prompt = f"""\
+Execute training: {solution_path}
+Time budget: {max_runtime_minutes} minutes
+Data directory: {state.data_dir}
+
+1. Check GPU memory: nvidia-smi (if available)
+2. Launch: python {solution_path} as a background process
+3. Monitor every 60 seconds — check for NaN, OOM, or completion
+4. Kill if it exceeds {max_runtime_minutes} minutes
+5. Report the OOF score printed on the last line (format: OOF_SCORE: X.XXXXXX)
+"""
+    output, _ = await run_agent(
+        prompt=prompt,
+        system_prompt=EXECUTION_SYSTEM_PROMPT,
+        allowed_tools=["Bash", "Read"],
+        output_schema=EXECUTION_OUTPUT_SCHEMA,
+        cwd=project_dir,
+    )
+    return output
 ```
 
-This is written to `knowledge.json` as an append. The Hypothesis Generator reads `knowledge.json` before proposing any spec and filters out parameter regions that have a matching `finding_type=param_failure` entry.
+### 4.5 Validation Agent
 
-### What it does NOT do
+Replaces: `validation_agent`, `submission_decider`, `notifier`
 
-It does not do open-ended reasoning over all experiments at once. That's expensive, slow, and unreliable. It processes one terminal event and produces one structured finding. The cumulative `knowledge.json` is the synthesis — built incrementally.
-
----
-
-## 11. Submission Decider — Full Spec
-
-The original design said "only submit if OOF improves by > 0.0005." That's insufficient. The real logic:
-
-```
-SUBMIT only if ALL of the following:
-  1. new_oof > best_oof + min_improvement (default: 0.0005)
-  2. OOF→LB gap has NOT been widening for the last 3 consecutive scored submissions
-     (gap_trend = linear regression slope on last 3 gaps; block if slope > 0.001/submission)
-  3. submissions_today < daily_limit (default: 5, configurable)
-  4. This is not a blend that was tuned on the same OOF folds used for scoring
-     (blend weight search on OOF = guaranteed overfitting; flag this in experiment metadata)
-  5. time_since_last_submission > 2h (Kaggle rate limit buffer)
-
-HOLD if any check fails.
-HOLD with escalation if check #2 fails (also notify human via Telegram).
-```
-
----
-
-## 12. Leaderboard Tracker — Full Spec
-
-Kaggle submission processing takes 10–40 minutes and sometimes silently stalls. The polling logic must handle this.
-
-```
-ON submission.sent event:
-  record submission_id, submitted_at timestamp
-
-POLL every 15 minutes:
-  call kaggle API: submissions list, check status of submission_id
-  if status == "complete": extract score, fire lb.score.received
-  if status == "error": fire lb.score.error, notify human, mark experiment failed
-  if status == "pending" and elapsed > 3h: fire lb.score.timeout
-
-ON lb.score.received:
-  update leaderboard.json
-  compute gap = lb_score vs oof_score for this experiment
-  append gap to gap_history
-  if len(gap_history) >= 3:
-    compute slope of last 3 gaps
-    if slope > 0.001: fire gap.widening event → Strategy Agent + Notifier
-```
-
----
-
-## 13. Concurrency & State Safety
-
-File-based locks are gone. LangGraph handles state safety via its checkpointer.
-
-**How it works**: every node receives an immutable snapshot of the current state, computes its output, and returns only the fields it modifies. LangGraph applies those updates atomically before checkpointing. Two nodes cannot run concurrently on the same thread unless you explicitly use the `Send` API for parallel branches.
-
-**The one place file locking is still needed**: writing OOF arrays and trained model files to disk. These are large binary files outside the graph state. For these, use `fcntl.flock` (POSIX advisory lock) scoped tightly around the file write only — not around any LLM call.
+**Important**: The agent reports whether improvement was seen and whether to submit. The *orchestrator* is the only thing that updates `best_oof_score` in state. This was the core regression in the LangGraph version (the node was mutating state it shouldn't own).
 
 ```python
-import fcntl
+# gladius/agents/validation.py
 
-def write_oof_file(path, array):
-    with open(path, 'wb') as f:
-        fcntl.flock(f, fcntl.LOCK_EX)  # blocks until lock acquired
-        np.save(f, array)
-        fcntl.flock(f, fcntl.LOCK_UN)  # released immediately after write
+VALIDATION_SYSTEM_PROMPT = """\
+You are responsible for validating ML experiment results and deciding on Kaggle submissions.
+Given the OOF score of a new experiment, you will:
+1. Compare against the provided best known OOF score
+2. Decide whether to submit (score improvement > threshold AND daily-limit not exceeded)
+3. If submitting, verify the submission file format is correct (read first 3 lines)
+4. Report the decision with clear reasoning
+
+You do NOT update any state files. You only report what should happen.
+"""
+
+VALIDATION_OUTPUT_SCHEMA = {
+    "type": "object",
+    "required": ["oof_score", "is_improvement", "submit", "reasoning"],
+    "properties": {
+        "oof_score": {"type": "number"},
+        "is_improvement": {"type": "boolean"},
+        "improvement_delta": {"type": "number"},
+        "submit": {"type": "boolean"},
+        "submission_path": {"type": ["string", "null"]},
+        "reasoning": {"type": "string"},
+    }
+}
+
+async def run_validation_agent(
+    solution_path: str,
+    oof_score: float,
+    submission_path: str,
+    state: CompetitionState,
+    project_dir: str,
+) -> dict:
+    prompt = f"""\
+New experiment results:
+- Solution: {solution_path}
+- OOF score: {oof_score:.6f}
+- Current best OOF: {state.best_oof_score:.6f}
+- Metric: {state.target_metric} ({state.metric_direction})
+- Submissions today: {state.submission_count} / {state.max_submissions_per_day}
+- Submission file: {submission_path}
+
+Validate: Is {oof_score:.6f} a meaningful improvement over {state.best_oof_score:.6f}?
+Threshold: improvement must be > 0.0001 to submit.
+Check that the submission file exists and has the correct format (read first 3 lines).
+"""
+    output, _ = await run_agent(
+        prompt=prompt,
+        system_prompt=VALIDATION_SYSTEM_PROMPT,
+        allowed_tools=["Read", "Bash"],
+        output_schema=VALIDATION_OUTPUT_SCHEMA,
+        cwd=project_dir,
+    )
+    return output
 ```
 
-No TTL management, no lock files in `state/locks/`, no deadlock detection code. The OS handles it.
+### 4.6 Ensemble Agent
+
+Replaces: `ensemble_agent`, `knowledge_extractor`
+
+```python
+# gladius/agents/ensemble.py
+
+ENSEMBLE_SYSTEM_PROMPT = """\
+You are an expert at combining ML models for Kaggle competitions.
+You have access to all OOF predictions and can compute optimal blend weights.
+You will:
+1. Identify successful experiments (OOF better than baseline)
+2. Load their OOF prediction arrays
+3. Compute pairwise correlations — prefer diverse, low-correlation models
+4. Find optimal blend weights using scipy.optimize.minimize (Nelder-Mead)
+5. Generate the blended submission at .gladius/ensemble_submission.csv
+6. Save a reproducible ensemble script at src/ensemble.py
+"""
+
+ENSEMBLE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "required": ["ensemble_type", "components", "oof_score", "submission_path"],
+    "properties": {
+        "ensemble_type": {"enum": ["simple_average", "weighted_blend", "stacking", "rank_average"]},
+        "components": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "weight": {"type": "number"},
+                    "oof_score": {"type": "number"}
+                }
+            }
+        },
+        "oof_score": {"type": "number"},
+        "submission_path": {"type": "string"},
+        "notes": {"type": "string"},
+    }
+}
+
+async def run_ensemble_agent(state: CompetitionState, project_dir: str) -> dict:
+    good_experiments = [
+        e for e in state.experiments
+        if e.get("oof_score", -1) > state.best_oof_score * 0.99
+    ]
+    prompt = f"""\
+Ensemble task for competition: {state.competition_id}
+Metric: {state.target_metric} ({state.metric_direction})
+
+Good experiments (OOF within 1% of best):
+{json.dumps(good_experiments, indent=2)}
+
+OOF predictions are in .gladius/oof_vN.npy
+Test predictions are in .gladius/sub_vN.csv
+
+Tasks:
+1. Read the OOF arrays and compute pairwise correlations
+2. Find the optimal blend weights using scipy.optimize.minimize (Nelder-Mead)
+3. Create the blended submission at .gladius/ensemble_submission.csv
+4. Save an ensemble script at src/ensemble.py
+
+Prefer diversity over raw score — low-correlation models blend better.
+"""
+    output, _ = await run_agent(
+        prompt=prompt,
+        system_prompt=ENSEMBLE_SYSTEM_PROMPT,
+        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob"],
+        output_schema=ENSEMBLE_OUTPUT_SCHEMA,
+        cwd=project_dir,
+    )
+    return output
+```
 
 ---
 
-## 14. Error Handling & Supervision
+## 5. Custom Tools (MCP)
 
-There is no separate Supervisor process. LangGraph handles node failures via its built-in exception model, augmented with a custom error node.
-
-**Node-level errors** (LLM call fails, subprocess crashes, API down):
+Custom tool servers are registered via `ClaudeAgentOptions.mcp_servers`. Agents that need Kaggle API access or metric utilities receive them.
 
 ```python
-def code_generator_node(state: GraphState) -> GraphState:
-    try:
-        result = call_llm(build_codegen_prompt(state))
-        return {"generated_script_path": result, "next_node": "code_reviewer"}
-    except Exception as e:
-        return {
-            "error_message": str(e),
-            "code_retry_count": state["code_retry_count"] + 1,
-            "next_node": "error_handler"
-        }
-```
+# gladius/tools/kaggle_tools.py
+from claude_agent_sdk import tool, create_sdk_mcp_server
+from typing import Any
+import subprocess
 
-**The error_handler node** (replaces the Supervisor's restart logic):
 
-```python
-def error_handler_node(state: GraphState) -> GraphState:
-    node = state["next_node_before_error"]
-    retries = state["node_retry_counts"].get(node, 0)
-    if retries < 3:
-        # retry the same node
-        return {"node_retry_counts": {**state["node_retry_counts"], node: retries + 1},
-                "next_node": node}
+@tool(
+    "kaggle_submit",
+    "Submit a CSV file to the Kaggle competition leaderboard",
+    {"competition": str, "file_path": str, "message": str}
+)
+async def kaggle_submit(args: dict[str, Any]) -> dict[str, Any]:
+    result = subprocess.run([
+        "kaggle", "competitions", "submit",
+        "-c", args["competition"],
+        "-f", args["file_path"],
+        "-m", args["message"],
+    ], capture_output=True, text=True)
+    return {"content": [{"type": "text", "text": result.stdout + result.stderr}]}
+
+
+@tool(
+    "kaggle_leaderboard",
+    "Fetch the current public leaderboard for a competition",
+    {"competition": str, "top_n": int}
+)
+async def kaggle_leaderboard(args: dict[str, Any]) -> dict[str, Any]:
+    result = subprocess.run([
+        "kaggle", "competitions", "leaderboard",
+        "-c", args["competition"],
+        "--show", "--csv",
+    ], capture_output=True, text=True)
+    lines = result.stdout.strip().split("\n")[:args.get("top_n", 20) + 1]
+    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+
+@tool(
+    "compute_oof_metric",
+    "Compute OOF metric score (AUC-ROC, RMSE, etc.) from numpy arrays on disk",
+    {"metric": str, "oof_path": str, "labels_path": str}
+)
+async def compute_oof_metric(args: dict[str, Any]) -> dict[str, Any]:
+    import numpy as np
+    from sklearn.metrics import roc_auc_score, mean_squared_error
+
+    oof = np.load(args["oof_path"])
+    y = np.load(args["labels_path"])
+
+    metric = args["metric"].lower()
+    if metric == "auc_roc":
+        # Multiclass: macro OVR — memory-safe, no outer product matrix
+        if oof.ndim == 2 and oof.shape[1] > 2:
+            score = roc_auc_score(y, oof, multi_class="ovr", average="macro")
+        else:
+            oof_1d = oof[:, 1] if oof.ndim == 2 else oof
+            score = roc_auc_score(y, oof_1d)
+    elif metric == "rmse":
+        score = float(np.sqrt(mean_squared_error(y, oof)))
     else:
-        # escalate: notify human, route to strategy to change direction
-        notify_telegram(f"Node {node} failed 3 times: {state['error_message']}")
-        return {"next_node": "strategy", "error_message": None}
+        return {"content": [{"type": "text", "text": f"Unknown metric: {metric}"}], "is_error": True}
+
+    return {"content": [{"type": "text", "text": f"METRIC_SCORE: {score:.6f}"}]}
+
+
+kaggle_server = create_sdk_mcp_server(
+    name="kaggle",
+    version="1.0.0",
+    tools=[kaggle_submit, kaggle_leaderboard, compute_oof_metric],
+)
 ```
 
-**LangGraph checkpointing as crash recovery**: if the Python process itself crashes, on restart the graph reads the last SQLite checkpoint and resumes from the last successfully completed node. No heartbeat files, no PID monitoring, no re-launch logic needed.
+---
+
+## 6. Parallel Execution
+
+When the strategic plan generates multiple independent hypotheses, run them concurrently:
+
+```python
+# In orchestrator.py
+
+async def run_parallel_experiments(
+    hypotheses: list[dict],
+    state: CompetitionState,
+    project_dir: str,
+    max_parallel: int = 3,
+) -> list[dict]:
+    """Run up to max_parallel experiments concurrently."""
+    semaphore = asyncio.Semaphore(max_parallel)
+
+    async def run_one(hypothesis: dict) -> dict:
+        async with semaphore:
+            code_output, session_id = await run_code_agent(hypothesis, state, project_dir)
+            exec_output = await run_execution_agent(
+                code_output["solution_path"],
+                max_runtime_minutes=60,
+                state=state,
+                project_dir=project_dir,
+            )
+            return {
+                "hypothesis": hypothesis,
+                "code": code_output,
+                "execution": exec_output,
+                "session_id": session_id,
+            }
+
+    tasks = [run_one(h) for h in hypotheses[:max_parallel]]
+    return await asyncio.gather(*tasks, return_exceptions=True)
+```
 
 ---
 
-## 15. Key Design Constraints
+## 7. Subagents (Native Claude)
 
-**Idempotency**: Every agent is re-runnable from any state. Conductor re-discovers state from the store on restart — no duplicated submissions, no corrupted caches.
+For complex analysis tasks (knowledge extraction from papers, winning solutions), use native Claude subagents via `AgentDefinition`. These run as sub-sessions inside the parent agent — launched via the `Task` tool.
 
-**No shared mutable memory**: All communication goes through the LangGraph `GraphState`. No global variables, no direct calls between nodes.
+```python
+from claude_agent_sdk import ClaudeAgentOptions, AgentDefinition
 
-**State safety**: LangGraph applies node outputs atomically before checkpointing. No hand-rolled locks for state transitions. See Section 13 for the one remaining file-level lock use case.
+knowledge_extractor_def = AgentDefinition(
+    description="Extracts actionable insights from papers, notebooks, and winning solutions",
+    prompt="""\
+You are a knowledge extraction specialist. Given a document or URL, extract:
+1. Model architectures used
+2. Feature engineering techniques
+3. Training tricks (augmentation, regularization, etc.)
+4. Post-processing methods
+5. Ensemble strategies
 
-**LLM calls are outside file locks**: Never hold an `fcntl.flock` during an LLM call. See Section 13.
+Return a structured summary focused on what is directly applicable to the current competition.
+""",
+    tools=["Read", "WebFetch", "WebSearch"],
+    model="haiku",  # fast + cheap for extraction
+)
 
-**No LLM writes code from scratch**: Code Generator only modifies parent scripts via specified changes. This is the most important implementation constraint. See Section 9.
-
-**Graceful degradation**:
-
-- Code Generator fails 3× → Strategy Agent changes direction.
-- Submission Agent fails (API down) → retry with exponential backoff, then retry after 30 min cooldown.
-- Any node fails → `error_handler` retries up to 3×, then escalates to Strategy Agent + Telegram notification.
-
-**Auditability**: Every state transition logged with: agent name, timestamp, input hash, output hash. LLM prompts and responses stored to `logs/llm/<run_id>_<agent>_<timestamp>.json`.
-
-**Human override**: `override.json` at workspace root. Picked up on Conductor's next tick. Supported directives: `pause`, `resume`, `force_submit <run_id>`, `kill <run_id>`, `set_directive <directive_json>`.
-
----
-
-## 16. Failure Mode Catalog
-
-These are the concrete ways this system will fail and what happens.
-
-| Failure                                                        | Detection                                                                                                         | Recovery                                                                                |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Code Generator produces bad code                               | Code Reviewer: sandbox on 1% data                                                                                 | Retry with reviewer error as feedback (max 2×), then simplify spec                     |
-| Code Generator writes from scratch instead of modifying parent | Code Reviewer: check that >80% of parent script lines are present                                                 | Hard reject, re-send spec with explicit constraint                                      |
-| LLM returns malformed JSON                                     | Schema validation on output                                                                                       | Retry with "your output was invalid JSON, here is the schema again" (max 2×)           |
-| Watchdog node crashes mid-run                                  | LangGraph resumes from last checkpoint on restart; watchdog node re-reads log file by `run_id`                  | Re-attach to running process, continue monitoring                                       |
-| Python process crashes entirely                                | LangGraph `SqliteSaver` checkpoint                                                                              | Graph resumes from last completed node on restart                                       |
-| Kaggle LB score never arrives                                  | 3h poll timeout                                                                                                   | `score_timeout` state, queue unblocked, human notified                                |
-| OOF→LB gap widening                                           | Leaderboard Tracker slope check                                                                                   | Block submissions, notify human, Strategy Agent forced into exploration mode            |
-| Strategy Agent infinite loop (same directive repeatedly)       | Knowledge Extractor: track directive_type distribution; if same type 5× in a row with no OOF improvement → flag | Conductor forces `exploration_flag=true` override                                     |
-| Disk full                                                      | Resource + Cache Manager                                                                                          | Evict old caches (never current best), notify human if still critical                   |
-| GPU OOM in training                                            | KILLED state, log contains OOM traceback                                                                          | Knowledge Extractor records param config → OOM finding; Hypothesis Generator avoids it |
-| Submission Decider submits a blend-searched-on-OOF result      | Experiment metadata flag `blend_weight_searched_on_oof=true`                                                    | Submission Decider checks this flag; hard block, notify human                           |
+# The parent strategy agent gets this subagent registered
+options = ClaudeAgentOptions(
+    agents={"knowledge_extractor": knowledge_extractor_def},
+    allowed_tools=["Read", "WebSearch", "Task"],  # Task invokes the subagent
+    # ...
+)
+# The parent agent's prompt can say:
+# "Use the knowledge_extractor agent to analyze https://arxiv.org/abs/XXXX
+#  and return the key findings applicable to tabular classification."
+```
 
 ---
 
-## 17. What's Still Hard (Honestly)
+## 8. Main Orchestrator
 
-**Feature Ideation is still vague.** The original Feature Ideation Agent has been absorbed into Strategy Agent's "new_features" directive. But the actual feature ideation — what new features to try — still relies on LLM reasoning over the data description and past importances. That reasoning is only as good as the context it gets. Feature importances from CatBoost across 5 folds need to be aggregated and formatted clearly before the LLM sees them. If this context assembly is lazy, the features it proposes will be generic garbage.
+```python
+# gladius/orchestrator.py
+"""
+Main competition loop. This is the only routing logic in the system.
+No graph edges, no conditional routing functions — just Python control flow.
+"""
+import asyncio
+import json
+import logging
+from typing import Optional
 
-**The Strategy Agent learns from its history through a three-layer memory stack.**
+from .state import CompetitionState, StateStore
+from .agents.strategy import run_strategy_agent
+from .agents.code import run_code_agent
+from .agents.execution import run_execution_agent
+from .agents.validation import run_validation_agent
+from .agents.ensemble import run_ensemble_agent
 
-The LLM call is stateless. The system is not. There is a concrete difference:
+logger = logging.getLogger(__name__)
 
-1. **GraphState persistence** (`SqliteSaver`): `consecutive_same_directive`, `exploration_flag`, `gap_history`, and `session_summary` survive every process restart. The Strategy Agent reads these directly from state on every call — no re-inference needed.
-2. **`knowledge.json` — long-term structured memory**: The Knowledge Extractor writes one structured finding per experiment event. Crucially, it must write at the *directive level*, not just the param level:
 
-   ```json
-   {"finding": "directive=new_features, target=catboost: 4 attempts, 0 OOF improvements > 0.001. Feature ideas from LLM are generic on this dataset. Avoid for next 3 runs.",
-    "source_run_ids": ["v38", "v39", "v40", "v41"], "confidence": "high"}
-   ```
+async def run_competition(
+    competition_id: str,
+    data_dir: str,
+    project_dir: str,
+    target_metric: str = "auc_roc",
+    metric_direction: str = "maximize",
+    max_iterations: int = 20,
+    resume_from_db: bool = True,
+) -> CompetitionState:
 
-   The Strategy Agent receives `knowledge.json` in full every call — directive-level failures are visible.
-3. **`session_summary` — compressed session narrative**: Every 10 experiments, Knowledge Extractor runs a summarization pass: it reads `knowledge.json` + the last 10 experiment records, calls the LLM with the prompt *"Compress this into a 5-bullet strategy summary: what is working, what has failed pattern-wise, what should be tried next, what should never be tried again, what the OOF trend is"*, and writes the result into `GraphState.session_summary`. The Strategy Agent receives this summary in its context every call.
+    store = StateStore(f"{project_dir}/.gladius/state.db")
 
-This is the same pattern used by proactive memory systems (e.g., `memU`): continuous extraction → compression → injection. The LLM never sees raw history; it sees structured, compressed, salient memory. Token cost stays flat regardless of how long the competition runs.
+    # Resume or initialize state
+    state = store.load() if resume_from_db else None
+    if state is None:
+        state = CompetitionState(
+            competition_id=competition_id,
+            data_dir=data_dir,
+            output_dir=f"{project_dir}/.gladius",
+            target_metric=target_metric,
+            metric_direction=metric_direction,
+            max_iterations=max_iterations,
+        )
 
-The only thing this requires: Knowledge Extractor must be disciplined — it must write directive-level findings, not just "depth=10 was slightly worse than depth=8". The prompt for Knowledge Extractor explicitly requires one directive-level finding and one param-level finding per event.
+    while state.iteration < state.max_iterations and state.phase != "done":
+        logger.info(f"[Iteration {state.iteration}] Phase: {state.phase}")
 
-**Ensemble Agent blend search is also a form of overfitting.** Nelder-Mead on OOF weights will overfit the OOF if you run it long enough. Mitigations: hard cap on optimization iterations (50 max), minimum weight constraint (no weight < 0.05), validation that blend OOF improvement over best single model is > 0.001 before submitting.
+        try:
+            if state.phase == "strategy":
+                hypothesis, session_id = await run_strategy_agent(state, data_dir)
+                state.current_hypothesis = hypothesis
+                state.strategy_session_id = session_id  # persist for next iteration
+                state.phase = "coding"
 
-**The whole system assumes your CV matches LB.** If your cross-validation is misconfigured (leaking time, wrong group split), the Strategy Agent will confidently optimize the wrong thing. No agent checks for this structurally. The Validation Agent checks for obvious leakage signals but can't check for subtle split misconfiguration. This has to be correct before you spin the system up.
+            elif state.phase == "coding":
+                code_result, session_id = await run_code_agent(
+                    state.current_hypothesis, state, project_dir
+                )
+                state.code_session_id = session_id
+                state.current_hypothesis["solution_path"] = code_result["solution_path"]
+                state.phase = "execution"
+
+            elif state.phase == "execution":
+                solution_path = state.current_hypothesis["solution_path"]
+                exec_result = await run_execution_agent(
+                    solution_path, max_runtime_minutes=90, state=state, project_dir=project_dir
+                )
+
+                if exec_result["status"] != "success":
+                    logger.warning(f"Execution failed: {exec_result.get('error_message')}")
+                    state.failed_hypotheses.append({
+                        **state.current_hypothesis,
+                        "reason": exec_result["status"],
+                        "error": exec_result.get("error_message"),
+                    })
+                    state.consecutive_errors += 1
+                    state.phase = "strategy"
+                else:
+                    state.consecutive_errors = 0
+                    state.current_hypothesis["oof_score"] = exec_result["oof_score"]
+                    state.current_hypothesis["runtime_seconds"] = exec_result["runtime_seconds"]
+                    state.phase = "validation"
+
+            elif state.phase == "validation":
+                solution_path = state.current_hypothesis["solution_path"]
+                oof_score = state.current_hypothesis["oof_score"]
+                submission_path = solution_path.replace(".py", "_sub.csv")
+
+                validation = await run_validation_agent(
+                    solution_path, oof_score, submission_path, state, project_dir
+                )
+
+                # ORCHESTRATOR owns the state mutation — not the agent
+                if validation["is_improvement"]:
+                    state.best_oof_score = oof_score
+                    state.experiments.append({
+                        "solution_path": solution_path,
+                        "oof_score": oof_score,
+                        "iteration": state.iteration,
+                        "hypothesis": state.current_hypothesis.get("hypothesis"),
+                    })
+
+                if validation["submit"] and state.submission_count < state.max_submissions_per_day:
+                    state.submission_count += 1
+                    state.best_submission_path = submission_path
+                    logger.info(f"Submitting: {submission_path}")
+
+                state.completed_hypotheses.append(state.current_hypothesis)
+                state.iteration += 1
+
+                # Trigger ensemble every 5 iterations if enough experiments
+                if state.iteration % 5 == 0 and len(state.experiments) >= 3:
+                    state.phase = "ensemble"
+                else:
+                    state.phase = "strategy"
+
+            elif state.phase == "ensemble":
+                ensemble_result = await run_ensemble_agent(state, project_dir)
+                if ensemble_result["oof_score"] > state.best_oof_score:
+                    state.best_oof_score = ensemble_result["oof_score"]
+                    state.best_submission_path = ensemble_result["submission_path"]
+                    logger.info(f"Ensemble improved OOF: {ensemble_result['oof_score']:.6f}")
+                state.phase = "strategy"
+
+        except Exception as e:
+            logger.error(f"Error in phase {state.phase}: {e}", exc_info=True)
+            state.error_log.append({"phase": state.phase, "iteration": state.iteration, "error": str(e)})
+            state.consecutive_errors += 1
+            if state.consecutive_errors >= 3:
+                logger.critical("3 consecutive errors — stopping")
+                state.phase = "done"
+            else:
+                state.phase = "strategy"
+
+        finally:
+            store.save(state)
+
+    logger.info(f"Competition run complete. Best OOF: {state.best_oof_score:.6f}")
+    return state
+
+
+async def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--competition", required=True)
+    parser.add_argument("--data-dir", required=True)
+    parser.add_argument("--project-dir", default=".")
+    parser.add_argument("--metric", default="auc_roc")
+    parser.add_argument("--direction", default="maximize")
+    parser.add_argument("--iterations", type=int, default=20)
+    parser.add_argument("--no-resume", action="store_true")
+    args = parser.parse_args()
+
+    await run_competition(
+        competition_id=args.competition,
+        data_dir=args.data_dir,
+        project_dir=args.project_dir,
+        target_metric=args.metric,
+        metric_direction=args.direction,
+        max_iterations=args.iterations,
+        resume_from_db=not args.no_resume,
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
 
 ---
 
-## 18. Tech Stack (Committed, No Hedging)
+## 9. Session Continuity
 
-| Component                      | Choice                                               | Why                                                                                                                                                |
-| ------------------------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Agent orchestration            | **LangGraph**                                  | StateGraph replaces the tick loop, event bus, and state manager. Built-in checkpointing, conditional edges, human interrupt, error handling.       |
-| State persistence              | **LangGraph SqliteSaver**                      | Checkpoints graph state to SQLite after every node. Crash recovery is free.                                                                        |
-| Persistent knowledge files     | Flat JSON (`knowledge.json`, `leaderboard.json`) | Survive process restarts independently of graph state. Appended to, never rewritten wholesale.                                                     |
-| Agent runtime                  | Python functions (LangGraph nodes)                   | Each agent is a function `(GraphState) -> GraphState`. No threads, no PIDs to manage.                                                            |
-| LLM for Code Gen / Strategy    | Gemini 1.5 Pro API                                   | Best instruction-following + long context for the price. Local Ollama is too slow for Code Generator on most hardware.                             |
-| LLM client                     | `langchain-google-genai`                           | First-class LangGraph integration, structured output via `.with_structured_output()` — handles JSON schema enforcement and retry automatically. |
-| Training subprocess            | Python `subprocess.Popen`                          | Training scripts run as child processes. Watchdog node monitors via `psutil`.                                                                    |
-| Notifications                  | Telegram bot (`python-telegram-bot`)               | Simple API, free, mobile.                                                                                                                          |
-| GPU monitoring                 | `pynvml`                                           | Per-process GPU stats.                                                                                                                             |
-| File locks for OOF/model files | `fcntl.flock`                                      | OS-level, no infrastructure, scoped only to file writes (see Section 13).                                                                          |
+Agent SDK sessions are resumed via `resume=session_id` in `ClaudeAgentOptions`. Session IDs come from `ResultMessage.session_id`.
+
+| Agent | Session Strategy | Rationale |
+|---|---|---|
+| Strategy Agent | Resume every iteration | Accumulates competition context, LB history, reasoning chain across all iterations — replaces context-stuffing |
+| Code Agent | Resume every iteration | "Remembers" the codebase structure, naming conventions, what it already wrote |
+| Execution Agent | No resume (stateless) | Each run is independent |
+| Validation Agent | No resume (stateless) | Each validation is independent |
+| Ensemble Agent | No resume (stateless) | Triggered on-demand, reads state from disk |
+
+```python
+# Resume a prior session — the agent re-enters its prior conversation context
+options = ClaudeAgentOptions(
+    resume=state.strategy_session_id,
+    # ...
+)
+
+# Fork a session — new session_id branching from the resumed one
+options = ClaudeAgentOptions(
+    resume=state.strategy_session_id,
+    fork_session=True,
+)
+```
 
 ---
 
-## 19. What This Solves for This Project
+## 10. Error Handling
 
-Concretely, on the DigiCow competition, this system would:
+```python
+from claude_agent_sdk import CLINotFoundError, ProcessError, CLIJSONDecodeError
 
-- Auto-retrain with 5 seeds after tuning finishes (v41) — Hypothesis Generator + Executor handles this
-- Submit if OOF improves, hold if not — Submission Decider handles this with the full logic from Section 11
-- Would have blocked the v40 blend-searched submission — `blend_weight_searched_on_oof` flag in Submission Decider
-- Wake up at night and run 3 more Optuna trials — no human needed in the loop
-- Send Telegram when a new best is found, when gap widens, when an agent goes degraded
+async def run_agent_with_retry(
+    prompt: str,
+    system_prompt: str,
+    allowed_tools: list[str],
+    output_schema: dict,
+    cwd: str,
+    max_retries: int = 3,
+) -> tuple[dict, str]:
+    for attempt in range(max_retries):
+        try:
+            return await run_agent(prompt, system_prompt, allowed_tools, output_schema, cwd)
+        except CLINotFoundError:
+            raise  # Fatal — Claude Code CLI not installed
+        except ProcessError as e:
+            if e.exit_code == 1 and "rate limit" in (e.stderr or ""):
+                await asyncio.sleep(60 * (2 ** attempt))  # exponential backoff
+            elif attempt == max_retries - 1:
+                raise
+        except CLIJSONDecodeError:
+            if attempt == max_retries - 1:
+                raise
+        except Exception:
+            if attempt == max_retries - 1:
+                raise
+    raise RuntimeError("Max retries exceeded")
+```
 
-What this does NOT solve automatically:
+---
 
-- A fundamentally broken CV — the system will optimize the wrong thing confidently
-- Bad feature engineering ideas — the LLM proposes, but if the data context given to it is thin, the proposals are thin
-- Kaggle API being down — the system queues retries but can't bypass the API
+## 11. Migration Map
+
+| LangGraph Component | SDK Replacement |
+|---|---|
+| `GraphState` TypedDict | `CompetitionState` dataclass |
+| `SqliteSaver` checkpointer | `StateStore` (SQLite) |
+| `graph.add_node()` | `async def run_X_agent()` function |
+| `graph.add_conditional_edges()` | `if/elif` in `orchestrator.py` |
+| `call_llm(prompt, schema=...)` | `output_format={"type":"json_schema",...}` in `ClaudeAgentOptions` |
+| `code_generator` + `code_reviewer` + `versioning_agent` | Single `run_code_agent()` |
+| `executor` + `resource_manager` + `watchdog` | Single `run_execution_agent()` |
+| `validation_agent` + `submission_decider` + `notifier` | Single `run_validation_agent()` |
+| `knowledge_extractor` | `AgentDefinition` subagent within strategy agent |
+| `ensemble_agent` + `lb_tracker` | Single `run_ensemble_agent()` |
+| `Send()` for parallel branches | `asyncio.gather()` with `asyncio.Semaphore` |
+| `router.py` routing functions | Deleted — `if/elif` in orchestrator |
+| `utils/llm.py` `call_llm()` | Deleted — SDK handles it |
+
+**Implementation order:**
+1. `gladius/state.py` — `CompetitionState` + `StateStore`
+2. `gladius/tools/kaggle_tools.py` + `gladius/tools/metric_tools.py`
+3. `gladius/agents/execution.py` — validates the pattern end-to-end
+4. `gladius/agents/code.py` — core value
+5. `gladius/agents/validation.py`
+6. `gladius/agents/strategy.py`
+7. `gladius/agents/ensemble.py`
+8. `gladius/orchestrator.py` — wire everything
+9. Delete: `gladius/nodes/`, `gladius/graph.py`, `gladius/utils/llm.py`
+
+---
+
+## 12. Dependencies
+
+```toml
+# pyproject.toml
+[project.dependencies]
+claude-agent-sdk = ">=0.1.0"
+numpy = ">=1.26"
+scikit-learn = ">=1.4"
+scipy = ">=1.11"
+kaggle = ">=1.6.0"
+
+# Remove: langgraph, langchain-core, langchain-anthropic
+```
+
+```bash
+# Requires Claude Code CLI (installed via npm)
+npm install -g @anthropic-ai/claude-code
+
+pip install claude-agent-sdk
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+---
+
+## 13. Key Design Principles
+
+1. **Agents are complete, autonomous workers** — not thin wrappers around a single LLM call. A code agent reads, writes, runs, and verifies. Tell it the goal; let it figure out the steps.
+
+2. **The orchestrator owns all routing and state mutation** — agents output structured JSON, the orchestrator decides what to do with it. Agents never update `best_oof_score` directly; the orchestrator does after reading their output. This was the fatal regression in the LangGraph version.
+
+3. **Sessions are long-lived for agents that accumulate context** — strategy and code agents resume their sessions across iterations, building up understanding of the competition and codebase without needing to reconstruct context from scratch each time.
+
+4. **Structured output via `output_format`** — every agent specifies a `json_schema`. The SDK guarantees the output conforms before returning. No `json.loads()` + exception handling in orchestrator code.
+
+5. **Parallelism via `asyncio.gather()`** — not LangGraph `Send()` primitives. Clean, debuggable, and trivially resource-bounded with `asyncio.Semaphore`.
+
+6. **Tools are the permission boundary** — `allowed_tools` in `ClaudeAgentOptions` specifies exactly what each agent can do. The execution agent gets `Bash`; the strategy agent does not. This replaces LangGraph's implicit "everything can do anything" node design.
+
+7. **Three LangGraph nodes → one SDK agent** — the code/review/version triplet collapses because Claude Code natively handles multi-step file operations. Same for executor/watchdog/resource-manager. This cuts the agent count from 18 to 5.

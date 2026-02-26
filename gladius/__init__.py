@@ -1,3 +1,4 @@
-"""Gladius: Autonomous multi-agent ML competition system."""
+"""Gladius — autonomous Kaggle competition agent (Claude Agent SDK)."""
+from gladius.orchestrator import run_competition
 
-__version__ = "0.1.0"
+__all__ = ["run_competition"]

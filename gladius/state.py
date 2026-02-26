@@ -1,86 +1,102 @@
-from dataclasses import dataclass
-from enum import Enum
-from typing import Optional, TypedDict
-
-
-class ExperimentStatus(str, Enum):
-    PENDING = "pending"
-    QUEUED = "queued"
-    RUNNING = "running"
-    DONE = "done"
-    FAILED = "failed"
-    KILLED = "killed"
-    VALIDATED = "validated"
-    SUBMITTED = "submitted"
-    HELD = "held"
-    SCORE_TIMEOUT = "score_timeout"
-    COMPLETE = "complete"
+"""
+Competition state and persistence.
+Replaces: GraphState TypedDict + LangGraph SqliteSaver
+"""
+import json
+import sqlite3
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Optional
 
 
 @dataclass
-class CompetitionConfig:
-    name: str
-    metric: str
-    target: str
-    deadline: str
-    days_remaining: float
-    submission_limit: int = 5
+class CompetitionState:
+    # Competition context
+    competition_id: str
+    data_dir: str
+    output_dir: str
+    target_metric: str          # "auc_roc" | "rmse" | "logloss" | etc.
+    metric_direction: str       # "maximize" | "minimize"
+
+    # Loop control
+    iteration: int = 0
+    max_iterations: int = 20
+    phase: str = "strategy"     # strategy | coding | execution | validation | ensemble | done
+
+    # Best known performance
+    best_oof_score: float = -1.0
+    best_submission_score: float = -1.0
+    best_submission_path: Optional[str] = None
+    submission_count: int = 0
+    max_submissions_per_day: int = 5
+
+    # Hypothesis / strategy memory
+    current_hypothesis: Optional[dict] = None
+    completed_hypotheses: list = field(default_factory=list)
+    failed_hypotheses: list = field(default_factory=list)
+
+    # Experiment registry
+    # Each entry: {solution_path, oof_score, iteration, hypothesis, runtime_seconds}
+    experiments: list = field(default_factory=list)
+
+    # Session IDs for resumable agents
+    strategy_session_id: Optional[str] = None
+    code_session_id: Optional[str] = None
+
+    # Error tracking
+    consecutive_errors: int = 0
+    error_log: list = field(default_factory=list)
+
+    # LB tracking
+    lb_scores: list = field(default_factory=list)  # [{score, timestamp, public_lb}]
 
 
-@dataclass
-class ExperimentSpec:
-    parent_version: str
-    changes: list
-    estimated_runtime_multiplier: float
-    rationale: str
+class StateStore:
+    """SQLite-backed persistence for CompetitionState."""
 
+    def __init__(self, db_path: str = ".gladius/state.db"):
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._init_schema()
 
-@dataclass
-class DirectiveJSON:
-    directive_type: (
-        str  # tune_existing | new_features | new_model_type | ensemble | seed_average
-    )
-    target_model: str  # catboost | lgbm | xgboost | nn | blend
-    rationale: str
-    exploration_flag: bool
-    priority: int  # 1-5
+    def _init_schema(self) -> None:
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS state (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS state_history (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                iteration  INTEGER,
+                phase      TEXT,
+                snapshot   TEXT NOT NULL,
+                saved_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.conn.commit()
 
+    def save(self, state: CompetitionState) -> None:
+        data = json.dumps(asdict(state))
+        self.conn.execute(
+            "INSERT OR REPLACE INTO state(key, value) VALUES ('current', ?)", (data,)
+        )
+        self.conn.execute(
+            "INSERT INTO state_history(iteration, phase, snapshot) VALUES (?, ?, ?)",
+            (state.iteration, state.phase, data),
+        )
+        self.conn.commit()
 
-class GraphState(TypedDict):
-    # Competition
-    competition: dict  # CompetitionConfig as dict
+    def load(self) -> Optional[CompetitionState]:
+        row = self.conn.execute(
+            "SELECT value FROM state WHERE key='current'"
+        ).fetchone()
+        if row:
+            data = json.loads(row[0])
+            return CompetitionState(**data)
+        return None
 
-    # Experiment lifecycle
-    current_experiment: Optional[dict]  # ExperimentSpec as dict
-    experiment_status: str  # ExperimentStatus value
-    running_pid: Optional[int]
-    run_id: Optional[str]
-
-    # Scores
-    oof_score: Optional[float]
-    lb_score: Optional[float]
-    best_oof: Optional[float]
-    gap_history: list  # OOF-LB gaps for last N scored submissions
-
-    # Budget
-    submissions_today: int
-    last_submission_time: Optional[float]
-
-    # Strategy context
-    directive: Optional[dict]  # DirectiveJSON as dict
-    exploration_flag: bool
-    consecutive_same_directive: int
-    session_summary: Optional[str]
-
-    # Code
-    generated_script_path: Optional[str]
-    reviewer_feedback: Optional[str]
-    code_retry_count: int
-
-    # Routing
-    next_node: str
-    error_message: Optional[str]
-
-    # Error handling
-    node_retry_counts: dict
-    next_node_before_error: Optional[str]
+    def close(self) -> None:
+        self.conn.close()
