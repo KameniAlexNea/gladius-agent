@@ -8,12 +8,15 @@ It is NOT told how to structure files, what to name things, or how to compute
 metrics. Its only job is to produce a concrete, ordered action plan.
 """
 
+import logging
 from typing import TYPE_CHECKING
 
 from gladius.agents._base import run_agent
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
+
+logger = logging.getLogger(__name__)
 
 # ── Output schema ─────────────────────────────────────────────────────────────
 # Minimal. Claude writes the steps; orchestrator passes them to the implementer.
@@ -121,7 +124,8 @@ Your job:
 
 Be specific. The implementer will execute your plan blindly.{parallel_instruction}
 """
-    return await run_agent(
+    _session = state.planner_session_id
+    _kwargs = dict(
         agent_name="planner",
         prompt=prompt,
         system_prompt=(
@@ -138,8 +142,18 @@ Be specific. The implementer will execute your plan blindly.{parallel_instructio
         allowed_tools=["Read", "Glob", "Grep", "Bash", "WebSearch", "Task"],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
-        resume=state.planner_session_id,
         mcp_servers=mcp_servers,
         max_turns=40,
     )
+    try:
+        return await run_agent(**_kwargs, resume=_session)
+    except Exception as exc:
+        if _session is not None:
+            logger.warning(
+                f"Planner with resumed session {_session[:8]}… failed ({exc}), "
+                "retrying with a fresh session."
+            )
+            state.planner_session_id = None
+            return await run_agent(**_kwargs, resume=None)
+        raise
 

@@ -585,13 +585,12 @@ def _write_mcp_json(root: Path, state: "CompetitionState") -> None:
     path = root / ".mcp.json"
     if path.exists():
         return
-    # Find the gladius package root to locate tool scripts
-    gladius_root = Path(__file__).parent.parent.parent.resolve()
+    import sys
     mcp_config: dict = {
         "mcpServers": {
             "metric-tools": {
                 "type": "stdio",
-                "command": str(gladius_root / ".venv" / "bin" / "python"),
+                "command": sys.executable,
                 "args": [
                     "-c",
                     (

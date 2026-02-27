@@ -87,37 +87,28 @@ def load_competition_config(competition_dir: str) -> dict:
 
 
 def _parse_frontmatter(readme: Path) -> dict:
-    """Parse simple key: value YAML frontmatter. No lists, no nesting."""
-    lines = readme.read_text(encoding="utf-8").splitlines()
-    if not lines or lines[0].strip() != "---":
+    """Parse YAML frontmatter from README.md using pyyaml."""
+    import yaml
+
+    text = readme.read_text(encoding="utf-8")
+    if not text.startswith("---"):
         raise CompetitionConfigError(
             f"{readme}: must start with '---' to open the YAML frontmatter block."
         )
-
-    cfg: dict = {}
-    closed = False
-    for i, line in enumerate(lines[1:], start=2):
-        s = line.strip()
-        if s == "---":
-            closed = True
-            break
-        if not s or s.startswith("#"):
-            continue
-        if ":" not in s:
-            raise CompetitionConfigError(
-                f"{readme}:{i}: expected 'key: value', got {line!r}"
-            )
-        key, _, val = s.partition(":")
-        val = val.strip()
-        if " #" in val:  # strip inline comment
-            val = val[: val.index(" #")].strip()
-        if len(val) >= 2 and val[0] in ('"', "'") and val[0] == val[-1]:
-            val = val[1:-1]  # strip surrounding quotes
-        cfg[key.strip()] = val
-
-    if not closed:
+    end = text.find("\n---", 3)
+    if end == -1:
         raise CompetitionConfigError(
             f"{readme}: frontmatter block never closed with '---'."
         )
-
-    return cfg
+    frontmatter_text = text[3:end]
+    try:
+        cfg = yaml.safe_load(frontmatter_text) or {}
+    except yaml.YAMLError as exc:
+        raise CompetitionConfigError(
+            f"{readme}: invalid YAML frontmatter: {exc}"
+        ) from exc
+    if not isinstance(cfg, dict):
+        raise CompetitionConfigError(
+            f"{readme}: frontmatter must be a YAML mapping."
+        )
+    return {k: str(v) for k, v in cfg.items()}

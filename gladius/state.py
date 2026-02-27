@@ -196,9 +196,10 @@ class StateStore:
                 ),
             )
 
-            # List tables: clear and re-insert (runs stay small during a competition)
-            self.conn.execute("DELETE FROM experiments")
-            for e in state.experiments:
+            # List tables: append-only — only INSERT rows not yet in the DB.
+            # Counting existing rows avoids the O(N) DELETE+re-INSERT pattern.
+            existing_exp = self.conn.execute("SELECT COUNT(*) FROM experiments").fetchone()[0]
+            for e in state.experiments[existing_exp:]:
                 files = ",".join(e.get("solution_files") or [])
                 self.conn.execute(
                     """
@@ -216,8 +217,8 @@ class StateStore:
                     ),
                 )
 
-            self.conn.execute("DELETE FROM failed_runs")
-            for f in state.failed_runs:
+            existing_fr = self.conn.execute("SELECT COUNT(*) FROM failed_runs").fetchone()[0]
+            for f in state.failed_runs[existing_fr:]:
                 self.conn.execute(
                     """
                     INSERT INTO failed_runs (iteration, status, error, approach)
@@ -231,8 +232,8 @@ class StateStore:
                     ),
                 )
 
-            self.conn.execute("DELETE FROM error_log")
-            for e in state.error_log:
+            existing_el = self.conn.execute("SELECT COUNT(*) FROM error_log").fetchone()[0]
+            for e in state.error_log[existing_el:]:
                 self.conn.execute(
                     """
                     INSERT INTO error_log (iteration, phase, error)
@@ -241,8 +242,8 @@ class StateStore:
                     (e.get("iteration"), e.get("phase"), e.get("error")),
                 )
 
-            self.conn.execute("DELETE FROM lb_scores")
-            for lb in state.lb_scores:
+            existing_lb = self.conn.execute("SELECT COUNT(*) FROM lb_scores").fetchone()[0]
+            for lb in state.lb_scores[existing_lb:]:
                 self.conn.execute(
                     """
                     INSERT INTO lb_scores (score, timestamp, public_lb)

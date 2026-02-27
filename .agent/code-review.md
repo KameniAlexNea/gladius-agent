@@ -3,6 +3,7 @@
 **Revision**: 4
 **Reviewed**: 2025-02-27
 **Scope**: Fresh review of the Claude Agent SDK implementation. Revisions 1-3 covered the LangGraph codebase, now deleted.
+**Status**: Issues #3-#11 (High + Medium) fixed 2026-02-27. Issues #1-#2 (Critical) remain open.
 
 ---
 
@@ -16,21 +17,21 @@ However there are two **critical bugs** that will cause silent wrong behaviour i
 
 ## Priority Table
 
-| # | Severity | File | Issue | Effort |
-|---|---|---|---|---|
-| 1 | 🔴 Critical | `orchestrator.py` | Parallel mode validates wrong experiment | S |
-| 2 | 🔴 Critical | `utils/project_setup.py` | `permissionMode: acceptEdits` crashes subagent Task calls | S |
-| 3 | 🟠 High | `agents/planner.py` | `_build_platform_mcp` is dead code | XS |
-| 4 | 🟠 High | `orchestrator.py` | `store.close()` not in `finally` — connection leak on error | XS |
-| 5 | 🟠 High | `agents/validation.py` | `notes` missing from OUTPUT_SCHEMA — always empty in orchestrator | S |
-| 6 | 🟠 High | `utils/project_setup.py` | `_write_mcp_json` hardcodes `.venv/bin/python` | XS |
-| 7 | 🟡 Medium | `agents/summarizer.py` | Off-by-one: iteration incremented before summarizer runs | XS |
-| 8 | 🟡 Medium | `utils/competition_config.py` | Manual YAML frontmatter parsing — fragile on special chars | S |
-| 9 | 🟡 Medium | `tests/` | Directory is empty — zero test coverage | L |
-| 10 | 🟡 Medium | `state.py` | List tables: DELETE + INSERT every save — O(N) at 100+ iterations | M |
-| 11 | 🟡 Medium | `agents/planner.py` | `planner_session_id` never cleared — stale session not handled | S |
-| 12 | 🟢 Low | `scripts/validate_bash.sh` | Uses `python3` not venv Python | XS |
-| 13 | 🟢 Low | `utils/project_setup.py` | `settings.json` overwritten every run — user customisations lost | S |
+| # | Severity | File | Issue | Effort | Status |
+|---|---|---|---|---|---|
+| 1 | 🔴 Critical | `orchestrator.py` | Parallel mode validates wrong experiment | S | Open |
+| 2 | 🔴 Critical | `utils/project_setup.py` | `permissionMode: acceptEdits` crashes subagent Task calls | S | Open |
+| 3 | 🟠 High | `agents/planner.py` | `_build_platform_mcp` is dead code | XS | ✅ Already gone |
+| 4 | 🟠 High | `orchestrator.py` | `store.close()` not in `finally` — connection leak on error | XS | ✅ Fixed |
+| 5 | 🟠 High | `agents/validation.py` | `notes` missing from OUTPUT_SCHEMA — always empty in orchestrator | S | ✅ Fixed (use `reasoning`) |
+| 6 | 🟠 High | `utils/project_setup.py` | `_write_mcp_json` hardcodes `.venv/bin/python` | XS | ✅ Fixed (`sys.executable`) |
+| 7 | 🟡 Medium | `agents/summarizer.py` | Off-by-one: iteration incremented before summarizer runs | XS | ✅ Fixed |
+| 8 | 🟡 Medium | `utils/competition_config.py` | Manual YAML frontmatter parsing — fragile on special chars | S | ✅ Fixed (pyyaml) |
+| 9 | 🟡 Medium | `tests/` | Directory is empty — zero test coverage | L | ✅ Fixed (18 tests) |
+| 10 | 🟡 Medium | `state.py` | List tables: DELETE + INSERT every save — O(N) at 100+ iterations | M | ✅ Fixed (append-only) |
+| 11 | 🟡 Medium | `agents/planner.py` | `planner_session_id` never cleared — stale session not handled | S | ✅ Fixed |
+| 12 | 🟢 Low | `scripts/validate_bash.sh` | Uses `python3` not venv Python | XS | Open |
+| 13 | 🟢 Low | `utils/project_setup.py` | `settings.json` overwritten every run — user customisations lost | S | Open |
 
 ---
 

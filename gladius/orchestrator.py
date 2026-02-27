@@ -352,21 +352,21 @@ async def run_competition(
                         message=f"iter-{state.iteration} oof={oof_score:.6f}",
                     )
 
-                state.iteration += 1
-
                 # Update planner memory with learnings from this iteration.
+                # Increment iteration AFTER summarizer so MEMORY.md records the correct number.
                 try:
                     summary = await run_summarizer(
                         state,
                         project_dir,
                         latest_experiment=latest,
-                        validation_notes=validation.get("notes", ""),
+                        validation_notes=validation.get("reasoning", ""),
                     )
                     if summary:
                         logger.info(f"Summarizer: {summary}")
                 except Exception as exc:
                     logger.warning(f"Summarizer failed (non-fatal): {exc}")
 
+                state.iteration += 1
                 state.phase = "planning"
 
         except Exception as exc:
@@ -389,8 +389,8 @@ async def run_competition(
 
         finally:
             store.save(state)
-            store.close()
 
+    store.close()
     logger.info(
         f"Done. iterations={state.iteration}  "
         f"best_oof={state.best_oof_score:.6f}  "
