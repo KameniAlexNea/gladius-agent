@@ -83,6 +83,12 @@ def load_competition_config(competition_dir: str) -> dict:
         p = Path(competition_dir) / p
     cfg["data_dir"] = str(p.resolve())
 
+    if not p.exists():
+        raise CompetitionConfigError(
+            f"data_dir {str(p)!r} does not exist. "
+            "Create the directory or fix the 'data_dir' field in README.md frontmatter."
+        )
+
     return cfg
 
 

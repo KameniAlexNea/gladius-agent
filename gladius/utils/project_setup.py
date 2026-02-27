@@ -641,7 +641,7 @@ import sys, json
 try:
     d = json.load(sys.stdin)
     ti = d.get('tool_input', {})
-    print(ti.get('path', ti.get('new_path', '')))
+    print(ti.get('file_path', ''))  # SDK Write and Edit both use 'file_path'
 except Exception:
     print('')
 " <<< "$INPUT" 2>/dev/null || echo "")
@@ -719,24 +719,32 @@ def _make_memory_dir(root: Path) -> None:
             """\
 # Planner Memory
 
-> This file is maintained by the planner agent across competition iterations.
-> Update it with key insights, data quirks, and what has/hasn't worked.
+> Auto-updated by summarizer. Last iteration: 0
 
-## Competition Notes
+## Key Data Insights
 
-_(Add notes here as you explore)_
+_(Add notes here as you explore the dataset)_
 
-## What Has Worked
+## What Works  ✅
 
-_(Record successful approaches)_
+_(Record successful approaches with approximate OOF delta and iteration number)_
 
-## What Failed / Should Avoid
+## What Fails / Dead Ends  ❌
 
-_(Record dead ends)_
+_(Record approaches that hurt score, timed out, or errored — include the reason)_
 
-## Data Insights
+## Patterns & Hypotheses  💡
 
-_(Feature correlations, label distribution, data quirks, etc.)_
+_(Open hypotheses not yet tested, or correlations observed in data)_
+
+## Experiment Score History
+
+| iter | OOF | approach | notes |
+| --- | --- | --- | --- |
+
+## Suggested Next Directions
+
+1. Establish a baseline (LightGBM or XGBoost) before any feature engineering.
 """,
             encoding="utf-8",
         )

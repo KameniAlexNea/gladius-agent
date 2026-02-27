@@ -139,7 +139,15 @@ Be specific. The implementer will execute your plan blindly.{parallel_instructio
             "fundamentally different model families, or go back to raw data exploration "
             "rather than incrementally tweaking the current approach."
         ),
-        allowed_tools=["Read", "Glob", "Grep", "Bash", "WebSearch", "Task", "TodoWrite"],
+        allowed_tools=[
+            "Read",
+            "Glob",
+            "Grep",
+            "Bash",
+            "WebSearch",
+            "Task",
+            "TodoWrite",
+        ],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
         mcp_servers=mcp_servers,
@@ -153,6 +161,5 @@ Be specific. The implementer will execute your plan blindly.{parallel_instructio
                 f"Planner with resumed session {_session[:8]}… failed ({exc}), "
                 "retrying with a fresh session."
             )
-            state.planner_session_id = None
             return await run_agent(**_kwargs, resume=None)
         raise

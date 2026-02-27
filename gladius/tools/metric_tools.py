@@ -58,9 +58,69 @@ async def compute_oof_correlation(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": f"Error: {e}"}], "is_error": True}
 
 
-# ── MCP server instance ───────────────────────────────────────────────────────
+@tool(
+    "check_oof_improvement",
+    (
+        "Check whether the most recent OOF score in a history list is an improvement "
+        "over all previous entries. Pass the full ordered list of OOF scores "
+        "(oldest first, newest last), whether higher is better (maximize=True for AUC, "
+        "maximize=False for RMSE/log-loss), and an optional threshold (default 1e-4). "
+        "Returns is_improvement, previous_best, delta, and a human-readable verdict."
+    ),
+    {"oof_scores": list, "maximize": bool, "threshold": float},
+)
+async def check_oof_improvement(args: dict[str, Any]) -> dict[str, Any]:
+    try:
+        scores = args["oof_scores"]
+        if not scores:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: oof_scores list is empty"}
+                ],
+                "is_error": True,
+            }
+        maximize = bool(args.get("maximize", True))
+        threshold = float(args.get("threshold") or 1e-4)
+
+        latest = float(scores[-1])
+        history = [float(s) for s in scores[:-1]]
+
+        if not history:
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            f"First experiment: {latest:.6f} — no previous best to compare."
+                        ),
+                    }
+                ]
+            }
+
+        prev_best = max(history) if maximize else min(history)
+        delta = latest - prev_best  # positive = better for maximize
+        is_improvement = (
+            latest > prev_best + threshold
+            if maximize
+            else latest < prev_best - threshold
+        )
+
+        verdict = (
+            f"{'IMPROVEMENT ✅' if is_improvement else 'NO IMPROVEMENT ❌'}\n"
+            f"Latest OOF   : {latest:.6f}\n"
+            f"Previous best: {prev_best:.6f}\n"
+            f"Delta        : {delta:+.6f} ({'higher is better' if maximize else 'lower is better'})\n"
+            f"Threshold    : {threshold}\n"
+            f"Improved     : {is_improvement}"
+        )
+        return {"content": [{"type": "text", "text": verdict}]}
+    except Exception as e:
+        return {"content": [{"type": "text", "text": f"Error: {e}"}], "is_error": True}
+
+
+# ── MCP server instance ────────────────────────────────────────────────
 metric_server = create_sdk_mcp_server(
     name="metrics",
     version="1.0.0",
-    tools=[compute_oof_correlation],
+    tools=[compute_oof_correlation, check_oof_improvement],
 )

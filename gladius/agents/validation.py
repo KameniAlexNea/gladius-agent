@@ -73,14 +73,48 @@ async def run_validation_agent(
     submission_path: str,
     state: "CompetitionState",
     project_dir: str,
+    platform: str = "fake",
 ) -> dict:
     """
     Validate a new experiment result and recommend submit/hold.
 
-    The orchestrator is responsible for acting on .is_improvement and .submit.
-    This function only reads; it never modifies state.
+    Injects the platform-specific MCP server so the agent can query live
+    submission quota directly instead of relying on the state counter.
     """
     direction_word = "higher" if state.metric_direction == "maximize" else "lower"
+
+    # ── Platform-specific MCP server ──────────────────────────────────────
+    mcp_servers: dict = {}
+    quota_tool: str = ""
+    quota_instruction: str = ""
+
+    if platform == "zindi":
+        from gladius.tools.zindi_tools import zindi_server
+
+        mcp_servers = {"zindi": zindi_server}
+        quota_tool = "mcp__zindi__zindi_status"
+        quota_instruction = (
+            "3. Call `zindi_status` to get today's remaining submission quota.\n"
+        )
+    elif platform == "kaggle":
+        from gladius.tools.kaggle_tools import kaggle_server
+
+        mcp_servers = {"kaggle": kaggle_server}
+        quota_tool = "mcp__kaggle__kaggle_submission_history"
+        quota_instruction = (
+            "3. Call `kaggle_submission_history` and count how many submissions "
+            "were made today to determine remaining quota.\n"
+        )
+    else:  # fake and anything else
+        from gladius.tools.fake_platform_tools import fake_server
+
+        mcp_servers = {"fake": fake_server}
+        quota_tool = "mcp__fake__fake_status"
+        quota_instruction = (
+            "3. Call `fake_status` to get your current submission count and rank.\n"
+        )
+
+    allowed_tools = ["Read", "Bash"] + ([quota_tool] if quota_tool else [])
 
     prompt = f"""\
 ## Validation Request
@@ -88,27 +122,27 @@ async def run_validation_agent(
 New experiment:
   Solution      : {solution_path}
   OOF score     : {oof_score:.6f}
-  Submission CSV: {submission_path}
+  Submission CSV: {submission_path or "(none produced)"}
 
 Context:
   Metric              : {state.target_metric} ({state.metric_direction})
   Current best OOF    : {state.best_oof_score:.6f}
   Improvement threshold: 0.0001 ({direction_word} is better)
-  Submissions today   : {state.submission_count} / {state.max_submissions_per_day}
+  State submission count today: {state.submission_count} / {state.max_submissions_per_day}
 
 ## Tasks
 1. Determine is_improvement: is {oof_score:.6f} meaningfully better than {state.best_oof_score:.6f}?
-2. Read the first 3 lines of {submission_path} to verify format
-3. Decide submit = is_improvement AND submissions_today < {state.max_submissions_per_day}
-4. Return the structured JSON result
+2. {"Read the first 3 lines of " + submission_path + " to verify format." if submission_path else "No submission file — set format_ok=False."}
+{quota_instruction}4. Return the structured JSON result.
 """
     result, _ = await run_agent(
         agent_name="validation",
         prompt=prompt,
         system_prompt=SYSTEM_PROMPT,
-        allowed_tools=["Read", "Bash"],
+        allowed_tools=allowed_tools,
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
+        mcp_servers=mcp_servers,
         max_turns=10,
     )
     return result

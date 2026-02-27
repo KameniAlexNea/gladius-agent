@@ -156,8 +156,13 @@ def _log_message(agent_name: str, message: Any) -> None:
             sid = message.data.get("session_id", "?")
             print(_c(_GREY, f"  🔑 [{agent_name}] session={sid[:16]}…"))
 
-    elif isinstance(message, AssistantMessage):
-        # Show a visual marker when this message originates from inside a subagent.
+    elif isinstance(
+        message, AssistantMessage
+    ):  # Emit any error before printing content blocks so it's never missed.
+        if message.error:
+            print(
+                _c(_RED, f"  ⚠ [{agent_name}] AssistantMessage error: {message.error}")
+            )  # Show a visual marker when this message originates from inside a subagent.
         sub_tag = _c(_DIM + _GREY, " ➣subagent") if message.parent_tool_use_id else ""
 
         for block in message.content:
@@ -191,14 +196,20 @@ def _log_message(agent_name: str, message: Any) -> None:
                     description = block.input.get("description", "")
                     snippet = block.input.get("prompt", "")[:80].replace("\n", " ")
                     print(
-                        _c(_BOLD + _BLUE, f"  🤖 [{agent_name}]{sub_tag} Task → {subagent_type}")
+                        _c(
+                            _BOLD + _BLUE,
+                            f"  🤖 [{agent_name}]{sub_tag} Task → {subagent_type}",
+                        )
                         + _c(_DIM, f"  [{description}]  {snippet}…")
                     )
 
                 else:
                     inp_str = _fmt_input(block.input)
                     print(
-                        _c(_BOLD + _YELLOW, f"  🔧 [{agent_name}]{sub_tag} {block.name}")
+                        _c(
+                            _BOLD + _YELLOW,
+                            f"  🔧 [{agent_name}]{sub_tag} {block.name}",
+                        )
                         + _c(_DIM, f"  {inp_str}")
                     )
 
@@ -313,7 +324,10 @@ async def run_agent(
                     "Agent returned no structured_output (schema not satisfied?)"
                 )
 
-            return result_msg.structured_output, result_msg.session_id or early_session_id or ""
+            return (
+                result_msg.structured_output,
+                result_msg.session_id or early_session_id or "",
+            )
 
         except CLINotFoundError:
             raise  # Fatal — Claude Code CLI not installed

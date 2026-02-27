@@ -118,6 +118,9 @@ def _submit(
 def _is_better(
     new_score: float, best_score: float, direction: str, threshold: float = 1e-4
 ) -> bool:
+    """Deterministic improvement check.  -1.0 is the sentinel for 'no score yet'."""
+    if best_score == -1.0:  # sentinel: no valid score recorded yet — always improve
+        return True
     if direction == "maximize":
         return new_score > best_score + threshold
     return new_score < best_score - threshold
@@ -159,6 +162,12 @@ async def run_competition(
             f"Resuming from iteration {state.iteration}, phase={state.phase}, "
             f"best={state.best_oof_score:.6f}"
         )
+        if state.max_iterations != max_iterations:
+            logger.info(
+                f"Updating max_iterations from CLI: "
+                f"{state.max_iterations} → {max_iterations}"
+            )
+            state.max_iterations = max_iterations
 
     # Bootstrap project directory with Claude Code native config (.claude/,
     # skills, hooks, agent definitions, MEMORY.md). Idempotent — safe to call
@@ -193,7 +202,15 @@ async def run_competition(
 
             # ── IMPLEMENTING ─────────────────────────────────────────────────
             elif state.phase == "implementing":
-                # Gather plans: use planner’s multi-plan list when available
+                if state.current_plan is None:
+                    logger.warning(
+                        "Resuming in 'implementing' phase with no current_plan "
+                        "— falling back to planning"
+                    )
+                    state.phase = "planning"
+                    store.save(state)
+                    continue
+                # Gather plans: use planner's multi-plan list when available
                 # and n_parallel > 1, otherwise fall back to single plan.
                 alt_plans: list[dict] = (
                     state.current_plan.get("plans", []) if state.current_plan else []
@@ -210,6 +227,16 @@ async def run_competition(
                     for i, r in enumerate(results):
                         if isinstance(r, Exception):
                             logger.warning(f"Parallel implementer {i} raised: {r}")
+                            state.failed_runs.append(
+                                {
+                                    "iteration": state.iteration,
+                                    "status": "error",
+                                    "error": str(r),
+                                    "approach": plans_to_run[i].get(
+                                        "approach_summary", ""
+                                    ),
+                                }
+                            )
                         elif isinstance(r, dict) and r.get("status") == "success":
                             successful.append(r)
                         else:
@@ -322,7 +349,6 @@ async def run_competition(
                     )
 
                 # ── Common post-implementation logic (parallel + sequential) ─
-                state.consecutive_errors = 0
                 oof = result["oof_score"]
                 logger.info(
                     f"Implementation done — OOF {state.target_metric}: {oof:.6f}"
@@ -339,21 +365,57 @@ async def run_competition(
                 oof_score = latest["oof_score"]
                 submission_file = latest["submission_file"]
 
-                validation = await run_validation_agent(
-                    solution_path=", ".join(latest.get("solution_files", [])),
-                    oof_score=oof_score,
-                    submission_path=submission_file,
-                    state=state,
-                    project_dir=project_dir,
-                )
+                # Reset daily submission counter when the calendar date rolls over.
+                from datetime import date as _date
 
-                # Validation agent saw the true previous best; update now.
-                if validation.get("is_improvement"):
+                today = _date.today().isoformat()
+                if state.last_submission_date != today:
+                    if state.submission_count > 0:
+                        logger.info(
+                            f"New day ({today}) — resetting submission_count "
+                            f"from {state.submission_count} to 0"
+                        )
+                    state.submission_count = 0
+                    state.last_submission_date = today
+
+                if not submission_file:
+                    logger.warning(
+                        "No submission file produced — skipping format check, "
+                        "running deterministic improvement check only"
+                    )
+                    validation: dict = {
+                        "is_improvement": None,
+                        "submit": False,
+                        "reasoning": "No submission file produced",
+                    }
+                else:
+                    validation = await run_validation_agent(
+                        solution_path=", ".join(latest.get("solution_files", [])),
+                        oof_score=oof_score,
+                        submission_path=submission_file,
+                        state=state,
+                        project_dir=project_dir,
+                        platform=platform,
+                    )
+
+                # Deterministic improvement gate — LLM verdict is advisory only.
+                # The agent can hallucinate is_improvement=True; _is_better() is
+                # the authoritative check that guards state.best_oof_score.
+                deterministic_improvement = _is_better(
+                    oof_score, state.best_oof_score, state.metric_direction
+                )
+                if validation.get("is_improvement") != deterministic_improvement:
+                    logger.warning(
+                        f"Validation agent is_improvement={validation.get('is_improvement')} "
+                        f"overridden by deterministic check → {deterministic_improvement} "
+                        f"(OOF {oof_score:.6f} vs best {state.best_oof_score:.6f})"
+                    )
+                if deterministic_improvement:
                     state.best_oof_score = oof_score
                     logger.info(f"New best OOF: {oof_score:.6f}")
 
                 if (
-                    validation["submit"]
+                    deterministic_improvement
                     and submission_file
                     and state.submission_count < state.max_submissions_per_day
                     and auto_submit
@@ -382,6 +444,7 @@ async def run_competition(
                 except Exception as exc:
                     logger.warning(f"Summarizer failed (non-fatal): {exc}")
 
+                state.consecutive_errors = 0
                 state.iteration += 1
                 state.phase = "planning"
 
