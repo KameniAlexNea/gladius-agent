@@ -153,6 +153,7 @@ async def run_agent(
     -------
     (structured_output, session_id)
     """
+
     def _stderr_cb(line: str) -> None:
         print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
 

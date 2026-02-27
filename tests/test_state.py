@@ -1,8 +1,5 @@
 """Tests for CompetitionState / StateStore round-trip."""
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from gladius.state import CompetitionState, StateStore
@@ -26,6 +23,7 @@ def make_state(**kwargs) -> CompetitionState:
 
 
 # ── Basic round-trip ───────────────────────────────────────────────────────────
+
 
 def test_save_and_load_scalars(db_path):
     store = StateStore(db_path)
@@ -84,7 +82,9 @@ def test_save_and_load_experiments(db_path):
 def test_save_and_load_failed_runs(db_path):
     store = StateStore(db_path)
     state = make_state()
-    state.failed_runs = [{"iteration": 0, "status": "error", "error": "OOM", "approach": "LGBM"}]
+    state.failed_runs = [
+        {"iteration": 0, "status": "error", "error": "OOM", "approach": "LGBM"}
+    ]
     store.save(state)
     loaded = store.load()
     store.close()
@@ -105,7 +105,10 @@ def test_current_plan_roundtrip(db_path):
     state = make_state()
     state.current_plan = {
         "approach_summary": "Use XGBoost with target encoding",
-        "plan": [{"step": 1, "description": "Load data"}, {"step": 2, "description": "Fit model"}],
+        "plan": [
+            {"step": 1, "description": "Load data"},
+            {"step": 2, "description": "Fit model"},
+        ],
         "expected_metric_delta": 0.02,
     }
     store.save(state)
@@ -118,15 +121,34 @@ def test_current_plan_roundtrip(db_path):
 
 # ── Append-only behaviour (issue #10 fix) ────────────────────────────────────
 
+
 def test_append_only_experiments(db_path):
     """Second save should only insert new rows, not re-insert existing ones."""
     store = StateStore(db_path)
     state = make_state()
-    state.experiments = [{"iteration": 0, "oof_score": 0.75, "submission_file": "", "notes": "", "approach": "", "solution_files": []}]
+    state.experiments = [
+        {
+            "iteration": 0,
+            "oof_score": 0.75,
+            "submission_file": "",
+            "notes": "",
+            "approach": "",
+            "solution_files": [],
+        }
+    ]
     store.save(state)
 
     # Add a second experiment and save again
-    state.experiments.append({"iteration": 1, "oof_score": 0.80, "submission_file": "", "notes": "", "approach": "", "solution_files": []})
+    state.experiments.append(
+        {
+            "iteration": 1,
+            "oof_score": 0.80,
+            "submission_file": "",
+            "notes": "",
+            "approach": "",
+            "solution_files": [],
+        }
+    )
     store.save(state)
 
     loaded = store.load()
@@ -144,7 +166,17 @@ def test_resume_after_save(db_path):
     state = make_state()
     state.iteration = 5
     state.best_oof_score = 0.91
-    state.experiments = [{"iteration": i, "oof_score": 0.7 + i * 0.01, "submission_file": f"s{i}.csv", "notes": "", "approach": "", "solution_files": []} for i in range(5)]
+    state.experiments = [
+        {
+            "iteration": i,
+            "oof_score": 0.7 + i * 0.01,
+            "submission_file": f"s{i}.csv",
+            "notes": "",
+            "approach": "",
+            "solution_files": [],
+        }
+        for i in range(5)
+    ]
     store.save(state)
     store.close()
 

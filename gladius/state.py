@@ -198,7 +198,9 @@ class StateStore:
 
             # List tables: append-only — only INSERT rows not yet in the DB.
             # Counting existing rows avoids the O(N) DELETE+re-INSERT pattern.
-            existing_exp = self.conn.execute("SELECT COUNT(*) FROM experiments").fetchone()[0]
+            existing_exp = self.conn.execute(
+                "SELECT COUNT(*) FROM experiments"
+            ).fetchone()[0]
             for e in state.experiments[existing_exp:]:
                 files = ",".join(e.get("solution_files") or [])
                 self.conn.execute(
@@ -217,7 +219,9 @@ class StateStore:
                     ),
                 )
 
-            existing_fr = self.conn.execute("SELECT COUNT(*) FROM failed_runs").fetchone()[0]
+            existing_fr = self.conn.execute(
+                "SELECT COUNT(*) FROM failed_runs"
+            ).fetchone()[0]
             for f in state.failed_runs[existing_fr:]:
                 self.conn.execute(
                     """
@@ -232,7 +236,9 @@ class StateStore:
                     ),
                 )
 
-            existing_el = self.conn.execute("SELECT COUNT(*) FROM error_log").fetchone()[0]
+            existing_el = self.conn.execute(
+                "SELECT COUNT(*) FROM error_log"
+            ).fetchone()[0]
             for e in state.error_log[existing_el:]:
                 self.conn.execute(
                     """
@@ -242,7 +248,9 @@ class StateStore:
                     (e.get("iteration"), e.get("phase"), e.get("error")),
                 )
 
-            existing_lb = self.conn.execute("SELECT COUNT(*) FROM lb_scores").fetchone()[0]
+            existing_lb = self.conn.execute(
+                "SELECT COUNT(*) FROM lb_scores"
+            ).fetchone()[0]
             for lb in state.lb_scores[existing_lb:]:
                 self.conn.execute(
                     """

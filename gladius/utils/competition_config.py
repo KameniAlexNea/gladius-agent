@@ -108,7 +108,5 @@ def _parse_frontmatter(readme: Path) -> dict:
             f"{readme}: invalid YAML frontmatter: {exc}"
         ) from exc
     if not isinstance(cfg, dict):
-        raise CompetitionConfigError(
-            f"{readme}: frontmatter must be a YAML mapping."
-        )
+        raise CompetitionConfigError(f"{readme}: frontmatter must be a YAML mapping.")
     return {k: str(v) for k, v in cfg.items()}

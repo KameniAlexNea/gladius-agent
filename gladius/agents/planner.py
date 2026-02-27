@@ -156,4 +156,3 @@ Be specific. The implementer will execute your plan blindly.{parallel_instructio
             state.planner_session_id = None
             return await run_agent(**_kwargs, resume=None)
         raise
-

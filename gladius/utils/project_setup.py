@@ -597,6 +597,7 @@ def _write_mcp_json(root: Path, state: "CompetitionState") -> None:
     if path.exists():
         return
     import sys
+
     mcp_config: dict = {
         "mcpServers": {
             "metric-tools": {
