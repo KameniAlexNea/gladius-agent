@@ -1,3 +1,5 @@
-"""Gladius: Autonomous multi-agent ML competition system."""
+"""Gladius — autonomous ML competition agent (Claude Agent SDK)."""
 
-__version__ = "0.1.0"
+from gladius.orchestrator import run_competition
+
+__all__ = ["run_competition"]
