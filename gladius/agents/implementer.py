@@ -94,7 +94,7 @@ Report the final {state.target_metric} score in oof_score.
             "Before reporting your final result, read .claude/skills/code-review/SKILL.md "
             "and fix every CRITICAL item (leakage, metric correctness, submission format)."
         ),
-        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite"],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
         max_turns=80,

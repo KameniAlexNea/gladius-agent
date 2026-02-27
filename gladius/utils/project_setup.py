@@ -202,9 +202,8 @@ def setup_project_dir(state: "CompetitionState", project_dir: str) -> None:
 
 
 def _write_agent_planner(root: Path) -> None:
+    # Always overwrite so that permission mode and content stay in sync.
     path = root / ".claude" / "agents" / "planner.md"
-    if path.exists():
-        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         """\
@@ -218,7 +217,7 @@ tools: Read, Glob, Grep, Bash, WebSearch, Task
 model: sonnet
 memory: project
 maxTurns: 40
-permissionMode: acceptEdits
+permissionMode: bypassPermissions
 ---
 
 You are an expert ML competition analyst.
@@ -245,9 +244,8 @@ You are an expert ML competition analyst.
 
 
 def _write_agent_implementer(root: Path) -> None:
+    # Always overwrite so that permission mode and content stay in sync.
     path = root / ".claude" / "agents" / "implementer.md"
-    if path.exists():
-        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         """\
@@ -260,7 +258,7 @@ description: >
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 maxTurns: 80
-permissionMode: acceptEdits
+permissionMode: bypassPermissions
 ---
 
 You are an expert ML engineer executing a competition experiment.
