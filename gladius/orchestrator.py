@@ -118,10 +118,10 @@ def _submit(
 
 # ── Improvement check ─────────────────────────────────────────────────────────
 def _is_better(
-    new_score: float, best_score: float, direction: str, threshold: float = 1e-4
+    new_score: float, best_score: float | None, direction: str, threshold: float = 1e-4
 ) -> bool:
-    """Deterministic improvement check.  -1.0 is the sentinel for 'no score yet'."""
-    if best_score == -1.0:  # sentinel: no valid score recorded yet — always improve
+    """Deterministic improvement check.  None means no score recorded yet."""
+    if best_score is None:  # no valid score recorded yet — always an improvement
         return True
     if direction == "maximize":
         return new_score > best_score + threshold
@@ -160,9 +160,10 @@ async def run_competition(
             max_iterations=max_iterations,
         )
     else:
+        _best_str = f"{state.best_oof_score:.6f}" if state.best_oof_score is not None else "none"
         logger.info(
             f"Resuming from iteration {state.iteration}, phase={state.phase}, "
-            f"best={state.best_oof_score:.6f}"
+            f"best={_best_str}"
         )
         if state.max_iterations != max_iterations:
             logger.info(
@@ -180,7 +181,7 @@ async def run_competition(
     while state.iteration < state.max_iterations and state.phase != "done":
         logger.info(
             f"[iter {state.iteration:02d}/{state.max_iterations}] "
-            f"phase={state.phase}  best={state.best_oof_score:.6f}  "
+            f"phase={state.phase}  best={f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}  "
             f"experiments={len(state.experiments)}"
         )
 
@@ -410,7 +411,7 @@ async def run_competition(
                     logger.warning(
                         f"Validation agent is_improvement={validation.get('is_improvement')} "
                         f"overridden by deterministic check → {deterministic_improvement} "
-                        f"(OOF {oof_score:.6f} vs best {state.best_oof_score:.6f})"
+                        f"(OOF {oof_score:.6f} vs best {f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'})"
                     )
                 if deterministic_improvement:
                     state.best_oof_score = oof_score
@@ -474,7 +475,7 @@ async def run_competition(
     store.close()
     logger.info(
         f"Done. iterations={state.iteration}  "
-        f"best_oof={state.best_oof_score:.6f}  "
+        f"best_oof={f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}  "
         f"submissions={state.submission_count}"
     )
     return state

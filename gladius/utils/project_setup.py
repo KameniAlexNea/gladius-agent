@@ -36,11 +36,11 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
     p = Path(project_dir) / "CLAUDE.md"
 
     best_oof = (
-        f"{state.best_oof_score:.6f}" if state.best_oof_score >= 0 else "none yet"
+        f"{state.best_oof_score:.6f}" if state.best_oof_score is not None else "none yet"
     )
     best_lb = (
         f"{state.best_submission_score:.6f}"
-        if state.best_submission_score >= 0
+        if state.best_submission_score is not None
         else "none yet"
     )
     direction_str = (

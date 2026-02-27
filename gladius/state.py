@@ -24,9 +24,9 @@ class CompetitionState:
     max_iterations: int = 20
     phase: str = "planning"  # planning | implementing | validation | done
 
-    # Best known performance
-    best_oof_score: float = -1.0
-    best_submission_score: float = -1.0
+    # Best known performance (None = no result yet)
+    best_oof_score: float | None = None
+    best_submission_score: float | None = None
     best_submission_path: Optional[str] = None
     submission_count: int = 0
     max_submissions_per_day: int = 5
@@ -96,8 +96,8 @@ class StateStore:
                 id                  INTEGER PRIMARY KEY CHECK (id = 1),
                 iteration           INTEGER NOT NULL,
                 phase               TEXT NOT NULL,
-                best_oof_score      REAL NOT NULL,
-                best_submission_score REAL NOT NULL,
+                best_oof_score      REAL,
+                best_submission_score REAL,
                 best_submission_path TEXT,
                 submission_count    INTEGER NOT NULL,
                 consecutive_errors  INTEGER NOT NULL,
@@ -143,8 +143,8 @@ class StateStore:
                 saved_at                TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 iteration               INTEGER NOT NULL,
                 phase                   TEXT NOT NULL,
-                best_oof_score          REAL NOT NULL,
-                best_submission_score   REAL NOT NULL,
+                best_oof_score          REAL,
+                best_submission_score   REAL,
                 best_submission_path    TEXT,
                 submission_count        INTEGER NOT NULL,
                 consecutive_errors      INTEGER NOT NULL,

@@ -104,7 +104,7 @@ Update the planner memory file after completing iteration {state.iteration}.
 ### Competition context
 - Competition : {state.competition_id}
 - Metric      : {state.target_metric} ({state.metric_direction})
-- Best OOF so far: {state.best_oof_score:.6f}
+- Best OOF so far: {f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none yet'}
 - Total experiments: {len(state.experiments)}
 
 ### Latest experiment result

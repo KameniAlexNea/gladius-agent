@@ -106,9 +106,22 @@ async def run_validation_agent(
             "were made today to determine remaining quota.\n"
         )
     else:  # fake and anything else
-        from gladius.tools.fake_platform_tools import fake_server
+        # Run as external stdio subprocess to avoid the in-process SDK control
+        # channel, which requires a bidirectional write-back that is unreliable
+        # with non-Anthropic model backends (e.g. Ollama).
+        import sys
 
-        mcp_servers = {"fake": fake_server}
+        mcp_servers = {
+            "fake": {
+                "type": "stdio",
+                "command": sys.executable,
+                "args": [
+                    "-c",
+                    "from gladius.tools.fake_platform_tools import fake_server; "
+                    "import asyncio; asyncio.run(fake_server.run())",
+                ],
+            }
+        }
         quota_tool = "mcp__fake__fake_status"
         quota_instruction = (
             "3. Call `fake_status` to get your current submission count and rank.\n"
@@ -126,12 +139,12 @@ New experiment:
 
 Context:
   Metric              : {state.target_metric} ({state.metric_direction})
-  Current best OOF    : {state.best_oof_score:.6f}
+  Current best OOF    : {f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none yet'}
   Improvement threshold: 0.0001 ({direction_word} is better)
   State submission count today: {state.submission_count} / {state.max_submissions_per_day}
 
 ## Tasks
-1. Determine is_improvement: is {oof_score:.6f} meaningfully better than {state.best_oof_score:.6f}?
+1. Determine is_improvement: is {oof_score:.6f} meaningfully better than {f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else '(no prior score)'}?
 2. {"Read the first 3 lines of " + submission_path + " to verify format." if submission_path else "No submission file — set format_ok=False."}
 {quota_instruction}4. Return the structured JSON result.
 """
