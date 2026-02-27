@@ -15,6 +15,7 @@ CLAUDE.md is always overwritten because it carries live competition state.
 from __future__ import annotations
 
 import json
+import os
 import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -206,7 +207,7 @@ def _write_agent_planner(root: Path) -> None:
     path = root / ".claude" / "agents" / "planner.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        """\
+        f"""\
 ---
 name: planner
 description: >
@@ -214,7 +215,7 @@ description: >
   and decides the highest-impact next approach. Use proactively at the start
   of each competition iteration.
 tools: Read, Glob, Grep, Bash, WebSearch, Task
-model: sonnet
+model: {os.environ.get('GLADIUS_MODEL', 'GLADIUS_MODEL_NOT_SET')}
 memory: project
 maxTurns: 40
 permissionMode: bypassPermissions
@@ -248,7 +249,7 @@ def _write_agent_implementer(root: Path) -> None:
     path = root / ".claude" / "agents" / "implementer.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        """\
+        f"""\
 ---
 name: implementer
 description: >
@@ -256,7 +257,7 @@ description: >
   runs it, debugs errors, measures the metric, and reports results.
   Always gets a fresh context — does not retain knowledge between runs.
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: sonnet
+model: {os.environ.get('GLADIUS_MODEL', 'GLADIUS_MODEL_NOT_SET')}
 maxTurns: 80
 permissionMode: bypassPermissions
 ---
@@ -560,7 +561,7 @@ def _write_claude_settings(root: Path, state: "CompetitionState") -> None:
     # Always overwrite to keep env vars (competition ID etc.) up to date.
     path.parent.mkdir(parents=True, exist_ok=True)
     settings = {
-        "model": "sonnet",
+        "model": os.environ.get("GLADIUS_MODEL") or "GLADIUS_MODEL_NOT_SET",
         "env": {
             "COMPETITION_ID": state.competition_id,
             "TARGET_METRIC": state.target_metric,

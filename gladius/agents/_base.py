@@ -11,6 +11,7 @@ console in real-time so you can see exactly what Claude is doing.
 import asyncio
 import json
 import logging
+import os
 import textwrap
 from typing import Any
 
@@ -23,6 +24,7 @@ from claude_agent_sdk import (
     ResultMessage,
     query,
 )
+from claude_agent_sdk._errors import MessageParseError
 from claude_agent_sdk.types import (
     AssistantMessage,
     SystemMessage,
@@ -42,6 +44,10 @@ logger = logging.getLogger(__name__)
 #   2. Programmatic definitions always take precedence over filesystem files.
 # Note: Task is intentionally omitted from subagent tool lists to prevent
 # unbounded recursion.
+# _model is resolved at module load; run_agent() re-reads GLADIUS_MODEL at
+# call time (after load_dotenv) so the .env value is always used.
+# Missing GLADIUS_MODEL is a hard error — no silent fallback to a cloud model.
+_model = os.environ.get("GLADIUS_MODEL") or ""
 _PLANNER_AGENT_DEF = AgentDefinition(
     description=(
         "Expert ML competition analyst. Explores data, reviews experiment history, "
@@ -62,7 +68,7 @@ _PLANNER_AGENT_DEF = AgentDefinition(
     # TodoWrite lets the planner track its own multi-step exploration progress.
     # Task must NOT be listed here — subagents cannot spawn sub-subagents.
     tools=["Read", "Glob", "Grep", "Bash", "WebSearch", "TodoWrite"],
-    model="sonnet",
+    model=_model,
 )
 
 _IMPLEMENTER_AGENT_DEF = AgentDefinition(
@@ -82,7 +88,7 @@ _IMPLEMENTER_AGENT_DEF = AgentDefinition(
     # TodoWrite lets the implementer track steps (write code, run, fix, measure, submit).
     # Task must NOT be listed here — subagents cannot spawn sub-subagents.
     tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite"],
-    model="sonnet",
+    model=_model,
 )
 
 # Registry used by every agent call — overrides .claude/agents/*.md files
@@ -264,6 +270,25 @@ async def run_agent(
     def _stderr_cb(line: str) -> None:
         print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
 
+    # Re-read model from env at call time: load_dotenv() in the orchestrator
+    # runs after module import, so module-level _model may be stale.
+    _runtime_model = os.environ.get("GLADIUS_MODEL")
+    if not _runtime_model:
+        raise RuntimeError(
+            "GLADIUS_MODEL is not set. "
+            "Add it to your competition's .env file, e.g.:\n"
+            "  GLADIUS_MODEL=qwen3-coder"
+        )
+    _runtime_agents = {
+        k: AgentDefinition(
+            description=v.description,
+            prompt=v.prompt,
+            tools=v.tools,
+            model=_runtime_model,
+        )
+        for k, v in _SUBAGENT_DEFINITIONS.items()
+    }
+
     options = ClaudeAgentOptions(
         # Use Claude Code's built-in system prompt as the base so agents get
         # full tool-use knowledge, safety guidelines, and code-gen best
@@ -286,7 +311,9 @@ async def run_agent(
         setting_sources=["project"],
         # Programmatic agent definitions override .claude/agents/*.md files.
         # Ensures Task subagents inherit bypassPermissions (not acceptEdits).
-        agents=_SUBAGENT_DEFINITIONS,
+        # Model is resolved at call time from GLADIUS_MODEL env var.
+        agents=_runtime_agents,
+        model=_runtime_model,
         **option_kwargs,
     )
 
@@ -347,6 +374,15 @@ async def run_agent(
             if attempt == max_retries - 1:
                 raise
             logger.warning(f"JSON decode error on attempt {attempt + 1}, retrying")
+
+        except MessageParseError as e:
+            # Can occur with Ollama models that omit Anthropic-specific fields
+            # (e.g. 'signature' on thinking blocks).  Retry may help if it's
+            # transient, but usually indicates a model compatibility issue.
+            if attempt == max_retries - 1:
+                raise
+            logger.warning(f"MessageParseError on attempt {attempt + 1}: {e}, retrying")
+
 
         except RuntimeError as e:
             if attempt == max_retries - 1:

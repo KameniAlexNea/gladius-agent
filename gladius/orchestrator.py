@@ -23,6 +23,8 @@ import logging
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from gladius.agents.implementer import run_implementer
 from gladius.agents.planner import run_planner
 from gladius.agents.summarizer import run_summarizer
@@ -507,6 +509,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 async def _amain() -> None:
     args = _build_parser().parse_args()
+    # Load .env from the competition directory so Ollama / proxy env vars
+    # (ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, etc.) are propagated to the
+    # bundled claude subprocess which inherits os.environ.
+    _env_file = Path(args.competition_dir) / ".env"
+    if _env_file.exists():
+        load_dotenv(_env_file, override=True)
+        logger.debug("Loaded env from %s", _env_file)
     await run_competition(
         competition_dir=args.competition_dir,
         max_iterations=args.iterations,

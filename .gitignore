@@ -214,3 +214,4 @@ examples/fake_competition/.claude
 examples/fake_competition/.gladius
 examples/fake_competition/scripts
 examples/fake_competition/catboost_info
+examples/fake_competition/*.py
