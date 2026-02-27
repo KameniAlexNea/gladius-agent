@@ -88,7 +88,12 @@ async def run_planner(
     When n_parallel > 1, the planner is asked to produce that many independent
     approaches in the `plans` list field.
     """
-    mcp_servers = _build_platform_mcp(platform, data_dir)
+    # SDK MCP servers race with the result message (end_input closes stdin
+    # before control-response can be written back).  The planner only needs
+    # to *plan*; it doesn't submit or check the real leaderboard, so we
+    # skip MCP entirely here.  Platform tools are injected for validation/
+    # submission agents instead.
+    mcp_servers: dict = {}
 
     parallel_instruction = ""
     if n_parallel > 1:

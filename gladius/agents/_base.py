@@ -153,15 +153,19 @@ async def run_agent(
     -------
     (structured_output, session_id)
     """
+    def _stderr_cb(line: str) -> None:
+        print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
+
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
         allowed_tools=allowed_tools,
-        permission_mode="acceptEdits",
+        permission_mode="bypassPermissions",
         output_format={"type": "json_schema", "schema": output_schema},
         cwd=cwd,
         resume=resume,
         mcp_servers=mcp_servers or {},
         max_turns=max_turns,
+        stderr=_stderr_cb,
         **option_kwargs,
     )
 
