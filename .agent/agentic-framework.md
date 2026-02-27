@@ -1,12 +1,12 @@
 # Gladius Agent — Claude Agent SDK Framework
 
-**Revision**: 1.0  
-**Status**: Design / Migration Plan  
-**Replaces**: LangGraph StateGraph architecture (see `code-review.md` for why it was discarded)
+**Revision**: 2.0
+**Status**: Implemented — reflects the working codebase as of 2025-02-27
+**Previous revision**: 1.0 was a design/migration plan that was only partially realised. See diff below.
 
 ---
 
-## 1. Why Replace LangGraph
+## 1. Why Replace LangGraph (retained from v1.0)
 
 The LangGraph approach required:
 - A hand-written Python function for every agent node
@@ -14,956 +14,280 @@ The LangGraph approach required:
 - A TypedDict schema that had to be kept in sync with every node
 - Custom JSON-schema validation inside `call_llm()` wrappers
 
-Every refactor touched all four layers. Critical bugs were introduced in each session because the routing edges were disconnected from the nodes (see review v3: `validation_agent→submission_decider` and `ensemble_agent→hypothesis` both used `add_edge` instead of `add_conditional_edges`). The `best_oof` gate was permanently broken, the `_auc_roc` was O(n²), and the `resource_manager` node was never wired.
+Every refactor touched all four layers. Critical bugs were introduced in each session because the routing edges were disconnected from the nodes (see `code-review.md` revisions 1-3: `validation_agent→submission_decider` and `ensemble_agent→hypothesis` both used `add_edge` instead of `add_conditional_edges`). The `best_oof` gate was permanently broken, `_auc_roc` was O(n²), and the `resource_manager` node was never wired.
 
 The core issue: a Kaggle competition pipeline is inherently complex, multi-step, and tool-heavy. Every LangGraph node was basically just wrapping an LLM call that should also do file I/O, run subprocess commands, and make decisions. These are exactly the things Claude Code is built to handle autonomously.
 
-**Claude Agent SDK gives us:**
-- Each "agent" is a full autonomous agent with built-in tools (Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch)
-- No hand-written tool loop — Claude handles multi-step execution internally
-- Structured JSON output via `output_format={"type":"json_schema","schema":{...}}`
-- Subagents via `AgentDefinition` in `ClaudeAgentOptions.agents`
-- Parallel execution via `asyncio.gather()`
-- Session continuity via `resume=session_id`
-- Custom tools via `@tool` decorator + `create_sdk_mcp_server()`
-- Hooks for pre/post tool auditing, blocking, and permission management
+---
+
+## 2. What Was Actually Built vs. the v1.0 Design
+
+| v1.0 design | v2.0 reality |
+|---|---|
+| `strategy.py` — StrategyAgent, HypothesisGenerator, KnowledgeExtractor | **Not built.** Merged into `planner.py` |
+| `code.py` — CodeAgent (generate + review + version) | **Not built.** Merged into `implementer.py` |
+| `execution.py` — ExecutionAgent, resource manager | **Not built.** Implementer handles execution |
+| `ensemble.py` — EnsembleAgent | **Not built** (too ambitious; dropped) |
+| `validation.py` — ValidationAgent, SubmissionDecider | **Built.** Single stateless validation agent |
+| `memory_tools.py` — ChromaDB similarity search | **Not built.** Replaced by MEMORY.md written by summarizer |
+| `config.py` — AgentConfig dataclass | **Not built.** Config read from competition README.md frontmatter |
+| 18 specialised LangGraph nodes | **4 Claude Code agents** |
+
+### Lessons from Simplification
+
+The most important lesson from v1.0 to v2.0: **agents are complete workers, not thin wrappers**. The implementer writes code, runs it, reads error output, edits, re-runs, and repeats — all inside one `run_agent()` call with `max_turns=80`. There is no separate CodeAgent, no separate ExecutionAgent, no separate ReviewAgent. The LLM handles the inner loop.
+
+The second lesson: **orchestrator owns all state mutation**. Agents return structured JSON; the orchestrator decides what to update. This prevents the class of bug where a validation node writes to `best_oof_score` when it shouldn't.
 
 ---
 
-## 2. Architecture Overview
+## 3. Architecture Overview
 
 ```
-gladius/
-├── orchestrator.py          # Main coroutine: drives the competition loop
-├── state.py                 # SQLite-backed state (replaces TypedDict + SqliteSaver)
-├── agents/
-│   ├── strategy.py          # StrategyAgent, HypothesisGenerator, KnowledgeExtractor
-│   ├── code.py              # CodeAgent (generate + review + version in one agent)
-│   ├── execution.py         # ExecutionAgent (run experiments, manage resources)
-│   ├── validation.py        # ValidationAgent, SubmissionDecider
-│   └── ensemble.py          # EnsembleAgent
-├── tools/
-│   ├── kaggle_tools.py      # @tool wrappers for Kaggle API (submit, leaderboard)
-│   ├── metric_tools.py      # @tool wrappers for OOF scoring, AUC-ROC, etc.
-│   └── memory_tools.py      # @tool wrappers for ChromaDB similarity search
-└── config.py                # AgentConfig dataclass: model, budget, paths, etc.
+orchestrator.py                 # plain Python while loop  (not a graph)
+  │
+  ├─ state.py                   # CompetitionState dataclass + StateStore (7-table SQLite)
+  ├─ utils/competition_config.py # reads YAML frontmatter from competition README.md
+  ├─ utils/project_setup.py     # bootstraps .claude/ layout on first run
+  │
+  ├─ agents/_base.py            # run_agent(): retry, streaming, bypassPermissions
+  ├─ agents/planner.py          # resumed session — plans experiments
+  ├─ agents/implementer.py      # fresh session — writes + runs code
+  ├─ agents/validation.py       # stateless — compare OOF, recommend submit/hold
+  └─ agents/summarizer.py       # stateless — rewrite MEMORY.md
 ```
 
-The `orchestrator.py` is the only place that knows about the competition loop flow. Agents are pure `async def` functions that call `query()` or use `ClaudeSDKClient`. The orchestrator calls them, reads their structured JSON output, and decides what to do next — it is the "graph" but written as clean Python `if/elif/await` logic instead of LangGraph edge declarations.
+The orchestrator loop is:
+```
+while iteration < max_iterations:
+    plan   = await run_planner(state, ...)
+    result = await run_implementer(state, plan, ...)   # or gather(N) for --parallel
+    valid  = await run_validation(state, result, ...)
+    await run_summarizer(state, result, valid, ...)
+    update state + save + increment iteration
+```
+
+No LangGraph. No `StateGraph`. No conditional edges. Just Python.
 
 ---
 
-## 3. State Management
+## 4. State Management
 
-Replace `GraphState` TypedDict + SqliteSaver with a `StateStore` backed by SQLite.
+`CompetitionState` is a Python `@dataclass` persisted to **7 normalised SQLite tables**. The v1.0 design used JSON blobs for everything; v2.0 only uses a JSON blob for `current_plan` (a list-of-dicts with no natural column mapping).
+
+### Tables
+
+| Table | Contents | Notes |
+|---|---|---|
+| `competition` | competition_id, metric, direction, data_dir | Written once on first run |
+| `current_state` | iteration, phase, best_oof, best_lb, session IDs | Mutable scalars |
+| `experiments` | id, iteration, approach, oof_score, solution_files, notes | One row per completed run |
+| `failed_runs` | id, iteration, approach, error, traceback | One row per failed implementer |
+| `error_log` | id, iteration, phase, error, traceback | Unhandled orchestrator errors |
+| `lb_scores` | id, iteration, lb_score, submitted_at | Post-submission leaderboard |
+| `state_history` | id, saved_at, iteration, phase, best_oof | Append-only audit log |
+
+### Key design choices
+
+- `StateStore.save()` does DELETE + INSERT for list tables (`experiments`, `failed_runs`, etc.). This is correct for < 50 iterations; at 100+ it becomes O(N) per save. An append-only write with upsert would scale better.
+- `StateStore.load()` reconstructs all lists from their tables on startup. Resume after crash works correctly.
+- `store.close()` is called after the main loop exits. **Known bug**: if the loop raises an unhandled exception, the connection leaks (not in a `finally` block).
+
+---
+
+## 5. Agent Definitions
+
+All agents go through `run_agent()` in `agents/_base.py`.
 
 ```python
-# gladius/state.py
-import sqlite3
-import json
-from dataclasses import dataclass, field, asdict
-from typing import Optional
-from pathlib import Path
-
-
-@dataclass
-class CompetitionState:
-    # Competition context
-    competition_id: str
-    data_dir: str
-    output_dir: str
-    target_metric: str          # "auc_roc", "rmse", etc.
-    metric_direction: str       # "maximize" / "minimize"
-
-    # Progress tracking
-    iteration: int = 0
-    max_iterations: int = 20
-    phase: str = "strategy"     # strategy | coding | execution | validation | ensemble | done
-
-    # Best known performance
-    best_oof_score: float = -1.0
-    best_submission_score: float = -1.0
-    best_submission_path: Optional[str] = None
-    submission_count: int = 0
-    max_submissions_per_day: int = 5
-
-    # Hypothesis and strategy memory
-    current_hypothesis: Optional[str] = None
-    completed_hypotheses: list = field(default_factory=list)
-    failed_hypotheses: list = field(default_factory=list)
-
-    # Experiment registry
-    experiments: list = field(default_factory=list)  # [{path, oof, params, notes}]
-
-    # Session IDs for resumable agents
-    strategy_session_id: Optional[str] = None
-    code_session_id: Optional[str] = None
-
-    # Error tracking
-    consecutive_errors: int = 0
-    error_log: list = field(default_factory=list)
-
-    # LB tracking
-    lb_scores: list = field(default_factory=list)  # [{score, timestamp, public_lb}]
-
-
-class StateStore:
-    def __init__(self, db_path: str = ".gladius/state.db"):
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(db_path)
-        self._init_schema()
-
-    def _init_schema(self):
-        self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS state (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        self.conn.commit()
-
-    def save(self, state: CompetitionState):
-        data = json.dumps(asdict(state))
-        self.conn.execute(
-            "INSERT OR REPLACE INTO state(key, value) VALUES ('current', ?)", (data,)
-        )
-        self.conn.commit()
-
-    def load(self) -> Optional[CompetitionState]:
-        row = self.conn.execute(
-            "SELECT value FROM state WHERE key='current'"
-        ).fetchone()
-        if row:
-            return CompetitionState(**json.loads(row[0]))
-        return None
-```
-
----
-
-## 4. Agent Definitions
-
-### 4.1 Core Pattern
-
-Every agent follows this pattern:
-
-```python
-from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
-import asyncio
-
 async def run_agent(
     prompt: str,
-    system_prompt: str,
-    allowed_tools: list[str],
-    output_schema: dict,
-    cwd: str,
-    resume: str | None = None,
-    mcp_servers: dict | None = None,
-) -> tuple[dict, str]:
-    """Returns (structured_output, session_id)."""
-    options = ClaudeAgentOptions(
-        system_prompt=system_prompt,
-        allowed_tools=allowed_tools,
-        permission_mode="acceptEdits",
-        output_format={"type": "json_schema", "schema": output_schema},
-        cwd=cwd,
-        resume=resume,
-        mcp_servers=mcp_servers or {},
-    )
-    result_msg = None
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, ResultMessage):
-            result_msg = message
-    if result_msg is None or result_msg.is_error:
-        raise RuntimeError(f"Agent failed: {result_msg}")
-    return result_msg.structured_output, result_msg.session_id
+    options: ClaudeCodeOptions,
+    *,
+    timeout_seconds: float = 3600,
+    max_errors: int = 3,
+) -> str:
+    """
+    Streams a Claude Code agent, prints to console, retries up to max_errors on error.
+    Returns the final text result.
+    Raises RuntimeError if max_errors exceeded.
+    """
 ```
 
-### 4.2 Strategy Agent
+`permission_mode` is always `"bypassPermissions"`. `"acceptEdits"` was the original choice but it still sends `can_use_tool` control requests for `Bash`/`WebSearch`/`Task` tools — these require a `can_use_tool` callback in the SDK, which we don't register. Without it a `CLIConnectionError` is raised. `bypassPermissions` skips all permission checks.
 
-Replaces: `strategy_agent`, `hypothesis_generator`, `lb_tracker` (collapsed into one)
-
-```python
-# gladius/agents/strategy.py
-
-STRATEGY_SYSTEM_PROMPT = """\
-You are an elite Kaggle Grandmaster working on a machine learning competition.
-Your role is to analyze the competition, study the leaderboard, examine existing
-experiments, and generate the most promising next hypothesis to try.
-
-You have access to:
-- The competition data directory (use Read, Glob to explore)
-- The experiments log (read .gladius/experiments.json)
-- Web search for relevant papers and winning solutions
-
-Always reason about:
-1. What has been tried and what worked / failed
-2. The current leaderboard gap
-3. The most impactful next improvement (data, features, model, ensemble)
-"""
-
-STRATEGY_OUTPUT_SCHEMA = {
-    "type": "object",
-    "required": ["hypothesis", "changes", "expected_improvement", "rationale", "priority"],
-    "properties": {
-        "hypothesis": {"type": "string", "description": "One-line hypothesis title"},
-        "changes": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Concrete code/config changes to make"
-        },
-        "expected_improvement": {"type": "number"},
-        "rationale": {"type": "string"},
-        "priority": {"enum": ["critical", "high", "medium", "low"]},
-        "requires_new_features": {"type": "boolean"},
-        "suggested_models": {"type": "array", "items": {"type": "string"}},
-    }
-}
-
-async def run_strategy_agent(state: CompetitionState, data_dir: str) -> tuple[dict, str]:
-    prompt = f"""\
-Competition: {state.competition_id}
-Target metric: {state.target_metric} ({state.metric_direction})
-Current best OOF: {state.best_oof_score}
-Current best LB:  {state.best_submission_score}
-Iteration: {state.iteration}/{state.max_iterations}
-
-Completed hypotheses: {json.dumps(state.completed_hypotheses[-5:], indent=2)}
-Failed hypotheses: {json.dumps(state.failed_hypotheses[-3:], indent=2)}
-
-Analyze the competition data, study what has been tried, and propose the single
-most impactful next hypothesis. Read the experiments log at .gladius/experiments.json
-and the competition description at {data_dir}/competition_description.md.
-"""
-    return await run_agent(
-        prompt=prompt,
-        system_prompt=STRATEGY_SYSTEM_PROMPT,
-        allowed_tools=["Read", "Glob", "Grep", "WebSearch"],
-        output_schema=STRATEGY_OUTPUT_SCHEMA,
-        cwd=data_dir,
-        resume=state.strategy_session_id,  # maintains memory across iterations
-    )
-```
-
-### 4.3 Code Agent
-
-Replaces: `code_generator`, `code_reviewer`, `versioning_agent` (collapsed into one)
-
-The key insight: **Claude Code can generate, review, and version code in a single agent invocation** because it can autonomously read the existing code, write new code, run the linter, fix issues, and commit — all within one `query()` call. Three separate LangGraph nodes become one.
+### Planner (`agents/planner.py`)
 
 ```python
-# gladius/agents/code.py
-
-CODE_SYSTEM_PROMPT = """\
-You are an expert ML engineer implementing Kaggle competition solutions.
-Given a hypothesis, you will:
-1. Read the existing solution code (explore the src/ directory)
-2. Implement the required changes
-3. Write clean, well-documented Python code
-4. Run a quick syntax check (python -m py_compile)
-5. Save the new solution to a versioned file (e.g., src/solution_v{N}.py)
-6. Update .gladius/experiments.json with the new experiment entry
-
-You have full filesystem access and can run bash commands.
-Always create atomic, testable experiments. Do not break existing working solutions.
-"""
-
-CODE_OUTPUT_SCHEMA = {
-    "type": "object",
-    "required": ["solution_path", "changes_made", "estimated_runtime_minutes"],
-    "properties": {
-        "solution_path": {"type": "string"},
-        "changes_made": {"type": "array", "items": {"type": "string"}},
-        "estimated_runtime_minutes": {"type": "number"},
-        "requires_gpu": {"type": "boolean"},
-        "new_dependencies": {"type": "array", "items": {"type": "string"}},
-        "notes": {"type": "string"},
-    }
-}
-
-async def run_code_agent(
-    hypothesis: dict,
+async def run_planner(
     state: CompetitionState,
-    project_dir: str,
-) -> tuple[dict, str]:
-    prompt = f"""\
-Hypothesis to implement:
-{json.dumps(hypothesis, indent=2)}
-
-Project directory: {project_dir}
-Current iteration: {state.iteration}
-
-Explore the existing solution (src/ directory), then implement this hypothesis
-as a new versioned solution file. The solution must:
-- Be self-contained and runnable: python solution_vN.py
-- Accept no CLI args; read data from {state.data_dir}
-- Write OOF predictions to .gladius/oof_vN.npy
-- Write test predictions to .gladius/sub_vN.csv
-- Print the OOF score on the last line as: OOF_SCORE: {{score:.6f}}
-"""
-    return await run_agent(
-        prompt=prompt,
-        system_prompt=CODE_SYSTEM_PROMPT,
-        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
-        output_schema=CODE_OUTPUT_SCHEMA,
-        cwd=project_dir,
-        resume=state.code_session_id,
-    )
-```
-
-### 4.4 Execution Agent
-
-Replaces: `executor`, `resource_manager`, `watchdog` (collapsed into one)
-
-Claude Code has background bash process support built-in (`run_in_background: True` in Bash tool input). The agent can launch the training script, poll it with `BashOutput`, and terminate it with `KillBash` if the watchdog threshold is exceeded — all autonomously.
-
-```python
-# gladius/agents/execution.py
-
-EXECUTION_SYSTEM_PROMPT = """\
-You are responsible for executing ML training runs on this machine.
-Given a solution script path, you will:
-1. Check available GPU/CPU resources before starting (nvidia-smi, free -h)
-2. Launch the training script as a background bash process
-3. Monitor it: check output every 60 seconds using BashOutput
-4. If it exceeds the time budget or produces NaN loss, kill it with KillBash
-5. When it completes, extract the OOF score from stdout (format: OOF_SCORE: X.XXXXXX)
-6. Report resource usage and any errors
-"""
-
-EXECUTION_OUTPUT_SCHEMA = {
-    "type": "object",
-    "required": ["status", "oof_score", "runtime_seconds"],
-    "properties": {
-        "status": {"enum": ["success", "timeout", "error", "oom"]},
-        "oof_score": {"type": ["number", "null"]},
-        "runtime_seconds": {"type": "number"},
-        "stdout_tail": {"type": "string"},
-        "error_message": {"type": ["string", "null"]},
-        "peak_memory_gb": {"type": ["number", "null"]},
-    }
-}
-
-async def run_execution_agent(
-    solution_path: str,
-    max_runtime_minutes: int,
-    state: CompetitionState,
-    project_dir: str,
+    data_dir: Path,
+    project_dir: Path,
+    platform: str,
+    n_parallel: int = 1,
 ) -> dict:
-    prompt = f"""\
-Execute training: {solution_path}
-Time budget: {max_runtime_minutes} minutes
-Data directory: {state.data_dir}
-
-1. Check GPU memory: nvidia-smi (if available)
-2. Launch: python {solution_path} as a background process
-3. Monitor every 60 seconds — check for NaN, OOM, or completion
-4. Kill if it exceeds {max_runtime_minutes} minutes
-5. Report the OOF score printed on the last line (format: OOF_SCORE: X.XXXXXX)
-"""
-    output, _ = await run_agent(
-        prompt=prompt,
-        system_prompt=EXECUTION_SYSTEM_PROMPT,
-        allowed_tools=["Bash", "Read"],
-        output_schema=EXECUTION_OUTPUT_SCHEMA,
-        cwd=project_dir,
-    )
-    return output
 ```
 
-### 4.5 Validation Agent
+- **Session**: resumed via `state.planner_session_id`. If `None`, starts a new session and stores the ID.
+- **MCP servers**: none (`mcp_servers: dict = {}`). The original design used an SDK MCP server for `fake_server` but this triggered a race condition: `end_input()` closes stdin before `_handle_control_request` can write back the MCP response. See §9 for details.
+- **Output schema**: `{approach_summary, plan[steps], expected_metric_delta}`. If `n_parallel > 1`, the planner is asked to produce `n_parallel` structurally different approaches.
 
-Replaces: `validation_agent`, `submission_decider`, `notifier`
-
-**Important**: The agent reports whether improvement was seen and whether to submit. The *orchestrator* is the only thing that updates `best_oof_score` in state. This was the core regression in the LangGraph version (the node was mutating state it shouldn't own).
+### Implementer (`agents/implementer.py`)
 
 ```python
-# gladius/agents/validation.py
-
-VALIDATION_SYSTEM_PROMPT = """\
-You are responsible for validating ML experiment results and deciding on Kaggle submissions.
-Given the OOF score of a new experiment, you will:
-1. Compare against the provided best known OOF score
-2. Decide whether to submit (score improvement > threshold AND daily-limit not exceeded)
-3. If submitting, verify the submission file format is correct (read first 3 lines)
-4. Report the decision with clear reasoning
-
-You do NOT update any state files. You only report what should happen.
-"""
-
-VALIDATION_OUTPUT_SCHEMA = {
-    "type": "object",
-    "required": ["oof_score", "is_improvement", "submit", "reasoning"],
-    "properties": {
-        "oof_score": {"type": "number"},
-        "is_improvement": {"type": "boolean"},
-        "improvement_delta": {"type": "number"},
-        "submit": {"type": "boolean"},
-        "submission_path": {"type": ["string", "null"]},
-        "reasoning": {"type": "string"},
-    }
-}
-
-async def run_validation_agent(
-    solution_path: str,
-    oof_score: float,
-    submission_path: str,
-    state: CompetitionState,
-    project_dir: str,
+async def run_implementer(
+    plan: dict,
+    project_dir: Path,
+    data_dir: Path,
+    iteration: int,
 ) -> dict:
-    prompt = f"""\
-New experiment results:
-- Solution: {solution_path}
-- OOF score: {oof_score:.6f}
-- Current best OOF: {state.best_oof_score:.6f}
-- Metric: {state.target_metric} ({state.metric_direction})
-- Submissions today: {state.submission_count} / {state.max_submissions_per_day}
-- Submission file: {submission_path}
-
-Validate: Is {oof_score:.6f} a meaningful improvement over {state.best_oof_score:.6f}?
-Threshold: improvement must be > 0.0001 to submit.
-Check that the submission file exists and has the correct format (read first 3 lines).
-"""
-    output, _ = await run_agent(
-        prompt=prompt,
-        system_prompt=VALIDATION_SYSTEM_PROMPT,
-        allowed_tools=["Read", "Bash"],
-        output_schema=VALIDATION_OUTPUT_SCHEMA,
-        cwd=project_dir,
-    )
-    return output
 ```
 
-### 4.6 Ensemble Agent
+- **Session**: always fresh. Context from CLAUDE.md and the plan dict injected into prompt.
+- **Tools**: Read, Write, Edit, Bash, Glob, Grep.
+- **Output schema**: `{status, oof_score, solution_files, submission_file, notes}`.
+- `max_turns=80` — implementer runs until it finishes or exhausts turns.
 
-Replaces: `ensemble_agent`, `knowledge_extractor`
+### Validation (`agents/validation.py`)
 
-```python
-# gladius/agents/ensemble.py
+- **Stateless** — no session ID, no persistent state.
+- **Output schema**: `{should_submit, reasoning, confidence}`.
+- **Known gap**: `orchestrator.py` reads `validation.get("notes", "")` but the schema has `additionalProperties: False` with no `notes` field. Claude cannot add it. The notes the orchestrator passes to `run_summarizer` are always empty.
 
-ENSEMBLE_SYSTEM_PROMPT = """\
-You are an expert at combining ML models for Kaggle competitions.
-You have access to all OOF predictions and can compute optimal blend weights.
-You will:
-1. Identify successful experiments (OOF better than baseline)
-2. Load their OOF prediction arrays
-3. Compute pairwise correlations — prefer diverse, low-correlation models
-4. Find optimal blend weights using scipy.optimize.minimize (Nelder-Mead)
-5. Generate the blended submission at .gladius/ensemble_submission.csv
-6. Save a reproducible ensemble script at src/ensemble.py
-"""
+### Summarizer (`agents/summarizer.py`)
 
-ENSEMBLE_OUTPUT_SCHEMA = {
-    "type": "object",
-    "required": ["ensemble_type", "components", "oof_score", "submission_path"],
-    "properties": {
-        "ensemble_type": {"enum": ["simple_average", "weighted_blend", "stacking", "rank_average"]},
-        "components": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "weight": {"type": "number"},
-                    "oof_score": {"type": "number"}
-                }
-            }
-        },
-        "oof_score": {"type": "number"},
-        "submission_path": {"type": "string"},
-        "notes": {"type": "string"},
-    }
-}
-
-async def run_ensemble_agent(state: CompetitionState, project_dir: str) -> dict:
-    good_experiments = [
-        e for e in state.experiments
-        if e.get("oof_score", -1) > state.best_oof_score * 0.99
-    ]
-    prompt = f"""\
-Ensemble task for competition: {state.competition_id}
-Metric: {state.target_metric} ({state.metric_direction})
-
-Good experiments (OOF within 1% of best):
-{json.dumps(good_experiments, indent=2)}
-
-OOF predictions are in .gladius/oof_vN.npy
-Test predictions are in .gladius/sub_vN.csv
-
-Tasks:
-1. Read the OOF arrays and compute pairwise correlations
-2. Find the optimal blend weights using scipy.optimize.minimize (Nelder-Mead)
-3. Create the blended submission at .gladius/ensemble_submission.csv
-4. Save an ensemble script at src/ensemble.py
-
-Prefer diversity over raw score — low-correlation models blend better.
-"""
-    output, _ = await run_agent(
-        prompt=prompt,
-        system_prompt=ENSEMBLE_SYSTEM_PROMPT,
-        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob"],
-        output_schema=ENSEMBLE_OUTPUT_SCHEMA,
-        cwd=project_dir,
-    )
-    return output
-```
-
----
-
-## 5. Custom Tools (MCP)
-
-Custom tool servers are registered via `ClaudeAgentOptions.mcp_servers`. Agents that need Kaggle API access or metric utilities receive them.
-
-```python
-# gladius/tools/kaggle_tools.py
-from claude_agent_sdk import tool, create_sdk_mcp_server
-from typing import Any
-import subprocess
-
-
-@tool(
-    "kaggle_submit",
-    "Submit a CSV file to the Kaggle competition leaderboard",
-    {"competition": str, "file_path": str, "message": str}
-)
-async def kaggle_submit(args: dict[str, Any]) -> dict[str, Any]:
-    result = subprocess.run([
-        "kaggle", "competitions", "submit",
-        "-c", args["competition"],
-        "-f", args["file_path"],
-        "-m", args["message"],
-    ], capture_output=True, text=True)
-    return {"content": [{"type": "text", "text": result.stdout + result.stderr}]}
-
-
-@tool(
-    "kaggle_leaderboard",
-    "Fetch the current public leaderboard for a competition",
-    {"competition": str, "top_n": int}
-)
-async def kaggle_leaderboard(args: dict[str, Any]) -> dict[str, Any]:
-    result = subprocess.run([
-        "kaggle", "competitions", "leaderboard",
-        "-c", args["competition"],
-        "--show", "--csv",
-    ], capture_output=True, text=True)
-    lines = result.stdout.strip().split("\n")[:args.get("top_n", 20) + 1]
-    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
-
-
-@tool(
-    "compute_oof_metric",
-    "Compute OOF metric score (AUC-ROC, RMSE, etc.) from numpy arrays on disk",
-    {"metric": str, "oof_path": str, "labels_path": str}
-)
-async def compute_oof_metric(args: dict[str, Any]) -> dict[str, Any]:
-    import numpy as np
-    from sklearn.metrics import roc_auc_score, mean_squared_error
-
-    oof = np.load(args["oof_path"])
-    y = np.load(args["labels_path"])
-
-    metric = args["metric"].lower()
-    if metric == "auc_roc":
-        # Multiclass: macro OVR — memory-safe, no outer product matrix
-        if oof.ndim == 2 and oof.shape[1] > 2:
-            score = roc_auc_score(y, oof, multi_class="ovr", average="macro")
-        else:
-            oof_1d = oof[:, 1] if oof.ndim == 2 else oof
-            score = roc_auc_score(y, oof_1d)
-    elif metric == "rmse":
-        score = float(np.sqrt(mean_squared_error(y, oof)))
-    else:
-        return {"content": [{"type": "text", "text": f"Unknown metric: {metric}"}], "is_error": True}
-
-    return {"content": [{"type": "text", "text": f"METRIC_SCORE: {score:.6f}"}]}
-
-
-kaggle_server = create_sdk_mcp_server(
-    name="kaggle",
-    version="1.0.0",
-    tools=[kaggle_submit, kaggle_leaderboard, compute_oof_metric],
-)
-```
+- **Stateless** — rewrites `MEMORY.md` completely each iteration.
+- Called after `state.iteration += 1` has already been applied, so MEMORY.md says "completed iteration N+1" when it means iteration N.
 
 ---
 
 ## 6. Parallel Execution
 
-When the strategic plan generates multiple independent hypotheses, run them concurrently:
+With `--parallel N`:
+1. Planner is prompted to generate N structurally different approaches.
+2. `asyncio.gather(*[run_implementer(approach) for approach in approaches])` runs all N concurrently.
+3. Successful results are collected; best OOF is chosen as `result`.
 
-```python
-# In orchestrator.py
+**Known bug**: successful results are appended to `state.experiments` in loop order, then `result = max(successful, key=lambda r: r["oof_score"])` picks the best. Validation agent then reads `state.experiments[-1]` (the last appended, not `result`). In parallel mode the last appended may not be the best. Fix: append `result` last, or store `result` separately.
 
-async def run_parallel_experiments(
-    hypotheses: list[dict],
-    state: CompetitionState,
-    project_dir: str,
-    max_parallel: int = 3,
-) -> list[dict]:
-    """Run up to max_parallel experiments concurrently."""
-    semaphore = asyncio.Semaphore(max_parallel)
+---
 
-    async def run_one(hypothesis: dict) -> dict:
-        async with semaphore:
-            code_output, session_id = await run_code_agent(hypothesis, state, project_dir)
-            exec_output = await run_execution_agent(
-                code_output["solution_path"],
-                max_runtime_minutes=60,
-                state=state,
-                project_dir=project_dir,
-            )
-            return {
-                "hypothesis": hypothesis,
-                "code": code_output,
-                "execution": exec_output,
-                "session_id": session_id,
-            }
+## 7. Competition Configuration
 
-    tasks = [run_one(h) for h in hypotheses[:max_parallel]]
-    return await asyncio.gather(*tasks, return_exceptions=True)
+Competition settings are read from YAML frontmatter in the competition's `README.md`:
+
+```yaml
+---
+competition_id: my-competition
+platform: kaggle           # kaggle | zindi | fake
+metric: auc_roc
+direction: maximize
+data_dir: data
+---
 ```
 
+`utils/competition_config.py` parses this with string splitting (no `pyyaml` dependency). This is fragile on multi-line values or values with `:`; a `python-frontmatter` dependency would be safer.
+
 ---
 
-## 7. Subagents (Native Claude)
+## 8. Project Bootstrap — `.claude/` layout
 
-For complex analysis tasks (knowledge extraction from papers, winning solutions), use native Claude subagents via `AgentDefinition`. These run as sub-sessions inside the parent agent — launched via the `Task` tool.
+On first run for a competition directory, `utils/project_setup.py` writes:
 
-```python
-from claude_agent_sdk import ClaudeAgentOptions, AgentDefinition
-
-knowledge_extractor_def = AgentDefinition(
-    description="Extracts actionable insights from papers, notebooks, and winning solutions",
-    prompt="""\
-You are a knowledge extraction specialist. Given a document or URL, extract:
-1. Model architectures used
-2. Feature engineering techniques
-3. Training tricks (augmentation, regularization, etc.)
-4. Post-processing methods
-5. Ensemble strategies
-
-Return a structured summary focused on what is directly applicable to the current competition.
-""",
-    tools=["Read", "WebFetch", "WebSearch"],
-    model="haiku",  # fast + cheap for extraction
-)
-
-# The parent strategy agent gets this subagent registered
-options = ClaudeAgentOptions(
-    agents={"knowledge_extractor": knowledge_extractor_def},
-    allowed_tools=["Read", "WebSearch", "Task"],  # Task invokes the subagent
-    # ...
-)
-# The parent agent's prompt can say:
-# "Use the knowledge_extractor agent to analyze https://arxiv.org/abs/XXXX
-#  and return the key findings applicable to tabular classification."
+```
+.claude/
+  agents/
+    planner.md            — AgentDefinition frontmatter (model, maxTurns, tools, permissionMode)
+    implementer.md
+  skills/
+    ml-pipeline/SKILL.md
+    submit-check/SKILL.md
+    code-review/SKILL.md
+    git-workflow/SKILL.md
+    uv-venv/SKILL.md
+  agent-memory/
+    planner/MEMORY.md     — written blank, then managed by summarizer
+  settings.json
+scripts/
+  after_edit.sh           — PostToolUse: py_compile on Write/Edit
+  validate_bash.sh        — PreToolUse: block rm -rf /
+CLAUDE.md                 — live context (rewritten every iteration by orchestrator)
+.mcp.json                 — MCP server registrations
 ```
 
----
+### Known issues
 
-## 8. Main Orchestrator
-
-```python
-# gladius/orchestrator.py
-"""
-Main competition loop. This is the only routing logic in the system.
-No graph edges, no conditional routing functions — just Python control flow.
-"""
-import asyncio
-import json
-import logging
-from typing import Optional
-
-from .state import CompetitionState, StateStore
-from .agents.strategy import run_strategy_agent
-from .agents.code import run_code_agent
-from .agents.execution import run_execution_agent
-from .agents.validation import run_validation_agent
-from .agents.ensemble import run_ensemble_agent
-
-logger = logging.getLogger(__name__)
-
-
-async def run_competition(
-    competition_id: str,
-    data_dir: str,
-    project_dir: str,
-    target_metric: str = "auc_roc",
-    metric_direction: str = "maximize",
-    max_iterations: int = 20,
-    resume_from_db: bool = True,
-) -> CompetitionState:
-
-    store = StateStore(f"{project_dir}/.gladius/state.db")
-
-    # Resume or initialize state
-    state = store.load() if resume_from_db else None
-    if state is None:
-        state = CompetitionState(
-            competition_id=competition_id,
-            data_dir=data_dir,
-            output_dir=f"{project_dir}/.gladius",
-            target_metric=target_metric,
-            metric_direction=metric_direction,
-            max_iterations=max_iterations,
-        )
-
-    while state.iteration < state.max_iterations and state.phase != "done":
-        logger.info(f"[Iteration {state.iteration}] Phase: {state.phase}")
-
-        try:
-            if state.phase == "strategy":
-                hypothesis, session_id = await run_strategy_agent(state, data_dir)
-                state.current_hypothesis = hypothesis
-                state.strategy_session_id = session_id  # persist for next iteration
-                state.phase = "coding"
-
-            elif state.phase == "coding":
-                code_result, session_id = await run_code_agent(
-                    state.current_hypothesis, state, project_dir
-                )
-                state.code_session_id = session_id
-                state.current_hypothesis["solution_path"] = code_result["solution_path"]
-                state.phase = "execution"
-
-            elif state.phase == "execution":
-                solution_path = state.current_hypothesis["solution_path"]
-                exec_result = await run_execution_agent(
-                    solution_path, max_runtime_minutes=90, state=state, project_dir=project_dir
-                )
-
-                if exec_result["status"] != "success":
-                    logger.warning(f"Execution failed: {exec_result.get('error_message')}")
-                    state.failed_hypotheses.append({
-                        **state.current_hypothesis,
-                        "reason": exec_result["status"],
-                        "error": exec_result.get("error_message"),
-                    })
-                    state.consecutive_errors += 1
-                    state.phase = "strategy"
-                else:
-                    state.consecutive_errors = 0
-                    state.current_hypothesis["oof_score"] = exec_result["oof_score"]
-                    state.current_hypothesis["runtime_seconds"] = exec_result["runtime_seconds"]
-                    state.phase = "validation"
-
-            elif state.phase == "validation":
-                solution_path = state.current_hypothesis["solution_path"]
-                oof_score = state.current_hypothesis["oof_score"]
-                submission_path = solution_path.replace(".py", "_sub.csv")
-
-                validation = await run_validation_agent(
-                    solution_path, oof_score, submission_path, state, project_dir
-                )
-
-                # ORCHESTRATOR owns the state mutation — not the agent
-                if validation["is_improvement"]:
-                    state.best_oof_score = oof_score
-                    state.experiments.append({
-                        "solution_path": solution_path,
-                        "oof_score": oof_score,
-                        "iteration": state.iteration,
-                        "hypothesis": state.current_hypothesis.get("hypothesis"),
-                    })
-
-                if validation["submit"] and state.submission_count < state.max_submissions_per_day:
-                    state.submission_count += 1
-                    state.best_submission_path = submission_path
-                    logger.info(f"Submitting: {submission_path}")
-
-                state.completed_hypotheses.append(state.current_hypothesis)
-                state.iteration += 1
-
-                # Trigger ensemble every 5 iterations if enough experiments
-                if state.iteration % 5 == 0 and len(state.experiments) >= 3:
-                    state.phase = "ensemble"
-                else:
-                    state.phase = "strategy"
-
-            elif state.phase == "ensemble":
-                ensemble_result = await run_ensemble_agent(state, project_dir)
-                if ensemble_result["oof_score"] > state.best_oof_score:
-                    state.best_oof_score = ensemble_result["oof_score"]
-                    state.best_submission_path = ensemble_result["submission_path"]
-                    logger.info(f"Ensemble improved OOF: {ensemble_result['oof_score']:.6f}")
-                state.phase = "strategy"
-
-        except Exception as e:
-            logger.error(f"Error in phase {state.phase}: {e}", exc_info=True)
-            state.error_log.append({"phase": state.phase, "iteration": state.iteration, "error": str(e)})
-            state.consecutive_errors += 1
-            if state.consecutive_errors >= 3:
-                logger.critical("3 consecutive errors — stopping")
-                state.phase = "done"
-            else:
-                state.phase = "strategy"
-
-        finally:
-            store.save(state)
-
-    logger.info(f"Competition run complete. Best OOF: {state.best_oof_score:.6f}")
-    return state
-
-
-async def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--competition", required=True)
-    parser.add_argument("--data-dir", required=True)
-    parser.add_argument("--project-dir", default=".")
-    parser.add_argument("--metric", default="auc_roc")
-    parser.add_argument("--direction", default="maximize")
-    parser.add_argument("--iterations", type=int, default=20)
-    parser.add_argument("--no-resume", action="store_true")
-    args = parser.parse_args()
-
-    await run_competition(
-        competition_id=args.competition,
-        data_dir=args.data_dir,
-        project_dir=args.project_dir,
-        target_metric=args.metric,
-        metric_direction=args.direction,
-        max_iterations=args.iterations,
-        resume_from_db=not args.no_resume,
-    )
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
+- `settings.json` is **always overwritten** on run. User customisations to `settings.json` are lost on restart.
+- Agent `.md` files use `permissionMode: acceptEdits` (written by `project_setup.py`). If the planner invokes these via `Task` tool (subagent delegation), they crash with `CLIConnectionError`. Should be `bypassPermissions`.
+- `_write_mcp_json` hardcodes `.venv/bin/python` relative to the gladius package root. Will break if the venv has a different name or path. Should use `sys.executable`.
 
 ---
 
-## 9. Session Continuity
+## 9. The SDK MCP Race Condition
 
-Agent SDK sessions are resumed via `resume=session_id` in `ClaudeAgentOptions`. Session IDs come from `ResultMessage.session_id`.
+This is worth documenting because it is a subtle SDK bug that will recur if MCP tools are re-added.
 
-| Agent | Session Strategy | Rationale |
-|---|---|---|
-| Strategy Agent | Resume every iteration | Accumulates competition context, LB history, reasoning chain across all iterations — replaces context-stuffing |
-| Code Agent | Resume every iteration | "Remembers" the codebase structure, naming conventions, what it already wrote |
-| Execution Agent | No resume (stateless) | Each run is independent |
-| Validation Agent | No resume (stateless) | Each validation is independent |
-| Ensemble Agent | No resume (stateless) | Triggered on-demand, reads state from disk |
+**Symptom**: `BrokenPipeError` / `CLIConnectionError: ProcessTransport is not ready for writing` when an agent that has SDK MCP servers returns its result.
 
-```python
-# Resume a prior session — the agent re-enters its prior conversation context
-options = ClaudeAgentOptions(
-    resume=state.strategy_session_id,
-    # ...
-)
+**Root cause**: When Claude finishes generating a result, the SDK calls `end_input()` which closes the subprocess stdin. If — between the last model token and `end_input()` — the subprocess is also processing a `_handle_control_request` to write back an MCP tool response, it attempts to write to the now-closed stdin. The write raises `BrokenPipeError`.
 
-# Fork a session — new session_id branching from the resumed one
-options = ClaudeAgentOptions(
-    resume=state.strategy_session_id,
-    fork_session=True,
-)
-```
+**This affects agents whose last action before returning is an MCP call.** Agents that use MCP tools mid-session (not as the very last action) are fine.
+
+**Fix in this codebase**: `mcp_servers: dict = {}` in `planner.py`. The fake platform scoring is done by the orchestrator calling `_score_submission()` directly, not via MCP.
+
+**If you want to re-add MCP tools**: the safest options are:
+1. Register them in `CLAUDE.md`-referenced `.mcp.json` (file-based MCP, not SDK MCP) — these run as a persistent sidecar process, not through the SDK stdin/stdout channel.
+2. Implement a `can_use_tool` callback that forces a delay between the last MCP response and `end_input()`.
 
 ---
 
-## 10. Error Handling
-
-```python
-from claude_agent_sdk import CLINotFoundError, ProcessError, CLIJSONDecodeError
-
-async def run_agent_with_retry(
-    prompt: str,
-    system_prompt: str,
-    allowed_tools: list[str],
-    output_schema: dict,
-    cwd: str,
-    max_retries: int = 3,
-) -> tuple[dict, str]:
-    for attempt in range(max_retries):
-        try:
-            return await run_agent(prompt, system_prompt, allowed_tools, output_schema, cwd)
-        except CLINotFoundError:
-            raise  # Fatal — Claude Code CLI not installed
-        except ProcessError as e:
-            if e.exit_code == 1 and "rate limit" in (e.stderr or ""):
-                await asyncio.sleep(60 * (2 ** attempt))  # exponential backoff
-            elif attempt == max_retries - 1:
-                raise
-        except CLIJSONDecodeError:
-            if attempt == max_retries - 1:
-                raise
-        except Exception:
-            if attempt == max_retries - 1:
-                raise
-    raise RuntimeError("Max retries exceeded")
-```
-
----
-
-## 11. Migration Map
-
-| LangGraph Component | SDK Replacement |
-|---|---|
-| `GraphState` TypedDict | `CompetitionState` dataclass |
-| `SqliteSaver` checkpointer | `StateStore` (SQLite) |
-| `graph.add_node()` | `async def run_X_agent()` function |
-| `graph.add_conditional_edges()` | `if/elif` in `orchestrator.py` |
-| `call_llm(prompt, schema=...)` | `output_format={"type":"json_schema",...}` in `ClaudeAgentOptions` |
-| `code_generator` + `code_reviewer` + `versioning_agent` | Single `run_code_agent()` |
-| `executor` + `resource_manager` + `watchdog` | Single `run_execution_agent()` |
-| `validation_agent` + `submission_decider` + `notifier` | Single `run_validation_agent()` |
-| `knowledge_extractor` | `AgentDefinition` subagent within strategy agent |
-| `ensemble_agent` + `lb_tracker` | Single `run_ensemble_agent()` |
-| `Send()` for parallel branches | `asyncio.gather()` with `asyncio.Semaphore` |
-| `router.py` routing functions | Deleted — `if/elif` in orchestrator |
-| `utils/llm.py` `call_llm()` | Deleted — SDK handles it |
-
-**Implementation order:**
-1. `gladius/state.py` — `CompetitionState` + `StateStore`
-2. `gladius/tools/kaggle_tools.py` + `gladius/tools/metric_tools.py`
-3. `gladius/agents/execution.py` — validates the pattern end-to-end
-4. `gladius/agents/code.py` — core value
-5. `gladius/agents/validation.py`
-6. `gladius/agents/strategy.py`
-7. `gladius/agents/ensemble.py`
-8. `gladius/orchestrator.py` — wire everything
-9. Delete: `gladius/nodes/`, `gladius/graph.py`, `gladius/utils/llm.py`
-
----
-
-## 12. Dependencies
+## 10. Dependencies
 
 ```toml
-# pyproject.toml
 [project.dependencies]
-claude-agent-sdk = ">=0.1.0"
-numpy = ">=1.26"
-scikit-learn = ">=1.4"
-scipy = ">=1.11"
-kaggle = ">=1.6.0"
-
-# Remove: langgraph, langchain-core, langchain-anthropic
+claude-agent-sdk = ">=0.1.44"
+numpy = "*"
+scikit-learn = "*"
+scipy = "*"
+psutil = "*"
+kaggle = "*"
+requests = "*"
+python-dotenv = "*"
+zindi = "*"
 ```
 
-```bash
-# Requires Claude Code CLI (installed via npm)
-npm install -g @anthropic-ai/claude-code
-
-pip install claude-agent-sdk
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+Notable omissions:
+- No `langgraph`, `langchain*` (removed)
+- No `chromadb` (memory tools not built)
+- No `pyyaml` or `python-frontmatter` (competition config parsed manually — fragile)
+- No test framework in main dependencies (`pytest` only in `[project.optional-dependencies].test`)
 
 ---
 
-## 13. Key Design Principles
+## 11. CLI
 
-1. **Agents are complete, autonomous workers** — not thin wrappers around a single LLM call. A code agent reads, writes, runs, and verifies. Tell it the goal; let it figure out the steps.
+```bash
+gladius --competition-dir PATH [--iterations N] [--no-resume] [--no-submit] [--parallel N]
+```
 
-2. **The orchestrator owns all routing and state mutation** — agents output structured JSON, the orchestrator decides what to do with it. Agents never update `best_oof_score` directly; the orchestrator does after reading their output. This was the fatal regression in the LangGraph version.
+Entry point: `gladius.orchestrator:main` (defined in `pyproject.toml`).
 
-3. **Sessions are long-lived for agents that accumulate context** — strategy and code agents resume their sessions across iterations, building up understanding of the competition and codebase without needing to reconstruct context from scratch each time.
+The v1.0 design specified `--competition`, `--data-dir`, `--metric`, `--direction` as separate flags. All of these are now read from the competition `README.md` frontmatter. The only required CLI argument is `--competition-dir`.
 
-4. **Structured output via `output_format`** — every agent specifies a `json_schema`. The SDK guarantees the output conforms before returning. No `json.loads()` + exception handling in orchestrator code.
+---
 
-5. **Parallelism via `asyncio.gather()`** — not LangGraph `Send()` primitives. Clean, debuggable, and trivially resource-bounded with `asyncio.Semaphore`.
+## 12. Design Principles
 
-6. **Tools are the permission boundary** — `allowed_tools` in `ClaudeAgentOptions` specifies exactly what each agent can do. The execution agent gets `Bash`; the strategy agent does not. This replaces LangGraph's implicit "everything can do anything" node design.
+1. **Agents are complete autonomous workers** — not thin LLM wrappers. Tell the agent the goal; let it figure out the steps. `max_turns=80` for implementer.
 
-7. **Three LangGraph nodes → one SDK agent** — the code/review/version triplet collapses because Claude Code natively handles multi-step file operations. Same for executor/watchdog/resource-manager. This cuts the agent count from 18 to 5.
+2. **Orchestrator owns all routing and state mutation** — agents return structured JSON; the orchestrator acts on it. Prevents the class of bug in the original LangGraph version where validation was mutating `best_oof_score` directly.
+
+3. **One persistent agent, one fresh agent** — planner resumes its session across iterations (accumulates deep understanding); implementer starts fresh every time (clean context for one plan).
+
+4. **`bypassPermissions` for headless operation** — `acceptEdits` still sends `can_use_tool` control requests for Bash/WebSearch/Task, which require a registered callback. In a headless server `bypassPermissions` is the correct mode.
+
+5. **CLAUDE.md as shared live context** — instead of injecting full state into every agent prompt, the orchestrator writes `CLAUDE.md` once per iteration. Every agent automatically reads it at session start.
+
+6. **Structured output via `output_format`** — every agent specifies a `json_schema`. The SDK validates before returning. No `json.loads()` + exception handling.
+
+7. **Parallelism via `asyncio.gather()`** — not LangGraph `Send()` primitives. Clean, easy to debug, no framework overhead.

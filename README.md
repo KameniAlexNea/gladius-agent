@@ -1,170 +1,95 @@
 # gladius-agent
 
-Fully autonomous multi-agent system for Kaggle-style ML competitions. The graph runs continuously without human intervention: it generates hypotheses, writes and reviews code, executes training runs, validates OOF arrays, decides whether to submit, tracks leaderboard scores, and synthesises findings back into strategy — all as a closed LangGraph loop. The human receives Telegram notifications and reads results.
+Fully autonomous multi-agent system for ML competitions. Given a competition directory it runs a continuous loop without human intervention: plans experiments, writes and executes code, validates OOF results, decides whether to submit, and synthesises learnings into persistent memory — all driven by [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk).
 
 ---
 
 ## Architecture
 
-18 specialised agents are wired as nodes in a LangGraph `StateGraph`. All routing goes through a single `router` node that reads `state["next_node"]` and `state["experiment_status"]`. LangGraph checkpointing (SQLite in production, MemorySaver in dev) lets the process resume from the last completed node after a crash.
+Four specialised Claude agents run sequentially in a planning → implementing → validation loop. The orchestrator is plain Python `if/elif` — no LangGraph, no graph edges.
 
 ```
-router
-  ├── strategy          → hypothesis → code_generator → code_reviewer
-  │                                                           ├── versioning_agent → executor → watchdog
-  │                                                           │                                    ├── validation_agent → submission_decider
-  │                                                           │                                    │                           ├── submission_agent → lb_tracker → router
-  │                                                           │                                    │                           └── router (held)
-  │                                                           │                                    └── knowledge_extractor → router
-  │                                                           ├── hypothesis (retry)
-  │                                                           └── strategy (3rd failure)
-  ├── ensemble_agent    → hypothesis
-  ├── notifier          → router
-  └── error_handler     → (original node)
+orchestrator.py
+  │
+  ├─ [iteration N] planning
+  │    └─ planner agent           resumed session — accumulates competition understanding
+  │         • reads CLAUDE.md + MEMORY.md
+  │         • explores data directory and existing solutions
+  │         • outputs: {approach_summary, plan[steps], expected_metric_delta}
+  │
+  ├─ [iteration N] implementing
+  │    └─ implementer agent(s)    fresh session — focused on one plan
+  │         • reads CLAUDE.md + plan
+  │         • writes code, runs it, debugs, iterates until done
+  │         • outputs: {status, oof_score, solution_files, submission_file, notes}
+  │         └─ (--parallel N): up to N run concurrently via asyncio.gather
+  │
+  ├─ [iteration N] validation
+  │    ├─ validation agent        stateless — compares OOF, checks submission format
+  │    └─ summarizer agent        rewrites MEMORY.md with cumulative learnings
+  │
+  └─ [iteration N+1] planning  ← loop
 ```
 
-### Agent Layers
+### Agents
 
-| Layer | Agents |
+| Agent | Session | Tools | Max turns |
+|---|---|---|---|
+| Planner | **Resumed** — persistent memory across iterations | Read, Glob, Grep, Bash, WebSearch, Task | 40 |
+| Implementer | **Fresh** each iteration | Read, Write, Edit, Bash, Glob, Grep | 80 |
+| Validation | Stateless | Read, Bash | 10 |
+| Summarizer | Stateless | Read, Write | 15 |
+
+### State
+
+`CompetitionState` is a Python dataclass persisted to a **normalised 7-table SQLite database** (`.gladius/state.db`). No JSON blobs except `current_plan` (a nested list with no clean column mapping). The agent resumes correctly after a crash.
+
+| Table | Contents |
 |---|---|
-| Orchestration | Conductor, Error Handler |
-| Strategy | Strategy Agent, Hypothesis Generator, LB Tracker, Ensemble Agent, Knowledge Extractor |
-| Code | Code Generator, Code Reviewer, Versioning Agent |
-| Execution | Executor, Watchdog, Resource Manager |
-| Validation & Submission | Validation Agent, Submission Decider, Submission Agent, Notifier |
+| `competition` | Static: competition_id, metric, direction, data_dir — written once |
+| `current_state` | Mutable scalars: iteration, phase, best scores, session IDs |
+| `experiments` | One row per completed experiment |
+| `failed_runs` | One row per failed implementer run |
+| `error_log` | One row per unhandled orchestrator error |
+| `lb_scores` | Leaderboard scores after submission |
+| `state_history` | Append-only audit log of every save |
 
----
+### Claude Code native config (`.claude/`)
 
-## State
+Each competition directory gets a bootstrapped `.claude/` layout on first run:
 
-A single `GraphState` TypedDict is the source of truth for one competition run. Fields:
+```
+.claude/
+  agents/
+    planner.md               — agent definition (name, tools, model, maxTurns)
+    implementer.md           — agent definition
+  skills/
+    ml-pipeline/SKILL.md     — CV pattern, baselines, submission format
+    submit-check/SKILL.md    — submission validation checklist
+    code-review/SKILL.md     — leakage, metric correctness, format checks (CRITICAL items)
+    git-workflow/SKILL.md    — commit message format after each run
+    uv-venv/SKILL.md         — how to install packages and run scripts
+  agent-memory/
+    planner/MEMORY.md        — persistent learnings (rewritten by summarizer each iteration)
+  settings.json              — model, env vars, PostToolUse/PreToolUse hooks
+scripts/
+  after_edit.sh              — PostToolUse: py_compile immediately on Edit/Write
+  validate_bash.sh           — PreToolUse: block rm -rf / and rm -rf ~
+CLAUDE.md                    — live context refreshed every iteration by orchestrator
+.mcp.json                    — MCP server registration (metric-tools)
+```
 
-| Field | Type | Purpose |
+**`CLAUDE.md`** is written by the orchestrator at the start of every iteration. It carries competition settings, best OOF, recent experiments, failed approaches, and a stagnation warning when the last 3 experiments moved the metric by < 0.001. Every agent reads it automatically (Claude Code loads it from the working directory at session start).
+
+**`MEMORY.md`** is written by the summarizer after every validation. It accumulates: key data insights, what works ✅, what fails ❌, patterns and hypotheses, full score history, and suggested next directions. The planner reads it at the start of every session.
+
+### Platform support
+
+| Platform | Submit | `platform:` value |
 |---|---|---|
-| `competition` | dict | Config: metric, target, deadline, days remaining, sub limit |
-| `current_experiment` | dict\|None | ExperimentSpec from Hypothesis Generator |
-| `experiment_status` | str | `pending → queued → running → done/failed/killed → validated → submitted → complete` |
-| `running_pid` | int\|None | PID of the training subprocess |
-| `run_id` | str\|None | Version tag, e.g. `v42` |
-| `oof_score` | float\|None | OOF metric for the current run |
-| `lb_score` | float\|None | Public LB score after submission |
-| `gap_history` | list | OOF−LB gaps for last 10 scored experiments |
-| `submissions_today` | int | Incremented by Submission Agent |
-| `last_submission_time` | float\|None | Unix timestamp, used for rate-limit buffer |
-| `directive` | dict\|None | JSON from Strategy Agent |
-| `exploration_flag` | bool | Forced exploitation when `days_remaining < 2` |
-| `consecutive_same_directive` | int | Forces explore after 5 identical directives |
-| `session_summary` | str\|None | Compressed strategy history |
-| `generated_script_path` | str\|None | Path to script produced by Code Generator |
-| `reviewer_feedback` | str\|None | Issues from Code Reviewer (`None` = pass) |
-| `code_retry_count` | int | Resets on new directive; caps at 3 |
-| `next_node` | str | Routing target for the router |
-| `node_retry_counts` | dict | Per-node crash retry counter |
-| `next_node_before_error` | str\|None | Where to resume after error handling |
-| `error_message` | str\|None | Last error, cleared by Knowledge Extractor |
-
-### Persistent files (survive restarts)
-
-```
-state/
-  checkpoint.db           # LangGraph SqliteSaver (production)
-  knowledge.json          # Append-only experiment findings
-  leaderboard.json        # LB score history
-  versions/               # Per-version metadata JSON
-  scripts/                # Versioned training scripts
-  oof/                    # <run_id>_oof.npy arrays
-  predictions/            # <run_id>_submission.csv
-  cache/                  # Model/feature caches (auto-evicted on disk pressure)
-  experiments/            # Archived per-run records
-logs/
-  <run_id>.txt            # stdout/stderr from training subprocess
-```
-
----
-
-## Experiment Lifecycle
-
-```
-PENDING → QUEUED → RUNNING → DONE → VALIDATED → SUBMITTED → COMPLETE
-                          ↘ FAILED → (knowledge_extractor)
-                          ↘ KILLED → (knowledge_extractor)
-                                              ↘ HELD → (router, no submission)
-                                                            ↘ SCORE_TIMEOUT → notifier
-```
-
----
-
-## Agent Summaries
-
-### Strategy Agent
-LLM call with structured prompt. Outputs a `DirectiveJSON`:
-```json
-{
-  "directive_type": "tune_existing | new_features | new_model_type | ensemble | seed_average",
-  "target_model": "catboost | lgbm | xgboost | nn | blend",
-  "rationale": "one sentence",
-  "exploration_flag": true,
-  "priority": 3
-}
-```
-Exploration/exploitation enforced in code: forced exploit when `days_remaining < 2`, forced explore after 5 consecutive same directives.
-
-### Hypothesis Generator
-Takes the directive and outputs a concrete `ExperimentSpec`:
-```json
-{
-  "parent_version": "v41",
-  "changes": [
-    {"type": "param_change", "param": "num_leaves", "old": "64", "new": "128"},
-    {"type": "feature_add", "feature_name": "feat_x", "code_snippet": "..."},
-    {"type": "feature_remove", "feature_name": "feat_y"}
-  ],
-  "estimated_runtime_multiplier": 1.2,
-  "rationale": "..."
-}
-```
-
-### Code Generator
-Does **not** write from scratch. Applies the `changes` array to the parent script via regex (`param_change`), marker-based insertion (`feature_add`), and line filtering (`feature_remove`). Uses the LLM for complex non-trivial changes with ±20 line context.
-
-### Code Reviewer
-Static analysis pipeline: `py_compile` → `pylint --errors-only` → hardcoded-path scan. Returns `pass` (routes to Versioning Agent) or `fail` with specific issues (routes back to Hypothesis Generator, max 2 retries, then escalates to Strategy Agent).
-
-### Versioning Agent
-On reviewer pass: assigns `v{N}` tag, copies script to `state/scripts/`, writes metadata JSON, runs `git add + commit`.
-
-### Executor
-Launches the versioned script as a subprocess, redirects stdout/stderr to `logs/<run_id>.txt`, stores PID in state.
-
-### Watchdog
-Polls the log file every 30 s. Kills the process if: RAM > 90%, no log output for 30 min, or wall-clock exceeds `2× estimated_runtime_multiplier`. Routes to Validation Agent on clean exit, Knowledge Extractor on kill/failure.
-
-### Resource Manager
-Monitors disk usage. Evicts oldest cache files when usage > 90%, skipping files referenced by the current run or any running job.
-
-### Validation Agent
-Checks OOF array: non-empty, no NaN, values in `[0, 1]`.
-
-### Submission Decider
-Gates submission on: daily budget not exhausted AND OOF score available AND OOF-LB gap not widening for 3+ consecutive submissions.
-
-### Submission Agent
-Calls `kaggle competitions submit` with exponential backoff (max 3 retries: 30 s, 60 s, 120 s). Increments `submissions_today` on success.
-
-### LB Tracker
-Polls `kaggle competitions submissions` every 15 min for up to 3 hours. On score arrival: appends to `state/leaderboard.json`, updates `gap_history`. On timeout: routes to Notifier.
-
-### Ensemble Agent
-Scans `state/oof/*.npy`. Selects uncorrelated models (Pearson r < 0.97 on OOF). Requires ≥ 3 uncorrelated models before dispatching a blend directive to Hypothesis Generator.
-
-### Knowledge Extractor
-Runs after every terminal experiment event (failed, killed, validated, lb score received). Classifies the finding (`param_failure`, `overfitting_signal`, `model_failure`, `feature_failure`) and appends a structured JSON entry to `state/knowledge.json`. Hypothesis Generator reads this file to avoid previously failed parameter regions.
-
-### Notifier
-Sends Telegram messages for: LB score received, score timeout, run failures, agent degradation. Configured via `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` environment variables.
-
-### Error Handler
-Retries the failing node up to 3 times (per-node counter in `node_retry_counts`). After 3 failures, escalates to Strategy Agent and fires a Telegram alert.
+| Kaggle | `kaggle competitions submit` CLI | `kaggle` |
+| Zindi | `zindi` Python package | `zindi` |
+| Fake (offline) | Local scoring vs `.answers.csv` | `fake` |
 
 ---
 
@@ -173,8 +98,9 @@ Retries the failing node up to 3 times (per-node counter in `node_retry_counts`)
 ### Requirements
 
 - Python 3.10+
-- `kaggle` CLI configured (`~/.kaggle/kaggle.json`)
-- OpenAI-compatible API key
+- `ANTHROPIC_API_KEY` set in environment
+- `claude` CLI — bundled with `claude-agent-sdk` (no separate install)
+- Platform credentials if not using `fake`: `~/.kaggle/kaggle.json` for Kaggle, `ZINDI_USERNAME` / `ZINDI_PASSWORD` for Zindi
 
 ### Install
 
@@ -185,39 +111,103 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-### Environment variables
+### First-time CLI setup
+
+The bundled `claude` binary shows an interactive theme picker on first run. Complete it once before running headlessly:
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-export LLM_MODEL="gpt-4o"             # default: gpt-4o
-export TELEGRAM_BOT_TOKEN="..."       # optional
-export TELEGRAM_CHAT_ID="..."         # optional
+echo "1" | .venv/lib/python3.12/site-packages/claude_agent_sdk/_bundled/claude \
+    --output-format stream-json --setting-sources "" 2>/dev/null || true
 ```
 
-### Competition config
-
-Create `competition.json` in the working directory:
-
-```json
-{
-  "name": "my-kaggle-competition",
-  "metric": "auc",
-  "target": "target_column",
-  "deadline": "2026-04-30",
-  "days_remaining": 65,
-  "submission_limit": 5
-}
-```
-
-### Run
+### Environment
 
 ```bash
-gladius competition.json
-# or
-python -m gladius.graph competition.json
+export ANTHROPIC_API_KEY="sk-ant-..."
+# Kaggle — or use ~/.kaggle/kaggle.json:
+export KAGGLE_USERNAME="..."
+export KAGGLE_KEY="..."
+# Zindi:
+export ZINDI_USERNAME="..."
+export ZINDI_PASSWORD="..."
 ```
 
-The graph runs until interrupted. State is checkpointed after every node. On restart, it resumes from the last completed node.
+---
+
+## Competition directory
+
+Each competition lives in its own directory. The only required file is `README.md` with a YAML frontmatter block:
+
+```yaml
+---
+competition_id: my-competition
+platform: kaggle         # kaggle | zindi | fake
+metric: auc_roc          # metric name (informational for agents)
+direction: maximize      # maximize | minimize
+data_dir: data           # relative path to data directory
+---
+
+# My Competition Title
+
+...competition description and data documentation here...
+```
+
+`data_dir` must contain at minimum:
+- `train.csv`
+- `test.csv`
+- `sample_submission.csv`
+
+### Example: offline testing with fake competition
+
+```bash
+gladius --competition-dir examples/fake_competition
+```
+
+`examples/fake_competition` is a 1000-row binary classification dataset (Customer Churn Prediction). `platform: fake` — submissions scored locally against `data/.answers.csv` using AUC-ROC.
+
+---
+
+## CLI
+
+```bash
+gladius --competition-dir PATH [--iterations N] [--no-resume] [--no-submit] [--parallel N]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--competition-dir` | required | Competition directory (must contain README.md with frontmatter) |
+| `--iterations` | 20 | Maximum planning+implementation iterations |
+| `--no-resume` | false | Start fresh — ignore `.gladius/state.db` |
+| `--no-submit` | false | Dry-run — skip platform submissions |
+| `--parallel N` | 1 | Run N implementers concurrently with different approaches |
+
+With `--parallel 2`, the planner generates 2 independent, structurally different approaches. Both implementers run concurrently. The best-OOF result advances to validation; all successful runs are recorded as experiments.
+
+---
+
+## Project structure
+
+```
+gladius/
+  orchestrator.py          — Main loop + CLI (planning → implementing → validation)
+  state.py                 — CompetitionState dataclass + StateStore (7-table SQLite)
+  agents/
+    _base.py               — run_agent(): retry, streaming console, bypassPermissions
+    planner.py             — Explores data, produces ordered plan
+    implementer.py         — Writes code, executes, reports OOF score
+    validation.py          — Compares OOF, recommends submit/hold (stateless)
+    summarizer.py          — Rewrites MEMORY.md with cumulative learnings
+  tools/
+    fake_platform_tools.py — Offline scoring MCP server (AUC-ROC vs answer key)
+    kaggle_tools.py        — Kaggle API MCP server
+    metric_tools.py        — OOF metric computation MCP server
+    zindi_tools.py         — Zindi submission MCP server
+  utils/
+    competition_config.py  — Reads YAML frontmatter from competition README.md
+    project_setup.py       — Bootstraps .claude/ layout, skills, hooks, CLAUDE.md
+examples/
+  fake_competition/        — Customer Churn Prediction (offline, AUC-ROC)
+```
 
 ---
 
@@ -227,59 +217,27 @@ The graph runs until interrupted. State is checkpointed after every node. On res
 # Format
 tox -e format
 
-# Tests
-pip install -e ".[dev]"
-pytest tests/ -v
-```
+# Run example competition (1 iteration, fresh start)
+gladius --competition-dir examples/fake_competition --iterations 1 --no-resume
 
-### Project structure
-
-```
-gladius/
-  graph.py                   # Graph wiring, entry point
-  state.py                   # GraphState TypedDict, ExperimentStatus enum
-  nodes/
-    router.py                # Central routing logic
-    error_handler.py         # Retry + escalation
-    orchestration/
-      conductor.py           # Top-level health monitor (stub)
-    strategy/
-      strategy_agent.py      # LLM directive generation
-      hypothesis_generator.py # LLM experiment spec generation
-      lb_tracker.py          # Kaggle LB polling
-      ensemble_agent.py      # OOF correlation + blend dispatch
-      knowledge_extractor.py # Structured findings → knowledge.json
-    code/
-      code_generator.py      # Script patching (param/feature changes)
-      code_reviewer.py       # Static analysis gate
-      versioning_agent.py    # git commit + metadata
-    execution/
-      executor.py            # Subprocess launch
-      watchdog.py            # Log tail, kill on limits
-      resource_manager.py    # Disk eviction
-    validation/
-      validation_agent.py    # OOF sanity checks
-      submission_decider.py  # Submission gating logic
-      submission_agent.py    # kaggle CLI submit
-      notifier.py            # Telegram notifications
-  utils/
-    llm.py                   # OpenAI call wrapper (JSON mode)
-    context_builder.py       # Context assembly for LLM nodes
-    file_utils.py            # OOF file I/O with POSIX locking
+# Parallel run (2 approaches per iteration)
+gladius --competition-dir examples/fake_competition --parallel 2
 ```
 
 ---
 
-## Known limitations / not yet implemented
+## Design principles
 
-- **Conductor** is a stub: health checks, Supervisor integration, and per-tick job monitoring are not implemented.
-- **State Manager** (lock-gated read/write) is not implemented; agents write state directly.
-- **Supervisor** (PID monitoring + agent restart on crash) is not implemented.
-- **Production checkpointer**: graph uses `MemorySaver`; switch to `SqliteSaver` for persistence across restarts.
-- **ContextBuilder** does not load the experiment archive (top-10 by OOF, last-5 chronological, model type distribution).
-- **Code Generator** does not call the LLM for complex changes; only regex/marker substitution.
-- **Code Reviewer** is missing the import-against-installed-packages check and the 1%-data sandbox run.
-- **Submission Decider** is missing the `best_oof` comparison and the 2-hour rate-limit buffer.
-- **Validation Agent** is missing the leakage check and the metric-vs-logged-score consistency check.
-- **Ensemble Agent** does not optimise blend weights (Nelder-Mead / Optuna); it only selects base models.
-- **Parallel execution** via LangGraph `Send` API is not implemented.
+1. **Agents are complete autonomous workers** — not thin LLM wrappers. The implementer reads, writes, runs, and debugs until the experiment completes. Tell it the goal; let it figure out the steps.
+
+2. **Orchestrator owns all routing and state mutation** — agents output structured JSON; the orchestrator acts on it. Agents never write to `best_oof_score` directly. This was the fatal regression in the original LangGraph version (validation node was updating state it shouldn't own, permanently breaking the submission gate).
+
+3. **One persistent agent, one fresh agent** — the planner resumes its session across iterations (accumulates deep understanding); the implementer starts fresh every time (clean context for one plan).
+
+4. **Structured output via `output_format`** — every agent specifies a `json_schema`. The SDK guarantees the output conforms before returning. No `json.loads()` + exception handling in the orchestrator.
+
+5. **Parallelism via `asyncio.gather()`** — not LangGraph `Send()` primitives. Bounded by `asyncio.Semaphore` when needed.
+
+6. **CLAUDE.md as shared live context** — instead of injecting full state into every prompt, the orchestrator writes `CLAUDE.md` once per iteration. Every agent reads it at session start via Claude Code's native project-context loading.
+
+7. **`bypassPermissions` for headless operation** — `acceptEdits` only covers file edits and still sends `can_use_tool` control requests for `Bash`/`WebSearch`/`Task`, which crash without a permission callback. `bypassPermissions` skips all permission checks.

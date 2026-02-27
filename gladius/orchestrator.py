@@ -389,13 +389,13 @@ async def run_competition(
 
         finally:
             store.save(state)
+            store.close()
 
     logger.info(
         f"Done. iterations={state.iteration}  "
         f"best_oof={state.best_oof_score:.6f}  "
         f"submissions={state.submission_count}"
     )
-    store.close()
     return state
 
 

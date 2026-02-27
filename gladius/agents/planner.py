@@ -143,26 +143,3 @@ Be specific. The implementer will execute your plan blindly.{parallel_instructio
         max_turns=40,
     )
 
-
-def _build_platform_mcp(platform: str, data_dir: str) -> dict:
-    """Return MCP server dict for the given platform so planner can query it."""
-    servers: dict = {}
-    try:
-        if platform == "fake":
-            import os
-
-            os.environ.setdefault(
-                "FAKE_ANSWERS_PATH",
-                str(__import__("pathlib").Path(data_dir) / ".answers.csv"),
-            )
-            from gladius.tools.fake_platform_tools import fake_server
-
-            servers["fake_platform"] = fake_server
-        elif platform == "kaggle":
-            from gladius.tools.kaggle_tools import kaggle_server
-
-            servers["kaggle"] = kaggle_server
-        # zindi: no leaderboard MCP yet, skip
-    except Exception:
-        pass  # MCP servers are optional for planner
-    return servers
