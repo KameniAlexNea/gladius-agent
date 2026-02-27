@@ -213,3 +213,4 @@ examples/fake_competition/.mcp.json
 examples/fake_competition/.claude
 examples/fake_competition/.gladius
 examples/fake_competition/scripts
+examples/fake_competition/catboost_info

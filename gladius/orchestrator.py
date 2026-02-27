@@ -253,18 +253,30 @@ async def run_competition(
                         f"Best parallel result: OOF {result['oof_score']:.6f} "
                         f"(from {len(successful)}/{len(plans_to_run)} successful)"
                     )
-                    # Record all successful runs as experiments
+                    # Record all successful runs as experiments — result last so
+                    # experiments[-1] always points to the best.
                     for r in successful:
-                        state.experiments.append(
-                            {
-                                "iteration": state.iteration,
-                                "oof_score": r["oof_score"],
-                                "solution_files": r.get("solution_files", []),
-                                "submission_file": r.get("submission_file", ""),
-                                "notes": r.get("notes", ""),
-                                "approach": "",
-                            }
-                        )
+                        if r is not result:
+                            state.experiments.append(
+                                {
+                                    "iteration": state.iteration,
+                                    "oof_score": r["oof_score"],
+                                    "solution_files": r.get("solution_files", []),
+                                    "submission_file": r.get("submission_file", ""),
+                                    "notes": r.get("notes", ""),
+                                    "approach": "",
+                                }
+                            )
+                    state.experiments.append(
+                        {
+                            "iteration": state.iteration,
+                            "oof_score": result["oof_score"],
+                            "solution_files": result.get("solution_files", []),
+                            "submission_file": result.get("submission_file", ""),
+                            "notes": result.get("notes", ""),
+                            "approach": "",
+                        }
+                    )
                 else:
                     # ── Sequential single implementer ─────────────────────
                     result = await run_implementer(
@@ -316,10 +328,9 @@ async def run_competition(
                     f"Implementation done — OOF {state.target_metric}: {oof:.6f}"
                 )
 
-                if _is_better(oof, state.best_oof_score, state.metric_direction):
-                    state.best_oof_score = oof
-                    logger.info(f"New best OOF: {oof:.6f}")
-
+                # Do NOT update state.best_oof_score here — the validation agent
+                # must compare against the *previous* best.  The update happens
+                # in the validation phase after the agent confirms improvement.
                 state.phase = "validation"
 
             # ── VALIDATION ───────────────────────────────────────────────────
@@ -335,6 +346,11 @@ async def run_competition(
                     state=state,
                     project_dir=project_dir,
                 )
+
+                # Validation agent saw the true previous best; update now.
+                if validation.get("is_improvement"):
+                    state.best_oof_score = oof_score
+                    logger.info(f"New best OOF: {oof_score:.6f}")
 
                 if (
                     validation["submit"]

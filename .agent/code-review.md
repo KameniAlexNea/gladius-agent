@@ -19,7 +19,7 @@ However there are two **critical bugs** that will cause silent wrong behaviour i
 
 | # | Severity | File | Issue | Effort | Status |
 |---|---|---|---|---|---|
-| 1 | 🔴 Critical | `orchestrator.py` | Parallel mode validates wrong experiment | S | Open |
+| 1 | 🔴 Critical | `orchestrator.py` | Parallel mode validates wrong experiment | S | ✅ Fixed |
 | 2 | 🔴 Critical | `utils/project_setup.py` | `permissionMode: acceptEdits` crashes subagent Task calls | S | Open |
 | 3 | 🟠 High | `agents/planner.py` | `_build_platform_mcp` is dead code | XS | ✅ Already gone |
 | 4 | 🟠 High | `orchestrator.py` | `store.close()` not in `finally` — connection leak on error | XS | ✅ Fixed |

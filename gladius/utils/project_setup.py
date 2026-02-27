@@ -150,6 +150,17 @@ If you are the **planner**, read your agent memory at
 Update it with insights after each exploration session.
 
 If you are an **implementer**, focus only on executing the given plan.
+
+## Package Management
+
+> **This project uses `uv` — there is no `pip` in the venv.**
+> **Always install packages with:** `uv add <package>`
+> Never use `pip install`, `pip3 install`, or `python -m pip install`.
+
+```bash
+uv add optuna catboost lightgbm   # install packages
+uv run python solution.py         # run a script inside the venv
+```
 """
     p.write_text(content, encoding="utf-8")
 
