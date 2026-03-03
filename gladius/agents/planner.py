@@ -76,7 +76,7 @@ Your job:
 - Explore the data directory and any existing solution files at your discretion.
 - Decide the highest-impact next thing to try.
 - Output a concrete, ordered plan the implementer can follow without further guidance.
-- Update your memory with anything worth remembering across iterations.
+- Call ExitPlanMode with your plan — do NOT write any files.
 
 Be specific. The implementer will execute your plan blindly.{parallel_instruction}
 """
@@ -96,9 +96,10 @@ Be specific. The implementer will execute your plan blindly.{parallel_instructio
             "rather than incrementally tweaking the current approach.\n\n"
             "STRICT RULES — you are in READ-ONLY planning mode:\n"
             "Do NOT run Bash commands. "
-            "Do NOT write or edit any files. "
+            "Do NOT write or edit ANY files — not MEMORY.md, not plan files, not anything. "
             "Do NOT spawn Task subagents. "
-            "Use only Read, Glob, Grep, WebSearch, TodoWrite."
+            "Use ONLY Read, Glob, Grep, WebSearch, TodoWrite. "
+            "Call ExitPlanMode when your plan is ready — that is the ONLY output channel."
         ),
         allowed_tools=[
             "Read",
