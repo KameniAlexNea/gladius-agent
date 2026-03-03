@@ -20,9 +20,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
-
+import os
 from dotenv import load_dotenv
 
 from gladius.agents.implementer import run_implementer
@@ -67,8 +68,6 @@ def _submit_to_kaggle(competition_id: str, submission_path: str, message: str) -
 
 
 def _submit_to_zindi(competition_id: str, submission_path: str, message: str) -> None:
-    import os
-
     try:
         from zindi.user import Zindian
     except ImportError:
@@ -522,45 +521,54 @@ async def run_competition(
 
                 # ── Deterministic stop check ─────────────────────────────
                 # Always computed in Python — never rely solely on the LLM.
+                # Stopping requires ALL THREE conditions to be true simultaneously:
+                #   1. Plateau detected (last 3 scores span < threshold)
+                #   2. Validator set stop=True
+                #   3. Validator listed no next_directions
+                # Any subset is insufficient — e.g. a perfect score with
+                # remaining suggested directions will keep iterating.
                 deterministic_stop = False
 
-                if state.target_metric is None:
-                    # Open task: perfect/near-perfect quality is done.
-                    if (state.best_quality_score or 0) >= 95:
+                # Both task types: plateau detection — last 3 scored
+                # experiments show no meaningful change.
+                _plateau_key = "quality_score" if state.target_metric is None else "oof_score"
+                _scored = [
+                    e[_plateau_key]
+                    for e in state.experiments
+                    if e.get(_plateau_key) is not None
+                ]
+                _plateau_threshold = 3.0 if state.target_metric is None else 0.001
+                if len(_scored) >= 3:
+                    _span = max(_scored[-3:]) - min(_scored[-3:])
+                    if _span < _plateau_threshold:
                         deterministic_stop = True
                         logger.info(
-                            f"Deterministic stop: quality {state.best_quality_score}/100 ≥ 95 "
-                            "— task complete."
+                            f"Deterministic stop: last 3 scores span {_span:.4f} "
+                            f"(< {_plateau_threshold}) — plateau detected."
                         )
 
-                if not deterministic_stop:
-                    # Both task types: plateau detection — last 3 scored
-                    # experiments show no meaningful change.
-                    _plateau_key = "quality_score" if state.target_metric is None else "oof_score"
-                    _scored = [
-                        e[_plateau_key]
-                        for e in state.experiments
-                        if e.get(_plateau_key) is not None
-                    ]
-                    _plateau_threshold = 3.0 if state.target_metric is None else 0.001
-                    if len(_scored) >= 3:
-                        _span = max(_scored[-3:]) - min(_scored[-3:])
-                        if _span < _plateau_threshold:
-                            deterministic_stop = True
-                            logger.info(
-                                f"Deterministic stop: last 3 scores span {_span:.4f} "
-                                f"(< {_plateau_threshold}) — plateau detected."
-                            )
-
-                # Honour the validation agent's stop recommendation OR
-                # the deterministic check — whichever fires first.
+                # Stop only when ALL THREE agree:
+                #   1. deterministic_stop  — plateau detected (scores stagnant)
+                #   2. agent_stop          — validator explicitly set stop=True
+                #   3. no_next_directions  — validator listed no further improvements
+                # Any single condition alone is insufficient.
                 agent_stop = bool(validation.get("stop"))
-                if agent_stop and not deterministic_stop:
-                    logger.info("Validation agent recommends stopping (agent verdict).")
-                if deterministic_stop or agent_stop:
-                    state.phase = "done"
-                else:
-                    state.phase = "planning"
+                no_next_directions = not bool(validation.get("next_directions"))
+                should_stop = deterministic_stop and agent_stop and no_next_directions
+                if should_stop:
+                    logger.info(
+                        "Stopping: plateau detected + agent stop=True + no next directions."
+                    )
+                elif agent_stop and not should_stop:
+                    _why = []
+                    if not deterministic_stop:
+                        _why.append("no plateau")
+                    if not no_next_directions:
+                        _why.append(f"next_directions={validation.get('next_directions')}")
+                    logger.info(
+                        f"Agent requested stop=True but continuing — {', '.join(_why)}."
+                    )
+                state.phase = "done" if should_stop else "planning"
 
         except Exception as exc:
             logger.error(

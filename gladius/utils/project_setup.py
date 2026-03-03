@@ -171,28 +171,28 @@ Standard files to expect:
         skills_section = """\
 ## Available Skills
 
-Read these files for checklists and templates before each step:
+Invoke skills with the `Skill` tool — the output is returned inline, do NOT use TaskOutput.
 
-| Skill | Path | When to use |
-| --- | --- | --- |
-| ML pipeline | `.claude/skills/ml-pipeline/SKILL.md` | Writing CV / feature / submission code |
-| Code review | `.claude/skills/code-review/SKILL.md` | **Required before reporting results** — catches leakage & metric bugs |
-| Submit check | `.claude/skills/submit-check/SKILL.md` | Validate submission CSV before uploading |
-| Git workflow | `.claude/skills/git-workflow/SKILL.md` | After each working solution |
-| uv / venv | `.claude/skills/uv-venv/SKILL.md` | Installing packages and running scripts |
+| Skill name | When to invoke |
+| --- | --- |
+| `code-review` | **Required before reporting results** — catches leakage & metric bugs |
+| `ml-pipeline` | Writing CV / feature / submission code |
+| `submit-check` | Validate submission CSV before uploading |
+| `git-workflow` | After each working solution |
+| `uv-venv` | Installing packages and running scripts |
 """
     else:
         skills_section = """\
 ## Available Skills
 
-Read these files for checklists and templates before each step:
+Invoke skills with the `Skill` tool — the output is returned inline, do NOT use TaskOutput.
 
-| Skill | Path | When to use |
-| --- | --- | --- |
-| Task review | `.claude/skills/task-review/SKILL.md` | **Required before reporting results** — quality self-assessment checklist |
-| Code review | `.claude/skills/code-review/SKILL.md` | **Required before reporting results** — catches crashes & missing features |
-| Git workflow | `.claude/skills/git-workflow/SKILL.md` | After each working iteration |
-| uv / venv | `.claude/skills/uv-venv/SKILL.md` | Installing packages and running scripts |
+| Skill name | When to invoke |
+| --- | --- |
+| `code-review` | **Required before reporting results** — catches crashes & missing features |
+| `task-review` | **Required before reporting results** — quality self-assessment checklist |
+| `git-workflow` | After each working iteration |
+| `uv-venv` | Installing packages and running scripts |
 """
 
     content = f"""\
@@ -371,8 +371,9 @@ You are an expert engineer executing a task experiment.
 **Your job (open-ended task):**
 - Implement the plan completely per the requirements in `README.md`.
 - Run the deliverable end-to-end and verify it works.
-- Use the `task-review` skill (`.claude/skills/task-review/SKILL.md`) to
-  self-assess quality 0–100 before reporting.
+- Invoke the `task-review` skill using the Skill tool: `Skill({{"name": "task-review"}})`
+  The skill output is returned directly — do NOT use TaskOutput.
+  Use the checklist to self-assess quality 0–100 before reporting.
 - Package the deliverable (zip / binary / URL file) as described in README.
 
 **Rules:**
@@ -382,8 +383,9 @@ You are an expert engineer executing a task experiment.
 - **NEVER spawn Task subagents.**
 
 **When you're done, before reporting results:**
-- Invoke the `code-review` skill (read `.claude/skills/code-review/SKILL.md`) and
-  fix every CRITICAL item before finalising.
+- Invoke the `code-review` skill using the Skill tool: `Skill({{"name": "code-review"}})`
+  The skill output is returned directly in the same turn — do NOT use TaskOutput to wait for it.
+  Fix every CRITICAL item it reports before finalising.
 
 **Report:**
 - `status`: success | error | timeout | oom

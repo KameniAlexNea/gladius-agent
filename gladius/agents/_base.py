@@ -86,9 +86,12 @@ _IMPLEMENTER_AGENT_DEF = AgentDefinition(
     prompt=(
         "You are an expert ML engineer executing a competition experiment.\n\n"
         "Start by reading CLAUDE.md for competition context, then the plan you received.\n"
-        "Implement completely: write code, run it, fix errors, iterate until done.\n"
-        "Before reporting, read .claude/skills/code-review/SKILL.md and fix every "
-        "CRITICAL item (leakage, metric correctness, submission format).\n\n"
+        "Implement completely: write code, run it, fix errors, iterate until done.\n\n"
+        "Before reporting results, invoke the code-review skill:\n"
+        "  Skill({\"name\": \"code-review\"})\n"
+        "The Skill tool returns its output directly in the same turn — "
+        "do NOT use TaskOutput to wait for it. "
+        "Fix every CRITICAL item reported before submitting.\n\n"
         "STRICT RULES:\n"
         "- NEVER modify or overwrite CLAUDE.md — it is managed by the orchestrator.\n"
         "- NEVER spawn Task subagents.\n"
@@ -383,6 +386,7 @@ async def run_agent(
     for attempt in range(max_retries):
         try:
             result_msg: ResultMessage | None = None
+            last_assistant_msg: AssistantMessage | None = None
             # Sessions doc: the SystemMessage(subtype="init") arrives before any
             # tool calls and contains the session_id.  Capture it early so we
             # have a fallback session_id even if the run crashes before ResultMessage
@@ -402,6 +406,8 @@ async def run_agent(
                     _log_message(agent_name, message)
                 if isinstance(message, SystemMessage) and message.subtype == "init":
                     early_session_id = message.data.get("session_id")
+                if isinstance(message, AssistantMessage):
+                    last_assistant_msg = message
                 if isinstance(message, ResultMessage):
                     result_msg = message
 
@@ -409,13 +415,39 @@ async def run_agent(
                 raise RuntimeError("No ResultMessage received from agent")
             if result_msg.is_error:
                 raise RuntimeError(f"Agent returned error result: {result_msg.result}")
-            if result_msg.structured_output is None:
+
+            structured = result_msg.structured_output
+
+            # Fallback: local models (Ollama, GLM, etc.) sometimes output the
+            # required JSON as plain text instead of calling the StructuredOutput
+            # tool. Extract it from the last assistant message in that case.
+            if structured is None and last_assistant_msg is not None:
+                for block in last_assistant_msg.content:
+                    if isinstance(block, TextBlock):
+                        text = block.text.strip()
+                        # Strip optional markdown code fence
+                        if text.startswith("```"):
+                            text = text[text.index("\n") + 1:] if "\n" in text else text
+                            if text.rstrip().endswith("```"):
+                                text = text.rstrip()[:-3].rstrip()
+                        if text.startswith("{"):
+                            try:
+                                structured = json.loads(text)
+                                logger.warning(
+                                    f"[{agent_name}] structured_output was None — "
+                                    "extracted JSON from last assistant text block (fallback)"
+                                )
+                                break
+                            except json.JSONDecodeError:
+                                pass
+
+            if structured is None:
                 raise RuntimeError(
                     "Agent returned no structured_output (schema not satisfied?)"
                 )
 
             return (
-                result_msg.structured_output,
+                structured,
                 result_msg.session_id or early_session_id or "",
             )
 

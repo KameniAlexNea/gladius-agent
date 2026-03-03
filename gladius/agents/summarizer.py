@@ -28,8 +28,9 @@ competition-solving agent.
 Your task: read the existing MEMORY.md and the latest-iteration result, then
 rewrite MEMORY.md with updated, concise learnings.
 
-MEMORY.md format (strict — keep sections in this order):
----
+MEMORY.md format (strict — keep sections in this order, start directly with the # heading,
+no YAML frontmatter, no code fences, no --- separators):
+
 # Planner Memory — {competition_id}
 > Auto-updated by summarizer. Last iteration: N
 
@@ -56,7 +57,6 @@ Keep ALL entries, newest first.
 ## Suggested Next Directions
 Ordered list: highest-expected-gain first.  Max 5 items.
 Be specific (e.g. "Add lag features on user_id × day_of_week").
----
 
 Rules:
 - Be concise — every bullet should fit on one line.
@@ -79,7 +79,8 @@ OUTPUT_SCHEMA = {
             "type": "string",
             "description": (
                 "The complete updated MEMORY.md text (all sections, newest entries "
-                "integrated). This will be written to disk by the orchestrator."
+                "integrated). Must start directly with '# Planner Memory' — "
+                "no YAML frontmatter, no code fences, no --- separators."
             ),
         },
     },
@@ -164,6 +165,22 @@ The planner reads this file at the start of every session — make it dense and 
     # Write MEMORY.md from Python — the summarizer has no Write permission.
     memory_content = result.get("memory_content", "")
     if memory_content:
+        # Strip any code fences the LLM may have wrapped the content in.
+        # Handles: ```markdown\n...\n``` or ```\n...\n``` (any language tag).
+        # Loops in case of multiple/nested wrapping.
+        import re
+        stripped = memory_content.strip()
+        while True:
+            cleaned = re.sub(r'^```[^\n]*\n', '', stripped)  # remove opening fence line
+            cleaned = re.sub(r'\n```\s*$', '', cleaned)       # remove closing fence line
+            cleaned = cleaned.strip()
+            if cleaned == stripped:
+                break  # no more fences to strip
+            stripped = cleaned
+        # Remove leading/trailing --- separators the LLM sometimes adds
+        stripped = re.sub(r'^---\s*\n', '', stripped)
+        stripped = re.sub(r'\n---\s*$', '', stripped).strip()
+        memory_content = stripped
         memory_path.parent.mkdir(parents=True, exist_ok=True)
         memory_path.write_text(memory_content, encoding="utf-8")
     return result.get("summary", "")

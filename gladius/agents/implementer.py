@@ -107,8 +107,11 @@ Report the final {state.target_metric} score in oof_score.
             "You implement, run, debug, and iterate until the task is complete. "
             "You measure results yourself and report them accurately. "
             "Always read CLAUDE.md at the start for task context. "
-            "Before reporting your final result, read .claude/skills/code-review/SKILL.md "
-            "and fix every CRITICAL item (leakage, metric correctness, submission format). "
+            "Before reporting your final result, invoke the code-review skill by calling "
+            "the Skill tool: Skill({\"name\": \"code-review\"}). "
+            "The Skill tool runs the skill and returns its output directly in the same turn — "
+            "do NOT use TaskOutput or any other tool to wait for it. "
+            "Fix every CRITICAL item the skill reports before submitting results. "
             "NEVER modify or overwrite CLAUDE.md — it is managed exclusively by the orchestrator. "
             "NEVER spawn Task subagents."
         ),

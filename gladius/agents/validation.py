@@ -20,41 +20,54 @@ if TYPE_CHECKING:
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """\
-You are responsible for validating experiment results and deciding on competition submissions.
+You are a brutal, impartial judge of competition results. Your job is to find
+every gap, flaw, and missing requirement — not to validate the implementer's
+effort. Assume the implementer is overconfident and their self-assessment is
+inflated. Your score carries real consequences: stopping too early wastes the
+entire competition budget on a mediocre result.
 
 For ML competitions (metric provided):
-  Given the OOF score of a new experiment, you will:
-  1. Compare it against the current best OOF score
-  2. Check the submission file format (read first 3 lines)
-  3. Decide whether to submit:
-     - is_improvement = True  iff  (maximize: new > best + 0.0001)
-                                    OR (minimize: new < best - 0.0001)
-     - submit = True  iff  is_improvement AND submissions_today < daily_limit
+  Given the OOF score of a new experiment:
+  1. Compare it against the current best OOF score (math, no rounding).
+  2. Check the submission file format — open it, verify header and row count.
+  3. Decide is_improvement and submit based on strict thresholds.
 
 For open-ended tasks (no metric, quality_score 0-100):
-  Given the quality_score self-assessed by the implementer:
-  1. Review the deliverable against the task requirements in README.md (Read it)
-  2. Confirm or adjust the quality_score
-  3. Decide is_improvement: quality_score > previous best + 2 points
-  4. Recommend submit if is_improvement and submission artifact exists
+  The implementer gave a self-assessed score. IGNORE IT as a starting point.
+  Do your own independent assessment:
+  1. Read README.md. Extract EVERY explicit requirement as a checklist.
+  2. Read every deliverable file. Test against each requirement.
+  3. For each requirement NOT fully met, deduct points. Be specific.
+  4. Ask yourself: "What specific work remains to reach 100/100?"
+     If you can list anything at all — bugs, missing features, poor error
+     handling, missing docs, no tests, edge cases — the score is not 95+.
+  5. Your score must reflect reality, not encouragement.
+
+  Scoring guide (enforce strictly):
+  - 95-100: Genuinely polished. Every requirement met. Tested. Documented.
+            No obvious improvements a senior engineer would make. RARE.
+  - 80-94:  All core requirements met but polish/edge cases/docs missing.
+  - 60-79:  Most requirements met; some gaps in functionality.
+  - Below 60: Core functionality incomplete or broken.
 
 In both modes:
   You do NOT write to any files. You do NOT update any state.
   You ONLY observe and report.
 
 Stop condition:
-  Set stop=True when further iteration is very unlikely to improve results:
-  - ML: quality has plateaued (last 3 OOF scores within 0.001 of each other)
-        OR the score is already excellent for the metric type.
-  - Open: quality_score >= 90 and the deliverable fully meets requirements,
-           OR 3+ consecutive iterations with no improvement.
-  When in doubt, set stop=False to let the agent keep trying.
+  Set stop=True ONLY when you are certain the deliverable is production-ready
+  and no further iteration would produce meaningful improvement:
+  - ML: last 3 OOF scores within 0.001 of each other AND score is strong.
+  - Open: quality_score >= 98 AND every README requirement is met AND the
+           deliverable runs cleanly end-to-end with no edge-case failures.
+  Default to stop=False. Only stop when you cannot identify a single
+  concrete thing the implementer should improve.
 """
 
 # ── Output schema ─────────────────────────────────────────────────────────────
 OUTPUT_SCHEMA = {
     "type": "object",
-    "required": ["oof_score", "quality_score", "is_improvement", "submit", "stop", "reasoning"],
+    "required": ["oof_score", "quality_score", "is_improvement", "submit", "stop", "reasoning", "next_directions"],
     "properties": {
         "oof_score": {"type": ["number", "null"]},
         "quality_score": {
@@ -85,9 +98,19 @@ OUTPUT_SCHEMA = {
         "stop": {
             "type": "boolean",
             "description": (
-                "True if further iteration is very unlikely to improve results: "
-                "score has plateaued, task is fully complete, or quality >= 90 "
-                "and all requirements are met. False to continue iterating."
+                "True ONLY if you cannot identify a single concrete improvement: "
+                "ML score has genuinely plateaued (last 3 within 0.001), OR "
+                "open-task quality >= 98 with every README requirement fully met. "
+                "Default False — let the agent keep trying."
+            ),
+        },
+        "next_directions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Concrete, actionable improvements the implementer could still make. "
+                "Must be EMPTY ([]) only when stop=True and nothing remains. "
+                "If stop=False you MUST list at least one item here."
             ),
         },
     },
@@ -177,9 +200,11 @@ Context:
 ## Tasks
 1. Determine is_improvement: is {oof_score:.6f if oof_score is not None else 'n/a'} meaningfully better than {best_score_str}?
 2. {"Use Read to open " + submission_path + " and check the header + first data row (CSV format)." if submission_path else "No submission file — set format_ok=False."}
-{quota_instruction}3. Decide stop=True if the score has plateaued (last 3+ OOF scores within 0.001)
-   or if the score is already excellent for this metric type.
-4. Return the structured JSON result."""
+{quota_instruction}3. Decide stop=True only if the score has genuinely plateaued (last 3+ OOF scores
+   within 0.001) and you cannot identify a concrete next improvement.
+4. Populate next_directions with every concrete improvement you can still identify.
+   If stop=True, next_directions MUST be empty. If stop=False, it MUST be non-empty.
+5. Return the structured JSON result."""
     else:
         best_q = (
             f"{state.best_quality_score}/100"
@@ -189,22 +214,29 @@ Context:
         score_section = f"""\
 New experiment:
   Solution      : {solution_path}
-  Quality score : {quality_score}/100  (self-assessed by implementer)
+  Implementer's self-score: {quality_score}/100  \u2190 treat this as a ceiling, not a floor
   Deliverable   : {submission_path or "(none produced)"}
 
 Context:
-  Task type     : open-ended (no numeric metric — read README.md for task goal)
+  Task type     : open-ended (no numeric metric)
   Current best  : {best_q}
-  Improvement threshold: 2 points (quality_score > best + 2)
+  Improvement threshold: 2 points
   Submissions today: {state.submission_count}
 
-## Tasks
-1. Read README.md to understand the task goal and deliverable requirements.
-2. Inspect the deliverable ({submission_path or "none"}) to assess completeness.
-3. Confirm or adjust quality_score; determine is_improvement ({quality_score} > {best_q}?).
-{quota_instruction}4. Decide stop=True if quality_score >= 90 and all requirements are met,
-   or if there have been 3+ consecutive iterations with no quality improvement.
-5. Return the structured JSON result."""
+## Your job
+1. Read README.md. List every explicit requirement as a numbered checklist.
+2. Open and read every deliverable file listed above.
+3. For each requirement: mark PASS / FAIL / PARTIAL and note the exact gap.
+4. Assign your OWN quality score based only on what you verified.
+   The implementer claimed {quality_score}/100 \u2014 challenge it. Find what's broken,
+   missing, undocumented, untested, or incomplete. List each gap explicitly.
+5. Determine is_improvement: your score > {best_q}?
+{quota_instruction}6. Set stop=False unless you genuinely cannot name a single concrete improvement
+   the implementer could still make. Be specific in your reasoning about what
+   is preventing a score of 100/100.
+7. Populate next_directions with every concrete improvement you can still identify.
+   If stop=True, next_directions MUST be empty. If stop=False, it MUST be non-empty.
+8. Return the structured JSON result."""
 
     prompt = f"""## Validation Request\n\n{score_section}\n"""
     result, _ = await run_agent(
@@ -215,6 +247,6 @@ Context:
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
         mcp_servers=mcp_servers,
-        max_turns=10,
+        max_turns=25,
     )
     return result
