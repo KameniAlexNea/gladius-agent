@@ -166,6 +166,35 @@ Standard files to expect:
 5. Self-assess quality 0-100: rate completeness and correctness against README requirements.
 """
 
+    # Skills section — lists all available skill files so agents know to use them
+    if state.target_metric:
+        skills_section = """\
+## Available Skills
+
+Read these files for checklists and templates before each step:
+
+| Skill | Path | When to use |
+| --- | --- | --- |
+| ML pipeline | `.claude/skills/ml-pipeline/SKILL.md` | Writing CV / feature / submission code |
+| Code review | `.claude/skills/code-review/SKILL.md` | **Required before reporting results** — catches leakage & metric bugs |
+| Submit check | `.claude/skills/submit-check/SKILL.md` | Validate submission CSV before uploading |
+| Git workflow | `.claude/skills/git-workflow/SKILL.md` | After each working solution |
+| uv / venv | `.claude/skills/uv-venv/SKILL.md` | Installing packages and running scripts |
+"""
+    else:
+        skills_section = """\
+## Available Skills
+
+Read these files for checklists and templates before each step:
+
+| Skill | Path | When to use |
+| --- | --- | --- |
+| Task review | `.claude/skills/task-review/SKILL.md` | **Required before reporting results** — quality self-assessment checklist |
+| Code review | `.claude/skills/code-review/SKILL.md` | **Required before reporting results** — catches crashes & missing features |
+| Git workflow | `.claude/skills/git-workflow/SKILL.md` | After each working iteration |
+| uv / venv | `.claude/skills/uv-venv/SKILL.md` | Installing packages and running scripts |
+"""
+
     content = f"""\
 # Competition/Task: {state.competition_id}
 
@@ -194,6 +223,7 @@ Standard files to expect:
 {stagnation_block}
 {data_section}
 {submission_section}
+{skills_section}
 ## Agent Memory
 
 If you are the **planner**, read your agent memory at
@@ -241,15 +271,16 @@ def setup_project_dir(state: "CompetitionState", project_dir: str) -> None:
         _write_skill_ml_pipeline(root)
     else:
         _write_skill_task_review(root)
-    _write_skill_submit_check(root)
-    _write_skill_git_workflow(root)
+    if state.target_metric:
+        _write_skill_submit_check(root)
+    _write_skill_git_workflow(root, bool(state.target_metric))
     _write_skill_uv_venv(root)
-    _write_skill_code_review(root)
+    _write_skill_code_review(root, bool(state.target_metric))
     _write_claude_settings(root, state)
     _write_mcp_json(root, state)
     _write_hook_after_edit(root)
     _write_hook_validate_bash(root)
-    _make_memory_dir(root)
+    _make_memory_dir(root, bool(state.target_metric))
 
 
 # ── Agent definitions ─────────────────────────────────────────────────────────
@@ -268,11 +299,11 @@ description: >
   Explores data or requirements, reviews experiment history, and decides
   the highest-impact next approach. Use proactively at the start of each
   iteration.
-tools: Read, Glob, Grep, Bash, WebSearch, Task
+tools: Read, Glob, Grep, WebSearch, TodoWrite
 model: {os.environ.get("GLADIUS_MODEL", "GLADIUS_MODEL_NOT_SET")}
 memory: project
 maxTurns: 40
-permissionMode: bypassPermissions
+permissionMode: plan
 ---
 
 You are an expert analyst for ML competitions and open-ended engineering tasks.
@@ -288,8 +319,11 @@ You are an expert analyst for ML competitions and open-ended engineering tasks.
 - For open tasks: identify the next deliverable improvement or missing feature.
 - Produce a concrete, ordered action plan the implementer can execute blindly.
 
-**Rules:**
-- You NEVER write implementation code yourself. You plan; implementer executes.
+**STRICT RULES — you are in READ-ONLY planning mode:**
+- You NEVER run Bash commands.
+- You NEVER write or edit any files yourself.
+- You NEVER spawn Task subagents.
+- You NEVER write implementation code.
 - Plans must be specific and self-contained — no "investigate X" steps.
 - Update your memory with key insights (what worked, what didn't, task quirks).
 - WebSearch for domain-specific techniques when you lack knowledge.
@@ -344,6 +378,8 @@ You are an expert engineer executing a task experiment.
 **Rules:**
 - You decide file names, libraries, and code structure. No constraints.
 - Keep all created files; never delete previous solutions.
+- **NEVER modify or overwrite `CLAUDE.md`** — it is managed exclusively by the orchestrator.
+- **NEVER spawn Task subagents.**
 
 **When you're done, before reporting results:**
 - Invoke the `code-review` skill (read `.claude/skills/code-review/SKILL.md`) and
@@ -520,7 +556,6 @@ def _write_skill_submit_check(root: Path) -> None:
 name: submit-check
 description: Validate a submission CSV before platform upload
 disable-model-invocation: true
-allowed-tools: Bash, Read
 ---
 
 Validate the submission file at $ARGUMENTS against the sample submission.
@@ -542,17 +577,16 @@ Output:
     )
 
 
-def _write_skill_code_review(root: Path) -> None:
+def _write_skill_code_review(root: Path, is_ml: bool) -> None:
     path = root / ".claude" / "skills" / "code-review" / "SKILL.md"
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        """\
+    if is_ml:
+        content = """\
 ---
 name: code-review
 description: Review ML solution code before finalising — catch leakage, metric errors, and format bugs
-allowed-tools: Read, Bash
 ---
 
 Before finalising any solution script, review it against this checklist.
@@ -593,37 +627,83 @@ Fix every item marked CRITICAL before reporting results.
 
 - [ ] Each feature engineering step has a comment explaining the hypothesis.
 - [ ] File name is descriptive: `solution_lgbm_v2.py`, not `solution.py`.
-""",
-        encoding="utf-8",
-    )
+"""
+    else:
+        content = """\
+---
+name: code-review
+description: Review deliverable code before finalising — catch crashes, missing features, and packaging issues
+---
+
+Before finalising any deliverable, review it against this checklist.
+Fix every item marked CRITICAL before reporting results.
+
+## CRITICAL — functional correctness
+
+- [ ] Run the deliverable end-to-end: `uv run python app.py` or `./run.sh` — no crashes.
+- [ ] Every feature listed in `README.md` is implemented and reachable.
+- [ ] Edge cases handled: empty input, invalid input, missing files.
+- [ ] No hardcoded paths — all paths are relative or configurable.
+
+## CRITICAL — completeness
+
+- [ ] All required files are present (app, config, dependencies, README).
+- [ ] Dependencies declared in `pyproject.toml` (not just installed ad-hoc).
+- [ ] The deliverable can be reproduced from scratch by a fresh `uv sync && uv run ...`.
+
+## CRITICAL — packaging
+
+- [ ] Submission artifact exists at the path reported in `submission_file`.
+- [ ] Artifact contains everything needed to run or evaluate the deliverable.
+- [ ] `README.md` (or equivalent) explains how to install and run.
+
+## Important — robustness
+
+- [ ] No unhandled exceptions on the happy path.
+- [ ] Environment variables or config files used for secrets — not hardcoded.
+- [ ] Script/app runs without user interaction (unless README explicitly requires it).
+
+## Style
+
+- [ ] Code is readable: functions have docstrings, logic is commented where non-obvious.
+- [ ] File names are descriptive and consistent.
+"""
+    path.write_text(content, encoding="utf-8")
 
 
-def _write_skill_git_workflow(root: Path) -> None:
+def _write_skill_git_workflow(root: Path, is_ml: bool) -> None:
     path = root / ".claude" / "skills" / "git-workflow" / "SKILL.md"
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
+    if is_ml:
+        commit_example = 'git commit -m "iter-{N}: {approach_summary} — OOF {metric}={score:.6f}"'
+        msg_format = "`iter-{N}: <one-sentence approach> — OOF {metric}={score:.6f}`"
+        trigger = "After implementing a solution that runs without errors and produces an OOF score,"
+    else:
+        commit_example = 'git commit -m "iter-{N}: {change_summary} — quality {score}/100"'
+        msg_format = "`iter-{N}: <one-sentence change> — quality {score}/100`"
+        trigger = "After implementing a deliverable that runs end-to-end without errors,"
     path.write_text(
-        """\
+        f"""\
 ---
 name: git-workflow
-description: Commit every working solution version with a descriptive message
-allowed-tools: Bash
+description: Commit every working iteration with a descriptive message
 ---
 
-After implementing a solution that runs without errors and produces an OOF score,
+{trigger}
 stage and commit it locally:
 
 ```bash
 git add -A
-git commit -m "iter-{N}: {approach_summary} — OOF {score:.6f}"
+{commit_example}
 ```
 
 Guidelines:
-- Commit only after the solution script runs end-to-end without errors.
-- Use `git add -A` to stage everything (solution file, submission CSV, run.sh).
-- Message format: `iter-{N}: <one-sentence approach> — OOF {metric}={score:.6f}`
-- Never force-push. Never rebase during a competition run.
+- Commit only after the deliverable runs end-to-end without errors.
+- Use `git add -A` to stage everything (source files, artifacts, run scripts).
+- Message format: {msg_format}
+- Never force-push. Never rebase during a run.
 - If a run fails, do NOT commit. Just proceed to the next iteration.
 - Check `git status` before committing to avoid committing unintended files.
 - `.gladius/` and `data/` should already be in `.gitignore` — verify if unsure.
@@ -644,7 +724,6 @@ def _write_skill_uv_venv(root: Path) -> None:
 ---
 name: uv-venv
 description: Install Python packages and run scripts using uv
-allowed-tools: Bash
 ---
 
 This project uses **uv** for fast Python package management.
@@ -667,13 +746,13 @@ uv sync
 
 ```bash
 # Run a script inside the venv without activating it
-uv run python solution_lgbm.py
+uv run python script.py
 
 # Run with extra args
-uv run python solution_lgbm.py --folds 5 --seed 42
+uv run python script.py --arg value
 
 # Run a one-liner
-uv run python -c "import lightgbm; print(lightgbm.__version__)"
+uv run python -c "import numpy; print(numpy.__version__)"
 ```
 
 ## Checking installed packages
@@ -738,22 +817,34 @@ def _write_mcp_json(root: Path, state: "CompetitionState") -> None:
         return
     import sys
 
-    mcp_config: dict = {
-        "mcpServers": {
-            "metric-tools": {
+    mcp_config: dict = {"mcpServers": {}}
+
+    platform = getattr(state, "platform", "none") or "none"
+    if platform not in ("none", ""):
+        # Platform-specific MCP tools are injected per-call by the validation agent;
+        # register the server here for any Claude CLI interactive use.
+        server_module = {
+            "kaggle": "gladius.tools.kaggle_tools",
+            "zindi": "gladius.tools.zindi_tools",
+        }.get(platform)
+        server_name = {
+            "kaggle": "kaggle_server",
+            "zindi": "zindi_server",
+        }.get(platform)
+        if server_module and server_name:
+            mcp_config["mcpServers"][f"{platform}-tools"] = {
                 "type": "stdio",
                 "command": sys.executable,
                 "args": [
                     "-c",
                     (
-                        "from gladius.tools.metric_tools import server; "
+                        f"from {server_module} import {server_name}; "
                         "import asyncio; asyncio.run(server.run())"
                     ),
                 ],
                 "env": {},
             }
-        }
-    }
+
     path.write_text(json.dumps(mcp_config, indent=2) + "\n", encoding="utf-8")
 
 
@@ -841,6 +932,14 @@ if echo "$COMMAND" | grep -qE 'rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*f[[:space:]]+~'
     exit 2
 fi
 
+# Block any bash modification of CLAUDE.md (e.g. cat >> CLAUDE.md, tee CLAUDE.md)
+if echo "$COMMAND" | grep -qE 'CLAUDE\.md'; then
+    if echo "$COMMAND" | grep -qE '(>>|>|tee|sed -i|awk.*>|perl.*-i|patch|truncate)'; then
+        echo "Blocked: modifying CLAUDE.md via Bash is not allowed. CLAUDE.md is managed by the orchestrator." >&2
+        exit 2
+    fi
+fi
+
 exit 0
 """,
         encoding="utf-8",
@@ -851,25 +950,35 @@ exit 0
 # ── Agent memory directory ────────────────────────────────────────────────────
 
 
-def _make_memory_dir(root: Path) -> None:
+def _make_memory_dir(root: Path, is_ml: bool) -> None:
     """Pre-create the planner's memory directory so it exists on first run."""
     mem_dir = root / ".claude" / "agent-memory" / "planner"
     mem_dir.mkdir(parents=True, exist_ok=True)
     mem_file = mem_dir / "MEMORY.md"
     if not mem_file.exists():
+        if is_ml:
+            score_col = "OOF"
+            insights_label = "Key Data Insights"
+            insights_hint = "_(Add notes here as you explore the dataset)_"
+            first_direction = "1. Establish a baseline (LightGBM or XGBoost) before any feature engineering."
+        else:
+            score_col = "Quality"
+            insights_label = "Key Task Insights"
+            insights_hint = "_(Add notes here as you explore the requirements and existing deliverables)_"
+            first_direction = "1. Read README.md end-to-end and list all explicit success criteria before building anything."
         mem_file.write_text(
-            """\
+            f"""\
 # Planner Memory
 
 > Auto-updated by summarizer. Last iteration: 0
 
-## Key Data Insights
+## {insights_label}
 
-_(Add notes here as you explore the dataset)_
+{insights_hint}
 
 ## What Works  ✅
 
-_(Record successful approaches with approximate OOF delta and iteration number)_
+_(Record successful approaches with approximate score delta and iteration number)_
 
 ## What Fails / Dead Ends  ❌
 
@@ -877,16 +986,16 @@ _(Record approaches that hurt score, timed out, or errored — include the reaso
 
 ## Patterns & Hypotheses  💡
 
-_(Open hypotheses not yet tested, or correlations observed in data)_
+_(Open hypotheses not yet tested, or patterns observed)_
 
 ## Experiment Score History
 
-| iter | OOF | approach | notes |
+| iter | {score_col} | approach | notes |
 | --- | --- | --- | --- |
 
 ## Suggested Next Directions
 
-1. Establish a baseline (LightGBM or XGBoost) before any feature engineering.
+{first_direction}
 """,
             encoding="utf-8",
         )

@@ -63,7 +63,12 @@ _PLANNER_AGENT_DEF = AgentDefinition(
         "Your job: understand what has been tried, identify the highest-impact next "
         "approach, produce a concrete ordered action plan the implementer can follow "
         "blindly. Update memory with new insights.\n\n"
-        "You NEVER write implementation code yourself."
+        "STRICT RULES — you are in READ-ONLY planning mode:\n"
+        "- You NEVER run Bash commands.\n"
+        "- You NEVER write or edit any files yourself.\n"
+        "- You NEVER spawn Task subagents.\n"
+        "- You NEVER write implementation code.\n"
+        "Use only Read, Glob, Grep, WebSearch, TodoWrite."
     ),
     # TodoWrite lets the planner track its own multi-step exploration progress.
     # Task must NOT be listed — subagents cannot spawn sub-subagents.
@@ -84,11 +89,15 @@ _IMPLEMENTER_AGENT_DEF = AgentDefinition(
         "Implement completely: write code, run it, fix errors, iterate until done.\n"
         "Before reporting, read .claude/skills/code-review/SKILL.md and fix every "
         "CRITICAL item (leakage, metric correctness, submission format).\n\n"
-        "Report: status, oof_score, solution_files, submission_file, notes."
+        "STRICT RULES:\n"
+        "- NEVER modify or overwrite CLAUDE.md — it is managed by the orchestrator.\n"
+        "- NEVER spawn Task subagents.\n"
+        "Report: status, oof_score, quality_score, solution_files, submission_file, notes."
     ),
     # TodoWrite lets the implementer track steps (write code, run, fix, measure, submit).
     # Task must NOT be listed here — subagents cannot spawn sub-subagents.
-    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite"],
+    # Skill lets the implementer invoke code-review, task-review, ml-pipeline, etc.
+    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite", "Skill"],
     model=_model,
 )
 
@@ -121,7 +130,11 @@ _VALIDATION_AGENT_DEF = AgentDefinition(
         "You are a competition result validator.\n\n"
         "You compare new experiment scores against the current best, check submission "
         "artifact format by reading files, query platform quota via MCP tools, and return "
-        "a structured JSON decision. You NEVER write files or mutate state."
+        "a structured JSON decision. You NEVER write files or mutate state.\n\n"
+        "STRICT RULES — you are READ-ONLY:\n"
+        "- NEVER run Bash commands.\n"
+        "- NEVER write, edit, or delete any files.\n"
+        "Use only Read, Grep, and any MCP quota tools provided."
     ),
     # Read-only tools only — MCP quota tools are injected per-call by run_validation_agent().
     tools=["Read", "Grep"],

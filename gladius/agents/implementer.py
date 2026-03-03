@@ -108,9 +108,11 @@ Report the final {state.target_metric} score in oof_score.
             "You measure results yourself and report them accurately. "
             "Always read CLAUDE.md at the start for task context. "
             "Before reporting your final result, read .claude/skills/code-review/SKILL.md "
-            "and fix every CRITICAL item (leakage, metric correctness, submission format)."
+            "and fix every CRITICAL item (leakage, metric correctness, submission format). "
+            "NEVER modify or overwrite CLAUDE.md — it is managed exclusively by the orchestrator. "
+            "NEVER spawn Task subagents."
         ),
-        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite"],
+        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite", "Skill"],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
         max_turns=80,

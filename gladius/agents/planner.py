@@ -93,7 +93,12 @@ Be specific. The implementer will execute your plan blindly.{parallel_instructio
             "If CLAUDE.md shows a STAGNATION WARNING, your top priority is to "
             "break out of the local optimum: explore different data representations, "
             "fundamentally different model families, or go back to raw data exploration "
-            "rather than incrementally tweaking the current approach."
+            "rather than incrementally tweaking the current approach.\n\n"
+            "STRICT RULES — you are in READ-ONLY planning mode:\n"
+            "Do NOT run Bash commands. "
+            "Do NOT write or edit any files. "
+            "Do NOT spawn Task subagents. "
+            "Use only Read, Glob, Grep, WebSearch, TodoWrite."
         ),
         allowed_tools=[
             "Read",
