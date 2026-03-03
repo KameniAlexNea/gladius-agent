@@ -519,7 +519,48 @@ async def run_competition(
 
                 state.consecutive_errors = 0
                 state.iteration += 1
-                state.phase = "planning"
+
+                # ── Deterministic stop check ─────────────────────────────
+                # Always computed in Python — never rely solely on the LLM.
+                deterministic_stop = False
+
+                if state.target_metric is None:
+                    # Open task: perfect/near-perfect quality is done.
+                    if (state.best_quality_score or 0) >= 95:
+                        deterministic_stop = True
+                        logger.info(
+                            f"Deterministic stop: quality {state.best_quality_score}/100 ≥ 95 "
+                            "— task complete."
+                        )
+
+                if not deterministic_stop:
+                    # Both task types: plateau detection — last 3 scored
+                    # experiments show no meaningful change.
+                    _plateau_key = "quality_score" if state.target_metric is None else "oof_score"
+                    _scored = [
+                        e[_plateau_key]
+                        for e in state.experiments
+                        if e.get(_plateau_key) is not None
+                    ]
+                    _plateau_threshold = 3.0 if state.target_metric is None else 0.001
+                    if len(_scored) >= 3:
+                        _span = max(_scored[-3:]) - min(_scored[-3:])
+                        if _span < _plateau_threshold:
+                            deterministic_stop = True
+                            logger.info(
+                                f"Deterministic stop: last 3 scores span {_span:.4f} "
+                                f"(< {_plateau_threshold}) — plateau detected."
+                            )
+
+                # Honour the validation agent's stop recommendation OR
+                # the deterministic check — whichever fires first.
+                agent_stop = bool(validation.get("stop"))
+                if agent_stop and not deterministic_stop:
+                    logger.info("Validation agent recommends stopping (agent verdict).")
+                if deterministic_stop or agent_stop:
+                    state.phase = "done"
+                else:
+                    state.phase = "planning"
 
         except Exception as exc:
             logger.error(

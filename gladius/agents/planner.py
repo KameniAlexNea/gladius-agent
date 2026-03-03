@@ -99,7 +99,6 @@ Be specific. The implementer will execute your plan blindly.{parallel_instructio
             "Read",
             "Glob",
             "Grep",
-            "Bash",
             "WebSearch",
             "TodoWrite",
         ],

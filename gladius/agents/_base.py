@@ -67,7 +67,8 @@ _PLANNER_AGENT_DEF = AgentDefinition(
     ),
     # TodoWrite lets the planner track its own multi-step exploration progress.
     # Task must NOT be listed — subagents cannot spawn sub-subagents.
-    tools=["Read", "Glob", "Grep", "Bash", "WebSearch", "TodoWrite"],
+    # Bash is intentionally excluded — plan mode is read-only research.
+    tools=["Read", "Glob", "Grep", "WebSearch", "TodoWrite"],
     model=_model,
 )
 

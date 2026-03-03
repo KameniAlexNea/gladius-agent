@@ -41,12 +41,20 @@ For open-ended tasks (no metric, quality_score 0-100):
 In both modes:
   You do NOT write to any files. You do NOT update any state.
   You ONLY observe and report.
+
+Stop condition:
+  Set stop=True when further iteration is very unlikely to improve results:
+  - ML: quality has plateaued (last 3 OOF scores within 0.001 of each other)
+        OR the score is already excellent for the metric type.
+  - Open: quality_score >= 90 and the deliverable fully meets requirements,
+           OR 3+ consecutive iterations with no improvement.
+  When in doubt, set stop=False to let the agent keep trying.
 """
 
 # ── Output schema ─────────────────────────────────────────────────────────────
 OUTPUT_SCHEMA = {
     "type": "object",
-    "required": ["oof_score", "quality_score", "is_improvement", "submit", "reasoning"],
+    "required": ["oof_score", "quality_score", "is_improvement", "submit", "stop", "reasoning"],
     "properties": {
         "oof_score": {"type": ["number", "null"]},
         "quality_score": {
@@ -74,6 +82,14 @@ OUTPUT_SCHEMA = {
             "description": "Whether the submission artifact passed format checks",
         },
         "reasoning": {"type": "string"},
+        "stop": {
+            "type": "boolean",
+            "description": (
+                "True if further iteration is very unlikely to improve results: "
+                "score has plateaued, task is fully complete, or quality >= 90 "
+                "and all requirements are met. False to continue iterating."
+            ),
+        },
     },
     "additionalProperties": False,
 }
@@ -161,7 +177,9 @@ Context:
 ## Tasks
 1. Determine is_improvement: is {oof_score:.6f if oof_score is not None else 'n/a'} meaningfully better than {best_score_str}?
 2. {"Use Read to open " + submission_path + " and check the header + first data row (CSV format)." if submission_path else "No submission file — set format_ok=False."}
-{quota_instruction}4. Return the structured JSON result."""
+{quota_instruction}3. Decide stop=True if the score has plateaued (last 3+ OOF scores within 0.001)
+   or if the score is already excellent for this metric type.
+4. Return the structured JSON result."""
     else:
         best_q = (
             f"{state.best_quality_score}/100"
@@ -184,7 +202,9 @@ Context:
 1. Read README.md to understand the task goal and deliverable requirements.
 2. Inspect the deliverable ({submission_path or "none"}) to assess completeness.
 3. Confirm or adjust quality_score; determine is_improvement ({quality_score} > {best_q}?).
-{quota_instruction}4. Return the structured JSON result."""
+{quota_instruction}4. Decide stop=True if quality_score >= 90 and all requirements are met,
+   or if there have been 3+ consecutive iterations with no quality improvement.
+5. Return the structured JSON result."""
 
     prompt = f"""## Validation Request\n\n{score_section}\n"""
     result, _ = await run_agent(

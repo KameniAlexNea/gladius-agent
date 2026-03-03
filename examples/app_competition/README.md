@@ -1,64 +1,31 @@
-# Example: App Competition (No Metric)
-
-This example shows how to use Gladius for an open-ended task where there is
-no numeric leaderboard metric — the agent self-assesses quality (0–100).
-
 ---
-
-## competition.yaml
-
-```yaml
 competition_id: build-a-todo-app
-data_dir: ./data
-output_dir: ./output
-max_iterations: 5
-# No metric / direction → open-ended mode
-```
-
-Notice: **no `metric`**, **no `direction`**, **no `platform`** fields.
-Gladius detects open mode automatically and switches every agent to
-quality-based self-assessment.
-
+platform: none
 ---
 
-## task description (put this in the project's README.md)
-
-```markdown
 # Task: Build a CLI To-Do App
 
 Build a command-line to-do application in Python that:
 
 1. Stores tasks in a local SQLite database (`todos.db`).
 2. Supports these commands:
-   - `add <title>` — add a task
-   - `list` — print all tasks with completion status
-   - `done <id>` — mark task as complete
-   - `delete <id>` — remove a task
-3. Persists data across runs (re-running `list` shows previous tasks).
-4. Has a simple README_submission.md explaining how to run it.
+   - `add <title>` — add a new task
+   - `list` — print all tasks with ID, title, and completion status
+   - `done <id>` — mark a task as complete
+   - `delete <id>` — remove a task permanently
+3. Persists data across runs (`todos.db` survives process restarts).
+4. Handles invalid input gracefully (unknown command, bad ID, etc.).
 
 ## Deliverable
 
-Zip `todo_app.py`, `README_submission.md`, and any supporting files into
-`todo_app.zip` and save it as the `submission_file`.
-```
+Package `todo_app.py` and a brief `README_submission.md` (explaining how to
+install and run) into `todo_app.zip`. Save the zip as the `submission_file`.
 
----
+## Self-assessment criteria (quality 0–100)
 
-## How the agent loop works (open mode)
-
-| Phase | What happens |
+| Score | Meaning |
 | --- | --- |
-| Planning | Planner reads README, produces a concrete implementation plan |
-| Implementing | Implementer builds + runs the app, self-rates quality 0–100 |
-| Validation | Validator checks against README requirements, assigns final quality |
-| Submission | `platform: none` → artifact path is logged locally, no upload |
-| Improvement | Next iteration tries to raise the quality score by ≥ 2 points |
-
----
-
-## Running it
-
-```bash
-gladius run --config examples/app_competition/competition.yaml
-```
+| 90–100 | All 4 commands work, persists correctly, error handling present, documented |
+| 70–89 | All commands work, persists, minor issues |
+| 50–69 | Most commands work, some edge cases fail |
+| < 50  | Core functionality missing or crashes |
