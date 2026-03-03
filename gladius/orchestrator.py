@@ -108,6 +108,10 @@ def _submit_to_fake(competition_id: str, submission_path: str, message: str) -> 
 def _submit(
     platform: str, competition_id: str, submission_path: str, message: str
 ) -> None:
+    if platform == "none":
+        # No external platform — artifact is recorded in state only.
+        logger.info(f"[LOCAL] Submission artifact recorded: {submission_path}")
+        return
     if platform == "zindi":
         _submit_to_zindi(competition_id, submission_path, message)
     elif platform == "fake":
@@ -118,11 +122,20 @@ def _submit(
 
 # ── Improvement check ─────────────────────────────────────────────────────────
 def _is_better(
-    new_score: float, best_score: float | None, direction: str, threshold: float = 1e-4
+    new_score: float,
+    best_score: float | None,
+    direction: str | None,
+    threshold: float = 1e-4,
 ) -> bool:
-    """Deterministic improvement check.  None means no score recorded yet."""
-    if best_score is None:  # no valid score recorded yet — always an improvement
+    """Deterministic improvement check.  None best_score means no prior result.
+
+    direction=None means open-ended task: quality score (0-100) where higher
+    is always better, with a larger threshold of 2.0 points.
+    """
+    if best_score is None:  # no prior result — always an improvement
         return True
+    if direction is None:  # open-ended: quality score, higher always better
+        return new_score > best_score + 2.0
     if direction == "maximize":
         return new_score > best_score + threshold
     return new_score < best_score - threshold
@@ -160,7 +173,11 @@ async def run_competition(
             max_iterations=max_iterations,
         )
     else:
-        _best_str = f"{state.best_oof_score:.6f}" if state.best_oof_score is not None else "none"
+        _best_str = (
+            f"{state.best_oof_score:.6f}"
+            if state.best_oof_score is not None
+            else "none"
+        )
         logger.info(
             f"Resuming from iteration {state.iteration}, phase={state.phase}, "
             f"best={_best_str}"
@@ -179,9 +196,14 @@ async def run_competition(
     setup_project_dir(state, project_dir)
 
     while state.iteration < state.max_iterations and state.phase != "done":
+        _score_str = (
+            f"quality={f'{state.best_quality_score}/100' if state.best_quality_score is not None else 'none'}"
+            if state.target_metric is None
+            else f"best={f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}"
+        )
         logger.info(
             f"[iter {state.iteration:02d}/{state.max_iterations}] "
-            f"phase={state.phase}  best={f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}  "
+            f"phase={state.phase}  {_score_str}  "
             f"experiments={len(state.experiments)}"
         )
 
@@ -269,18 +291,28 @@ async def run_competition(
                         state.phase = "planning"
                         store.save(state)
                         continue
-                    # Pick the best by OOF score
-                    direction = state.metric_direction
-                    result = max(
-                        successful,
-                        key=lambda r: (
-                            r["oof_score"]
-                            if direction == "maximize"
-                            else -r["oof_score"]
-                        ),
+                    # Pick the best result: by OOF for ML tasks, by quality_score for open tasks
+                    if state.target_metric is None:
+                        result = max(
+                            successful, key=lambda r: r.get("quality_score", 0) or 0
+                        )
+                    else:
+                        direction = state.metric_direction
+                        result = max(
+                            successful,
+                            key=lambda r: (
+                                r["oof_score"]
+                                if direction == "maximize"
+                                else -r["oof_score"]
+                            ),
+                        )
+                    _best_score_str = (
+                        f"quality {result.get('quality_score', 0)}/100"
+                        if state.target_metric is None
+                        else f"OOF {result['oof_score']:.6f}"
                     )
                     logger.info(
-                        f"Best parallel result: OOF {result['oof_score']:.6f} "
+                        f"Best parallel result: {_best_score_str} "
                         f"(from {len(successful)}/{len(plans_to_run)} successful)"
                     )
                     # Record all successful runs as experiments — result last so
@@ -290,7 +322,8 @@ async def run_competition(
                             state.experiments.append(
                                 {
                                     "iteration": state.iteration,
-                                    "oof_score": r["oof_score"],
+                                    "oof_score": r.get("oof_score"),
+                                    "quality_score": r.get("quality_score"),
                                     "solution_files": r.get("solution_files", []),
                                     "submission_file": r.get("submission_file", ""),
                                     "notes": r.get("notes", ""),
@@ -300,7 +333,8 @@ async def run_competition(
                     state.experiments.append(
                         {
                             "iteration": state.iteration,
-                            "oof_score": result["oof_score"],
+                            "oof_score": result.get("oof_score"),
+                            "quality_score": result.get("quality_score"),
                             "solution_files": result.get("solution_files", []),
                             "submission_file": result.get("submission_file", ""),
                             "notes": result.get("notes", ""),
@@ -339,7 +373,8 @@ async def run_competition(
                     state.experiments.append(
                         {
                             "iteration": state.iteration,
-                            "oof_score": result["oof_score"],
+                            "oof_score": result.get("oof_score"),
+                            "quality_score": result.get("quality_score"),
                             "solution_files": result.get("solution_files", []),
                             "submission_file": result.get("submission_file", ""),
                             "notes": result.get("notes", ""),
@@ -352,10 +387,15 @@ async def run_competition(
                     )
 
                 # ── Common post-implementation logic (parallel + sequential) ─
-                oof = result["oof_score"]
-                logger.info(
-                    f"Implementation done — OOF {state.target_metric}: {oof:.6f}"
-                )
+                if state.target_metric:
+                    _oof = result.get("oof_score")
+                    logger.info(
+                        f"Implementation done — OOF {state.target_metric}: "
+                        f"{f'{_oof:.6f}' if _oof is not None else 'n/a'}"
+                    )
+                else:
+                    _quality = result.get("quality_score", 0) or 0
+                    logger.info(f"Implementation done — quality: {_quality}/100")
 
                 # Do NOT update state.best_oof_score here — the validation agent
                 # must compare against the *previous* best.  The update happens
@@ -365,7 +405,8 @@ async def run_competition(
             # ── VALIDATION ───────────────────────────────────────────────────
             elif state.phase == "validation":
                 latest = state.experiments[-1]
-                oof_score = latest["oof_score"]
+                oof_score = latest.get("oof_score")  # None for open-ended tasks
+                quality_score = latest.get("quality_score", 0) or 0  # 0-100 for open
                 submission_file = latest["submission_file"]
 
                 # Reset daily submission counter when the calendar date rolls over.
@@ -395,6 +436,7 @@ async def run_competition(
                     validation = await run_validation_agent(
                         solution_path=", ".join(latest.get("solution_files", [])),
                         oof_score=oof_score,
+                        quality_score=quality_score,
                         submission_path=submission_file,
                         state=state,
                         project_dir=project_dir,
@@ -402,35 +444,63 @@ async def run_competition(
                     )
 
                 # Deterministic improvement gate — LLM verdict is advisory only.
-                # The agent can hallucinate is_improvement=True; _is_better() is
-                # the authoritative check that guards state.best_oof_score.
+                # For ML tasks: compare oof_score against best_oof_score.
+                # For open tasks: compare quality_score against best_quality_score.
+                primary_score = (
+                    quality_score if state.target_metric is None else oof_score
+                )
+                best_primary = (
+                    state.best_quality_score
+                    if state.target_metric is None
+                    else state.best_oof_score
+                )
                 deterministic_improvement = _is_better(
-                    oof_score, state.best_oof_score, state.metric_direction
+                    primary_score, best_primary, state.metric_direction
                 )
                 if validation.get("is_improvement") != deterministic_improvement:
+                    _score_label = (
+                        f"quality {primary_score}/100 vs best "
+                        f"{f'{best_primary}/100' if best_primary is not None else 'none'}"
+                        if state.target_metric is None
+                        else f"OOF {oof_score:.6f} vs best "
+                        f"{f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}"
+                    )
                     logger.warning(
                         f"Validation agent is_improvement={validation.get('is_improvement')} "
                         f"overridden by deterministic check → {deterministic_improvement} "
-                        f"(OOF {oof_score:.6f} vs best {f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'})"
+                        f"({_score_label})"
                     )
                 if deterministic_improvement:
-                    state.best_oof_score = oof_score
-                    logger.info(f"New best OOF: {oof_score:.6f}")
+                    if state.target_metric is None:
+                        state.best_quality_score = quality_score
+                        logger.info(f"New best quality score: {quality_score}/100")
+                    else:
+                        state.best_oof_score = oof_score
+                        logger.info(f"New best OOF: {oof_score:.6f}")
 
                 if (
                     deterministic_improvement
                     and submission_file
-                    and state.submission_count < state.max_submissions_per_day
+                    and (
+                        platform == "none"
+                        or state.submission_count < state.max_submissions_per_day
+                    )
                     and auto_submit
                 ):
-                    state.submission_count += 1
+                    if platform != "none":
+                        state.submission_count += 1
                     state.best_submission_path = submission_file
                     logger.info(f"Submitting [{platform}]: {submission_file}")
+                    _submit_msg = (
+                        f"iter-{state.iteration} quality={quality_score}/100"
+                        if state.target_metric is None
+                        else f"iter-{state.iteration} oof={oof_score:.6f}"
+                    )
                     _submit(
                         platform=platform,
                         competition_id=state.competition_id,
                         submission_path=submission_file,
-                        message=f"iter-{state.iteration} oof={oof_score:.6f}",
+                        message=_submit_msg,
                     )
 
                 # Update planner memory with learnings from this iteration.
@@ -473,9 +543,13 @@ async def run_competition(
             store.save(state)
 
     store.close()
+    if state.target_metric:
+        _final_score = f"best_oof={f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}"
+    else:
+        _final_score = f"best_quality={f'{state.best_quality_score}/100' if state.best_quality_score is not None else 'none'}"
     logger.info(
         f"Done. iterations={state.iteration}  "
-        f"best_oof={f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}  "
+        f"{_final_score}  "
         f"submissions={state.submission_count}"
     )
     return state

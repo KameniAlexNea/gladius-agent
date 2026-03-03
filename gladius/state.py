@@ -16,8 +16,9 @@ class CompetitionState:
     competition_id: str
     data_dir: str
     output_dir: str
-    target_metric: str  # "auc_roc" | "rmse" | "logloss" | etc.
-    metric_direction: str  # "maximize" | "minimize"
+    # None for open-ended / app-building tasks where the agent self-assesses quality.
+    target_metric: str | None = None  # "auc_roc" | "rmse" | "logloss" | None
+    metric_direction: str | None = None  # "maximize" | "minimize" | None
 
     # Loop control
     iteration: int = 0
@@ -27,6 +28,8 @@ class CompetitionState:
     # Best known performance (None = no result yet)
     best_oof_score: float | None = None
     best_submission_score: float | None = None
+    # Quality score for open-ended tasks (0-100, agent self-assessed; None = no result yet)
+    best_quality_score: float | None = None
     best_submission_path: Optional[str] = None
     submission_count: int = 0
     max_submissions_per_day: int = 5
@@ -86,8 +89,8 @@ class StateStore:
                 competition_id      TEXT PRIMARY KEY,
                 data_dir            TEXT NOT NULL,
                 output_dir          TEXT NOT NULL,
-                target_metric       TEXT NOT NULL,
-                metric_direction    TEXT NOT NULL,
+                target_metric       TEXT,           -- NULL for open-ended tasks
+                metric_direction    TEXT,           -- NULL for open-ended tasks
                 max_iterations      INTEGER NOT NULL,
                 max_submissions_per_day INTEGER NOT NULL
             );
@@ -98,6 +101,7 @@ class StateStore:
                 phase               TEXT NOT NULL,
                 best_oof_score      REAL,
                 best_submission_score REAL,
+                best_quality_score  REAL,       -- NULL for ML tasks
                 best_submission_path TEXT,
                 submission_count    INTEGER NOT NULL,
                 consecutive_errors  INTEGER NOT NULL,
@@ -110,6 +114,7 @@ class StateStore:
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 iteration       INTEGER NOT NULL,
                 oof_score       REAL,
+                quality_score   REAL,           -- 0-100 for open-ended tasks
                 submission_file TEXT,
                 notes           TEXT,
                 approach        TEXT,
@@ -145,6 +150,7 @@ class StateStore:
                 phase                   TEXT NOT NULL,
                 best_oof_score          REAL,
                 best_submission_score   REAL,
+                best_quality_score      REAL,
                 best_submission_path    TEXT,
                 submission_count        INTEGER NOT NULL,
                 consecutive_errors      INTEGER NOT NULL,
@@ -157,13 +163,16 @@ class StateStore:
 
         # Schema migrations: add columns introduced after the initial release.
         # ALTER TABLE is safe to retry — the SELECT probe catches existing columns.
-        for _col, _col_def in [("last_submission_date", "TEXT")]:
+        for _tbl, _col, _col_def in [
+            ("current_state", "last_submission_date", "TEXT"),
+            ("current_state", "best_quality_score", "REAL"),
+            ("experiments", "quality_score", "REAL"),
+            ("state_history", "best_quality_score", "REAL"),
+        ]:
             try:
-                self.conn.execute(f"SELECT {_col} FROM current_state LIMIT 1")
+                self.conn.execute(f"SELECT {_col} FROM {_tbl} LIMIT 1")
             except sqlite3.OperationalError:
-                self.conn.execute(
-                    f"ALTER TABLE current_state ADD COLUMN {_col} {_col_def}"
-                )
+                self.conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} {_col_def}")
 
         # UNIQUE indexes on list tables so INSERT OR IGNORE is idempotent.
         # Wrapped in try/except — creation fails gracefully if existing rows
@@ -222,15 +231,17 @@ class StateStore:
                 """
                 INSERT OR REPLACE INTO current_state
                     (id, iteration, phase, best_oof_score, best_submission_score,
-                     best_submission_path, submission_count, consecutive_errors,
-                     planner_session_id, current_plan, last_submission_date)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     best_quality_score, best_submission_path, submission_count,
+                     consecutive_errors, planner_session_id, current_plan,
+                     last_submission_date)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     state.iteration,
                     state.phase,
                     state.best_oof_score,
                     state.best_submission_score,
+                    state.best_quality_score,
                     state.best_submission_path,
                     state.submission_count,
                     state.consecutive_errors,
@@ -261,12 +272,14 @@ class StateStore:
                 self.conn.execute(
                     """
                     INSERT OR IGNORE INTO experiments
-                        (iteration, oof_score, submission_file, notes, approach, solution_files)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                        (iteration, oof_score, quality_score, submission_file,
+                         notes, approach, solution_files)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         e.get("iteration"),
                         e.get("oof_score"),
+                        e.get("quality_score"),
                         e.get("submission_file"),
                         e.get("notes"),
                         e.get("approach"),
@@ -320,15 +333,16 @@ class StateStore:
                 """
                 INSERT INTO state_history
                     (iteration, phase, best_oof_score, best_submission_score,
-                     best_submission_path, submission_count, consecutive_errors,
-                     experiments_count, failed_runs_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     best_quality_score, best_submission_path, submission_count,
+                     consecutive_errors, experiments_count, failed_runs_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     state.iteration,
                     state.phase,
                     state.best_oof_score,
                     state.best_submission_score,
+                    state.best_quality_score,
                     state.best_submission_path,
                     state.submission_count,
                     state.consecutive_errors,
@@ -349,6 +363,7 @@ class StateStore:
             {
                 "iteration": row["iteration"],
                 "oof_score": row["oof_score"],
+                "quality_score": row["quality_score"],
                 "submission_file": row["submission_file"],
                 "notes": row["notes"],
                 "approach": row["approach"],
@@ -387,14 +402,15 @@ class StateStore:
             competition_id=comp["competition_id"],
             data_dir=comp["data_dir"],
             output_dir=comp["output_dir"],
-            target_metric=comp["target_metric"],
-            metric_direction=comp["metric_direction"],
+            target_metric=comp["target_metric"],  # may be None for open tasks
+            metric_direction=comp["metric_direction"],  # may be None for open tasks
             max_iterations=comp["max_iterations"],
             max_submissions_per_day=comp["max_submissions_per_day"],
             iteration=curr["iteration"],
             phase=curr["phase"],
             best_oof_score=curr["best_oof_score"],
             best_submission_score=curr["best_submission_score"],
+            best_quality_score=curr["best_quality_score"],
             best_submission_path=curr["best_submission_path"],
             submission_count=curr["submission_count"],
             consecutive_errors=curr["consecutive_errors"],

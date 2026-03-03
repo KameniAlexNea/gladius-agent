@@ -62,17 +62,25 @@ Rules:
 - Be concise — every bullet should fit on one line.
 - Never invent data you haven't been given.
 - Keep cumulative history (don't delete good entries just to shorten).
-- Write the file using the Write tool, not JSON output.
+- Return the complete rewritten MEMORY.md text in `memory_content` — do NOT use
+  the Write tool; the orchestrator writes the file on your behalf.
 """
 
 # Minimal schema — the agent writes MEMORY.md directly with the Write tool.
 OUTPUT_SCHEMA = {
     "type": "object",
-    "required": ["summary"],
+    "required": ["summary", "memory_content"],
     "properties": {
         "summary": {
             "type": "string",
             "description": "One-sentence summary of the key learning from this iteration.",
+        },
+        "memory_content": {
+            "type": "string",
+            "description": (
+                "The complete updated MEMORY.md text (all sections, newest entries "
+                "integrated). This will be written to disk by the orchestrator."
+            ),
         },
     },
     "additionalProperties": False,
@@ -96,6 +104,18 @@ async def run_summarizer(
     # Recent experiments context (last 10)
     recent = list(reversed(state.experiments[-10:]))
 
+    # Score context varies by task type
+    if state.target_metric:
+        score_ctx = (
+            f"- Metric      : {state.target_metric} ({state.metric_direction})\n"
+            f"- Best OOF so far: {f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none yet'}"
+        )
+    else:
+        score_ctx = (
+            f"- Task type   : open-ended (no numeric metric)\n"
+            f"- Best quality so far: {f'{state.best_quality_score}/100' if state.best_quality_score is not None else 'none yet'}"
+        )
+
     prompt = f"""\
 ## Summarizer Task
 
@@ -103,8 +123,7 @@ Update the planner memory file after completing iteration {state.iteration}.
 
 ### Competition context
 - Competition : {state.competition_id}
-- Metric      : {state.target_metric} ({state.metric_direction})
-- Best OOF so far: {f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none yet'}
+{score_ctx}
 - Total experiments: {len(state.experiments)}
 
 ### Latest experiment result
@@ -127,7 +146,8 @@ Update the planner memory file after completing iteration {state.iteration}.
 1. Read the current MEMORY.md at `{memory_path}`.
 2. Integrate the new result — update "What Works", "What Fails", "Patterns",
    "Experiment Score History", and "Suggested Next Directions".
-3. Rewrite the entire file using the Write tool.
+3. Return the **complete rewritten MEMORY.md content** in the `memory_content` field.
+   Do NOT write any files — the orchestrator will write MEMORY.md for you.
 4. Return a one-sentence `summary` of the key learning from this iteration.
 
 The planner reads this file at the start of every session — make it dense and actionable.
@@ -136,9 +156,14 @@ The planner reads this file at the start of every session — make it dense and 
         agent_name="summarizer",
         prompt=prompt,
         system_prompt=SYSTEM_PROMPT,
-        allowed_tools=["Read", "Write"],
+        allowed_tools=["Read", "Grep"],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
         max_turns=15,
     )
+    # Write MEMORY.md from Python — the summarizer has no Write permission.
+    memory_content = result.get("memory_content", "")
+    if memory_content:
+        memory_path.parent.mkdir(parents=True, exist_ok=True)
+        memory_path.write_text(memory_content, encoding="utf-8")
     return result.get("summary", "")

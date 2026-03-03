@@ -11,7 +11,7 @@ metrics. Its only job is to produce a concrete, ordered action plan.
 import logging
 from typing import TYPE_CHECKING
 
-from gladius.agents._base import run_agent
+from gladius.agents._base import run_planning_agent
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
@@ -19,60 +19,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ── Output schema ─────────────────────────────────────────────────────────────
-# Minimal. Claude writes the steps; orchestrator passes them to the implementer.
-OUTPUT_SCHEMA = {
-    "type": "object",
-    "required": ["plan", "approach_summary"],
-    "properties": {
-        "approach_summary": {
-            "type": "string",
-            "description": "One paragraph — what you decided to try and why",
-        },
-        "plan": {
-            "type": "array",
-            "description": "Ordered implementation steps for the implementer to follow",
-            "items": {
-                "type": "object",
-                "required": ["step", "description"],
-                "properties": {
-                    "step": {"type": "integer"},
-                    "description": {"type": "string"},
-                },
-            },
-        },
-        "expected_metric_delta": {
-            "type": "number",
-            "description": "Rough estimate of OOF improvement. Can be 0 if unknown.",
-        },
-        "plans": {
-            "type": "array",
-            "description": (
-                "Alternative approaches for parallel execution. "
-                "Only populated when n_parallel > 1 is requested. "
-                "Each entry has {approach_summary, plan} with the same structure as the primary plan."
-            ),
-            "items": {
-                "type": "object",
-                "required": ["approach_summary", "plan"],
-                "properties": {
-                    "approach_summary": {"type": "string"},
-                    "plan": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "required": ["step", "description"],
-                            "properties": {
-                                "step": {"type": "integer"},
-                                "description": {"type": "string"},
-                            },
-                        },
-                    },
-                },
-            },
-        },
-    },
-    "additionalProperties": False,
-}
+# NOTE: kept for reference / documentation only.
+# With permission_mode="plan" the planner exits via the built-in ExitPlanMode
+# tool (a markdown string), so JSON schema validation is not used here.
+# The plan dict returned by run_planner() is assembled from the plan text.
+#
+# Downstream code (orchestrator + implementer) looks for:
+#   plan["approach_summary"]  – first non-blank line of the markdown plan
+#   plan["plan_text"]         – full markdown plan (preferred by implementer)
+#   plan["plan"]              – [{"step": 1, "description": plan_text}] fallback
+#   plan["plans"]             – [] (parallel unsupported in plan mode)
 
 
 async def run_planner(
@@ -145,21 +101,37 @@ Be specific. The implementer will execute your plan blindly.{parallel_instructio
             "Grep",
             "Bash",
             "WebSearch",
-            "Task",
             "TodoWrite",
         ],
-        output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
         mcp_servers=mcp_servers,
         max_turns=40,
     )
     try:
-        return await run_agent(**_kwargs, resume=_session)
+        plan_text, session_id = await run_planning_agent(**_kwargs, resume=_session)
     except Exception as exc:
         if _session is not None:
             logger.warning(
                 f"Planner with resumed session {_session[:8]}… failed ({exc}), "
                 "retrying with a fresh session."
             )
-            return await run_agent(**_kwargs, resume=None)
-        raise
+            plan_text, session_id = await run_planning_agent(**_kwargs, resume=None)
+        else:
+            raise
+
+    # Extract a short approach_summary from the first non-blank line of the plan.
+    summary_lines = [
+        ln.lstrip("#").strip() for ln in plan_text.splitlines() if ln.strip()
+    ]
+    approach_summary = summary_lines[0][:300] if summary_lines else plan_text[:300]
+
+    plan_dict: dict = {
+        "approach_summary": approach_summary,
+        "plan_text": plan_text,
+        # Fallback list with a single entry used by older code paths
+        "plan": [{"step": 1, "description": plan_text}],
+        # Parallel plans are not supported in plan mode; orchestrator falls back
+        # to single-plan execution when this list is empty.
+        "plans": [],
+    }
+    return plan_dict, session_id

@@ -20,33 +20,45 @@ if TYPE_CHECKING:
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """\
-You are responsible for validating ML experiment results and deciding on competition submissions.
+You are responsible for validating experiment results and deciding on competition submissions.
 
-Given the OOF score of a new experiment, you will:
-1. Compare it against the provided current best OOF score
-2. Check the submission file format (read first 3 lines)
-3. Decide whether to submit, applying these rules:
-   - is_improvement = True  iff  (maximize: new > best + 0.0001)
-                                  OR (minimize: new < best - 0.0001)
-   - submit = True  iff  is_improvement AND submissions_today < daily_limit
-4. Return structured JSON with your decision and reasoning
+For ML competitions (metric provided):
+  Given the OOF score of a new experiment, you will:
+  1. Compare it against the current best OOF score
+  2. Check the submission file format (read first 3 lines)
+  3. Decide whether to submit:
+     - is_improvement = True  iff  (maximize: new > best + 0.0001)
+                                    OR (minimize: new < best - 0.0001)
+     - submit = True  iff  is_improvement AND submissions_today < daily_limit
 
-You do NOT write to any files. You do NOT update any state.
-You ONLY observe and report.
+For open-ended tasks (no metric, quality_score 0-100):
+  Given the quality_score self-assessed by the implementer:
+  1. Review the deliverable against the task requirements in README.md (Read it)
+  2. Confirm or adjust the quality_score
+  3. Decide is_improvement: quality_score > previous best + 2 points
+  4. Recommend submit if is_improvement and submission artifact exists
+
+In both modes:
+  You do NOT write to any files. You do NOT update any state.
+  You ONLY observe and report.
 """
 
 # ── Output schema ─────────────────────────────────────────────────────────────
 OUTPUT_SCHEMA = {
     "type": "object",
-    "required": ["oof_score", "is_improvement", "submit", "reasoning"],
+    "required": ["oof_score", "quality_score", "is_improvement", "submit", "reasoning"],
     "properties": {
-        "oof_score": {"type": "number"},
+        "oof_score": {"type": ["number", "null"]},
+        "quality_score": {
+            "type": ["number", "null"],
+            "description": "0-100 quality score for open-ended tasks; null for ML tasks",
+        },
         "is_improvement": {
             "type": "boolean",
             "description": "True if new score is meaningfully better than current best",
         },
         "improvement_delta": {
-            "type": "number",
+            "type": ["number", "null"],
             "description": "new_score - best_score (positive means improvement for maximize)",
         },
         "submit": {
@@ -55,11 +67,11 @@ OUTPUT_SCHEMA = {
         },
         "submission_path": {
             "type": ["string", "null"],
-            "description": "Path to the CSV file to submit. Null if not submitting.",
+            "description": "Path to the artifact to submit. Null if not submitting.",
         },
         "format_ok": {
             "type": "boolean",
-            "description": "Whether the submission file passed format checks",
+            "description": "Whether the submission artifact passed format checks",
         },
         "reasoning": {"type": "string"},
     },
@@ -69,11 +81,12 @@ OUTPUT_SCHEMA = {
 
 async def run_validation_agent(
     solution_path: str,
-    oof_score: float,
+    oof_score: float | None,
+    quality_score: float,
     submission_path: str,
     state: "CompetitionState",
     project_dir: str,
-    platform: str = "fake",
+    platform: str = "none",
 ) -> dict:
     """
     Validate a new experiment result and recommend submit/hold.
@@ -81,8 +94,6 @@ async def run_validation_agent(
     Injects the platform-specific MCP server so the agent can query live
     submission quota directly instead of relying on the state counter.
     """
-    direction_word = "higher" if state.metric_direction == "maximize" else "lower"
-
     # ── Platform-specific MCP server ──────────────────────────────────────
     mcp_servers: dict = {}
     quota_tool: str = ""
@@ -105,10 +116,7 @@ async def run_validation_agent(
             "3. Call `kaggle_submission_history` and count how many submissions "
             "were made today to determine remaining quota.\n"
         )
-    else:  # fake and anything else
-        # Run as external stdio subprocess to avoid the in-process SDK control
-        # channel, which requires a bidirectional write-back that is unreliable
-        # with non-Anthropic model backends (e.g. Ollama).
+    elif platform == "fake":
         import sys
 
         mcp_servers = {
@@ -126,28 +134,59 @@ async def run_validation_agent(
         quota_instruction = (
             "3. Call `fake_status` to get your current submission count and rank.\n"
         )
+    # platform == "none": no MCP tools — no external platform to query
 
-    allowed_tools = ["Read", "Bash"] + ([quota_tool] if quota_tool else [])
+    allowed_tools = ["Read", "Grep"] + ([quota_tool] if quota_tool else [])
 
-    prompt = f"""\
-## Validation Request
-
+    # Build prompt depending on task type
+    if state.target_metric:
+        direction_word = "higher" if state.metric_direction == "maximize" else "lower"
+        best_score_str = (
+            f"{state.best_oof_score:.6f}"
+            if state.best_oof_score is not None
+            else "none yet"
+        )
+        score_section = f"""\
 New experiment:
   Solution      : {solution_path}
-  OOF score     : {oof_score:.6f}
+  OOF score     : {oof_score:.6f if oof_score is not None else 'n/a'}
   Submission CSV: {submission_path or "(none produced)"}
 
 Context:
   Metric              : {state.target_metric} ({state.metric_direction})
-  Current best OOF    : {f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none yet'}
+  Current best OOF    : {best_score_str}
   Improvement threshold: 0.0001 ({direction_word} is better)
   State submission count today: {state.submission_count} / {state.max_submissions_per_day}
 
 ## Tasks
-1. Determine is_improvement: is {oof_score:.6f} meaningfully better than {f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else '(no prior score)'}?
-2. {"Read the first 3 lines of " + submission_path + " to verify format." if submission_path else "No submission file — set format_ok=False."}
-{quota_instruction}4. Return the structured JSON result.
-"""
+1. Determine is_improvement: is {oof_score:.6f if oof_score is not None else 'n/a'} meaningfully better than {best_score_str}?
+2. {"Use Read to open " + submission_path + " and check the header + first data row (CSV format)." if submission_path else "No submission file — set format_ok=False."}
+{quota_instruction}4. Return the structured JSON result."""
+    else:
+        best_q = (
+            f"{state.best_quality_score}/100"
+            if state.best_quality_score is not None
+            else "none yet"
+        )
+        score_section = f"""\
+New experiment:
+  Solution      : {solution_path}
+  Quality score : {quality_score}/100  (self-assessed by implementer)
+  Deliverable   : {submission_path or "(none produced)"}
+
+Context:
+  Task type     : open-ended (no numeric metric — read README.md for task goal)
+  Current best  : {best_q}
+  Improvement threshold: 2 points (quality_score > best + 2)
+  Submissions today: {state.submission_count}
+
+## Tasks
+1. Read README.md to understand the task goal and deliverable requirements.
+2. Inspect the deliverable ({submission_path or "none"}) to assess completeness.
+3. Confirm or adjust quality_score; determine is_improvement ({quality_score} > {best_q}?).
+{quota_instruction}4. Return the structured JSON result."""
+
+    prompt = f"""## Validation Request\n\n{score_section}\n"""
     result, _ = await run_agent(
         agent_name="validation",
         prompt=prompt,
