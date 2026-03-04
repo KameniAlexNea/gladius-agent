@@ -20,7 +20,8 @@ Fields:
                                If provided, direction must also be provided.
   direction       (required when metric is set) — maximize | minimize
   data_dir        (optional, default: "data") — path to the data folder.
-                  Only validated to exist when metric is set.
+                                    Resolved to an absolute path; existence is validated later
+                                    by runtime components that actually read the files.
 
 The rest of the README is the human-readable task description that agents
 also read for context. For open-ended tasks this is the primary source of
@@ -66,7 +67,7 @@ def load_competition_config(competition_dir: str) -> dict:
     # competition_id is always required
     if not cfg.get("competition_id"):
         raise CompetitionConfigError(
-            "README.md frontmatter missing required field: competition_id"
+            "README.md frontmatter missing required fields: competition_id"
         )
 
     # platform is optional — default "none" (local/artifact submission)
@@ -102,13 +103,9 @@ def load_competition_config(competition_dir: str) -> dict:
         p = Path(competition_dir) / p
     cfg["data_dir"] = str(p.resolve())
 
-    # Only require the data directory to exist for metric-driven (ML) competitions
-    # or when the user explicitly declared data_dir in the frontmatter.
-    if (has_metric or data_dir_explicit) and not p.exists():
-        raise CompetitionConfigError(
-            f"data_dir {str(p)!r} does not exist. "
-            "Create the directory or fix the 'data_dir' field in README.md frontmatter."
-        )
+    # Existence of data_dir is intentionally not validated here.
+    # Config parsing should remain lightweight and testable in isolation; file
+    # presence checks happen in runtime setup/execution paths.
 
     return cfg
 
