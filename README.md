@@ -170,7 +170,7 @@ gladius --competition-dir examples/fake_competition
 ## CLI
 
 ```bash
-gladius --competition-dir PATH [--iterations N] [--no-resume] [--no-submit] [--parallel N]
+gladius --competition-dir PATH [--iterations N] [--no-resume] [--no-submit] [--parallel N] [--mode MODE]
 ```
 
 | Flag | Default | Description |
@@ -180,6 +180,10 @@ gladius --competition-dir PATH [--iterations N] [--no-resume] [--no-submit] [--p
 | `--no-resume` | false | Start fresh — ignore `.gladius/state.db` |
 | `--no-submit` | false | Dry-run — skip platform submissions |
 | `--parallel N` | 1 | Run N implementers concurrently with different approaches |
+| `--mode` | experimental | `experimental` or `personal-production` (enables stricter defaults) |
+| `--max-iteration-seconds` | unset | Optional runtime cap per iteration |
+| `--max-agent-calls-per-iteration` | unset | Optional cap on total agent calls per iteration |
+| `--max-failed-runs-total` | unset | Optional cap on cumulative failed runs before halt |
 
 With `--parallel 2`, the planner generates 2 independent, structurally different approaches. Both implementers run concurrently. The best-OOF result advances to validation; all successful runs are recorded as experiments.
 
@@ -200,7 +204,6 @@ gladius/
   tools/
     fake_platform_tools.py — Offline scoring MCP server (AUC-ROC vs answer key)
     kaggle_tools.py        — Kaggle API MCP server
-    metric_tools.py        — OOF metric computation MCP server
     zindi_tools.py         — Zindi submission MCP server
   utils/
     competition_config.py  — Reads YAML frontmatter from competition README.md

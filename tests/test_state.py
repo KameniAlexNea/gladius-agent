@@ -188,3 +188,16 @@ def test_resume_after_save(db_path):
     assert loaded.iteration == 5
     assert len(loaded.experiments) == 5
     assert abs(loaded.experiments[4]["oof_score"] - 0.74) < 1e-9
+
+
+def test_last_stop_reason_roundtrip(db_path):
+    store = StateStore(db_path)
+    state = make_state()
+    state.phase = "done"
+    state.last_stop_reason = "agent call budget exceeded (6/5)"
+    store.save(state)
+    loaded = store.load()
+    store.close()
+
+    assert loaded is not None
+    assert loaded.last_stop_reason == "agent call budget exceeded (6/5)"

@@ -249,7 +249,9 @@ uv run python solution.py         # run a script inside the venv
 # ── Bootstrap project .claude/ structure ──────────────────────────────────────
 
 
-def setup_project_dir(state: "CompetitionState", project_dir: str) -> None:
+def setup_project_dir(
+    state: "CompetitionState", project_dir: str, platform: str = "none"
+) -> None:
     """
     One-time (idempotent) setup of Claude Code native config in project_dir.
 
@@ -277,7 +279,7 @@ def setup_project_dir(state: "CompetitionState", project_dir: str) -> None:
     _write_skill_uv_venv(root)
     _write_skill_code_review(root, bool(state.target_metric))
     _write_claude_settings(root, state)
-    _write_mcp_json(root, state)
+    _write_mcp_json(root, platform=platform)
     _write_hook_after_edit(root)
     _write_hook_validate_bash(root)
     _make_memory_dir(root, bool(state.target_metric))
@@ -820,25 +822,24 @@ def _write_claude_settings(root: Path, state: "CompetitionState") -> None:
 # ── .mcp.json (for Claude Code CLI use) ──────────────────────────────────────
 
 
-def _write_mcp_json(root: Path, state: "CompetitionState") -> None:
+def _write_mcp_json(root: Path, platform: str = "none") -> None:
     path = root / ".mcp.json"
-    if path.exists():
-        return
     import sys
 
     mcp_config: dict = {"mcpServers": {}}
 
-    platform = getattr(state, "platform", "none") or "none"
     if platform not in ("none", ""):
         # Platform-specific MCP tools are injected per-call by the validation agent;
         # register the server here for any Claude CLI interactive use.
         server_module = {
             "kaggle": "gladius.tools.kaggle_tools",
             "zindi": "gladius.tools.zindi_tools",
+            "fake": "gladius.tools.fake_platform_tools",
         }.get(platform)
         server_name = {
             "kaggle": "kaggle_server",
             "zindi": "zindi_server",
+            "fake": "fake_server",
         }.get(platform)
         if server_module and server_name:
             mcp_config["mcpServers"][f"{platform}-tools"] = {
@@ -848,7 +849,7 @@ def _write_mcp_json(root: Path, state: "CompetitionState") -> None:
                     "-c",
                     (
                         f"from {server_module} import {server_name}; "
-                        "import asyncio; asyncio.run(server.run())"
+                        f"import asyncio; asyncio.run({server_name}.run())"
                     ),
                 ],
                 "env": {},

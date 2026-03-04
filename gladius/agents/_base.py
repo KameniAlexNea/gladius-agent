@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 import textwrap
 from typing import Any
 
@@ -204,6 +205,25 @@ def _fmt_result(content: Any, max_len: int = 400) -> str:
     return text
 
 
+def _validate_runtime_invocation(
+    *,
+    agent_name: str,
+    cwd: str,
+    allowed_tools: list[str],
+    max_turns: int | None,
+) -> None:
+    if not os.environ.get("GLADIUS_MODEL"):
+        raise RuntimeError(
+            "GLADIUS_MODEL is not set. Add it to your competition .env before running agents."
+        )
+    if not Path(cwd).exists():
+        raise RuntimeError(f"Agent cwd does not exist: {cwd}")
+    if not allowed_tools:
+        raise RuntimeError(f"{agent_name}: allowed_tools cannot be empty")
+    if max_turns is not None and max_turns <= 0:
+        raise RuntimeError(f"{agent_name}: max_turns must be > 0")
+
+
 # Todo status icons — used when rendering TodoWrite tool calls
 _TODO_ICON = {"completed": "✅", "in_progress": "🔧", "pending": "⬜"}
 
@@ -333,6 +353,13 @@ async def run_agent(
     -------
     (structured_output, session_id)
     """
+
+    _validate_runtime_invocation(
+        agent_name=agent_name,
+        cwd=cwd,
+        allowed_tools=allowed_tools,
+        max_turns=max_turns,
+    )
 
     def _stderr_cb(line: str) -> None:
         print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
@@ -526,6 +553,13 @@ async def run_planning_agent(
         plan_text  — full markdown plan from ExitPlanMode.input["plan"]
         session_id — can be resumed for a follow-up non-plan call if needed
     """
+
+    _validate_runtime_invocation(
+        agent_name=agent_name,
+        cwd=cwd,
+        allowed_tools=allowed_tools,
+        max_turns=max_turns,
+    )
 
     def _stderr_cb(line: str) -> None:
         print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
