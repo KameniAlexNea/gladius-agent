@@ -23,7 +23,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-import os
+
 from dotenv import load_dotenv
 
 from gladius.agents.implementer import run_implementer
@@ -43,7 +43,7 @@ logger = logging.getLogger("gladius.orchestrator")
 
 
 # ── Platform submission helpers ───────────────────────────────────────────────
-def _submit_to_kaggle(competition_id: str, submission_path: str, message: str) -> None:
+def _submit_to_kaggle(competition_id: str, submission_path: str, message: str) -> bool:
     import subprocess
 
     r = subprocess.run(
@@ -63,21 +63,23 @@ def _submit_to_kaggle(competition_id: str, submission_path: str, message: str) -
     )
     if r.returncode != 0:
         logger.warning(f"Kaggle submit stderr: {r.stderr.strip()}")
+        return False
     else:
         logger.info(f"Kaggle submission accepted: {r.stdout.strip()}")
+        return True
 
 
-def _submit_to_zindi(competition_id: str, submission_path: str, message: str) -> None:
+def _submit_to_zindi(competition_id: str, submission_path: str, message: str) -> bool:
     try:
         from zindi.user import Zindian
     except ImportError:
         logger.error("zindi package not installed")
-        return
+        return False
     username = os.getenv("ZINDI_USERNAME") or os.getenv("USER_NAME")
     password = os.getenv("ZINDI_PASSWORD") or os.getenv("PASSWORD")
     if not username or not password:
         logger.error("Missing ZINDI_USERNAME / ZINDI_PASSWORD")
-        return
+        return False
     try:
         user = Zindian(username=username, fixed_password=password)
         user.select_a_challenge(
@@ -85,38 +87,42 @@ def _submit_to_zindi(competition_id: str, submission_path: str, message: str) ->
         )
         if user.remaining_subimissions <= 0:
             logger.warning("Zindi: no remaining submissions today")
-            return
+            return False
         user.submit(filepaths=[submission_path], comments=[message])
         logger.info(
             f"Zindi submission accepted ({user.remaining_subimissions} remaining today)"
         )
+        return True
     except Exception as exc:
         logger.error(f"Zindi submission error: {exc}")
+        return False
 
 
-def _submit_to_fake(competition_id: str, submission_path: str, message: str) -> None:
+def _submit_to_fake(competition_id: str, submission_path: str, message: str) -> bool:
     try:
         from gladius.tools.fake_platform_tools import _score_submission
 
         score = _score_submission(submission_path)
         logger.info(f"[FAKE PLATFORM] Scored: {score:.6f}")
+        return True
     except Exception as exc:
         logger.error(f"[FAKE PLATFORM] Scoring failed: {exc}")
+        return False
 
 
 def _submit(
     platform: str, competition_id: str, submission_path: str, message: str
-) -> None:
+) -> bool:
     if platform == "none":
         # No external platform — artifact is recorded in state only.
         logger.info(f"[LOCAL] Submission artifact recorded: {submission_path}")
-        return
+        return True
     if platform == "zindi":
-        _submit_to_zindi(competition_id, submission_path, message)
+        return _submit_to_zindi(competition_id, submission_path, message)
     elif platform == "fake":
-        _submit_to_fake(competition_id, submission_path, message)
+        return _submit_to_fake(competition_id, submission_path, message)
     else:
-        _submit_to_kaggle(competition_id, submission_path, message)
+        return _submit_to_kaggle(competition_id, submission_path, message)
 
 
 # ── Improvement check ─────────────────────────────────────────────────────────
@@ -486,21 +492,22 @@ async def run_competition(
                     )
                     and auto_submit
                 ):
-                    if platform != "none":
-                        state.submission_count += 1
-                    state.best_submission_path = submission_file
                     logger.info(f"Submitting [{platform}]: {submission_file}")
                     _submit_msg = (
                         f"iter-{state.iteration} quality={quality_score}/100"
                         if state.target_metric is None
                         else f"iter-{state.iteration} oof={oof_score:.6f}"
                     )
-                    _submit(
+                    submit_ok = _submit(
                         platform=platform,
                         competition_id=state.competition_id,
                         submission_path=submission_file,
                         message=_submit_msg,
                     )
+                    if submit_ok:
+                        state.best_submission_path = submission_file
+                        if platform != "none":
+                            state.submission_count += 1
 
                 # Update planner memory with learnings from this iteration.
                 # Increment iteration AFTER summarizer so MEMORY.md records the correct number.
@@ -531,7 +538,9 @@ async def run_competition(
 
                 # Both task types: plateau detection — last 3 scored
                 # experiments show no meaningful change.
-                _plateau_key = "quality_score" if state.target_metric is None else "oof_score"
+                _plateau_key = (
+                    "quality_score" if state.target_metric is None else "oof_score"
+                )
                 _scored = [
                     e[_plateau_key]
                     for e in state.experiments
@@ -564,7 +573,9 @@ async def run_competition(
                     if not deterministic_stop:
                         _why.append("no plateau")
                     if not no_next_directions:
-                        _why.append(f"next_directions={validation.get('next_directions')}")
+                        _why.append(
+                            f"next_directions={validation.get('next_directions')}"
+                        )
                     logger.info(
                         f"Agent requested stop=True but continuing — {', '.join(_why)}."
                     )

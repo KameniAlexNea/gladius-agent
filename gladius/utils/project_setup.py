@@ -680,13 +680,19 @@ def _write_skill_git_workflow(root: Path, is_ml: bool) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     if is_ml:
-        commit_example = 'git commit -m "iter-{N}: {approach_summary} — OOF {metric}={score:.6f}"'
+        commit_example = (
+            'git commit -m "iter-{N}: {approach_summary} — OOF {metric}={score:.6f}"'
+        )
         msg_format = "`iter-{N}: <one-sentence approach> — OOF {metric}={score:.6f}`"
         trigger = "After implementing a solution that runs without errors and produces an OOF score,"
     else:
-        commit_example = 'git commit -m "iter-{N}: {change_summary} — quality {score}/100"'
+        commit_example = (
+            'git commit -m "iter-{N}: {change_summary} — quality {score}/100"'
+        )
         msg_format = "`iter-{N}: <one-sentence change> — quality {score}/100`"
-        trigger = "After implementing a deliverable that runs end-to-end without errors,"
+        trigger = (
+            "After implementing a deliverable that runs end-to-end without errors,"
+        )
     path.write_text(
         f"""\
 ---

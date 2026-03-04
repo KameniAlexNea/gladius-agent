@@ -89,7 +89,7 @@ _IMPLEMENTER_AGENT_DEF = AgentDefinition(
         "Start by reading CLAUDE.md for competition context, then the plan you received.\n"
         "Implement completely: write code, run it, fix errors, iterate until done.\n\n"
         "Before reporting results, invoke the code-review skill:\n"
-        "  Skill({\"name\": \"code-review\"})\n"
+        '  Skill({"name": "code-review"})\n'
         "The Skill tool returns its output directly in the same turn — "
         "do NOT use TaskOutput to wait for it. "
         "Fix every CRITICAL item reported before submitting.\n\n"
@@ -428,7 +428,9 @@ async def run_agent(
                         text = block.text.strip()
                         # Strip optional markdown code fence
                         if text.startswith("```"):
-                            text = text[text.index("\n") + 1:] if "\n" in text else text
+                            text = (
+                                text[text.index("\n") + 1 :] if "\n" in text else text
+                            )
                             if text.rstrip().endswith("```"):
                                 text = text.rstrip()[:-3].rstrip()
                         if text.startswith("{"):

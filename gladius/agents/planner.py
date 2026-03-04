@@ -9,14 +9,73 @@ metrics. Its only job is to produce a concrete, ordered action plan.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from gladius.agents._base import run_planning_agent
+from gladius.agents.specs.planner_spec import (
+    PLANNER_SYSTEM_PROMPT,
+    build_planner_alternative_prompt,
+    build_planner_prompt,
+)
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
 logger = logging.getLogger(__name__)
+
+
+def _first_nonblank_line(text: str) -> str:
+    lines = [ln.lstrip("#").strip() for ln in text.splitlines() if ln.strip()]
+    return lines[0][:300] if lines else text[:300]
+
+
+def _plan_dict_from_text(plan_text: str) -> dict:
+    return {
+        "approach_summary": _first_nonblank_line(plan_text),
+        "plan_text": plan_text,
+        "plan": [{"step": 1, "description": plan_text}],
+    }
+
+
+def _extract_parallel_plans(plan_text: str, n_parallel: int) -> list[dict]:
+    """Extract approach sections from planner markdown.
+
+    Expected shape (heading level may vary):
+      ## Approach 1
+      ...content...
+      ## Approach 2
+      ...content...
+    """
+    if n_parallel <= 1:
+        return []
+
+    heading_re = re.compile(r"(?im)^#{1,6}\s*approach\s+\d+\s*$")
+    matches = list(heading_re.finditer(plan_text))
+    if not matches:
+        return []
+
+    sections: list[str] = []
+    for i, m in enumerate(matches):
+        start = m.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(plan_text)
+        section = plan_text[start:end].strip()
+        if section:
+            sections.append(section)
+
+    # Deduplicate by normalized body while preserving order.
+    seen: set[str] = set()
+    plans: list[dict] = []
+    for section in sections:
+        key = " ".join(section.lower().split())
+        if key in seen:
+            continue
+        seen.add(key)
+        plans.append(_plan_dict_from_text(section))
+        if len(plans) >= n_parallel:
+            break
+    return plans
+
 
 # ── Output schema ─────────────────────────────────────────────────────────────
 # NOTE: kept for reference / documentation only.
@@ -54,53 +113,17 @@ async def run_planner(
     # submission agents instead.
     mcp_servers: dict = {}
 
-    parallel_instruction = ""
-    if n_parallel > 1:
-        parallel_instruction = (
-            f"\n\nIMPORTANT: Generate {n_parallel} independent approaches for parallel "
-            f"execution. Put the primary (highest confidence) approach in `plan` / "
-            f"`approach_summary` as usual, and put all {n_parallel} approaches "
-            f"(including the primary) in the `plans` list. "
-            f"Each approach must be substantially different — different models, "
-            f"feature strategies, or architectures — so parallel runs are not redundant."
-        )
-
-    prompt = f"""\
-Read CLAUDE.md first — it contains the full competition state.
-
-Iteration   : {state.iteration} / {state.max_iterations}
-Project dir : {project_dir}
-
-Your job:
-- Read CLAUDE.md and your memory (.claude/agent-memory/planner/MEMORY.md).
-- Explore the data directory and any existing solution files at your discretion.
-- Decide the highest-impact next thing to try.
-- Output a concrete, ordered plan the implementer can follow without further guidance.
-- Call ExitPlanMode with your plan — do NOT write any files.
-
-Be specific. The implementer will execute your plan blindly.{parallel_instruction}
-"""
+    prompt = build_planner_prompt(
+        iteration=state.iteration,
+        max_iterations=state.max_iterations,
+        project_dir=project_dir,
+        n_parallel=n_parallel,
+    )
     _session = state.planner_session_id
     _kwargs = dict(
         agent_name="planner",
         prompt=prompt,
-        system_prompt=(
-            "You are an expert ML competition analyst. "
-            "You explore first, then plan. "
-            "You never implement code yourself — you produce plans for an implementer. "
-            "Your plans are specific, ordered, and self-contained. "
-            "Always read CLAUDE.md at the start of every session. "
-            "If CLAUDE.md shows a STAGNATION WARNING, your top priority is to "
-            "break out of the local optimum: explore different data representations, "
-            "fundamentally different model families, or go back to raw data exploration "
-            "rather than incrementally tweaking the current approach.\n\n"
-            "STRICT RULES — you are in READ-ONLY planning mode:\n"
-            "Do NOT run Bash commands. "
-            "Do NOT write or edit ANY files — not MEMORY.md, not plan files, not anything. "
-            "Do NOT spawn Task subagents. "
-            "Use ONLY Read, Glob, Grep, WebSearch, TodoWrite. "
-            "Call ExitPlanMode when your plan is ready — that is the ONLY output channel."
-        ),
+        system_prompt=PLANNER_SYSTEM_PROMPT,
         allowed_tools=[
             "Read",
             "Glob",
@@ -124,19 +147,37 @@ Be specific. The implementer will execute your plan blindly.{parallel_instructio
         else:
             raise
 
-    # Extract a short approach_summary from the first non-blank line of the plan.
-    summary_lines = [
-        ln.lstrip("#").strip() for ln in plan_text.splitlines() if ln.strip()
-    ]
-    approach_summary = summary_lines[0][:300] if summary_lines else plan_text[:300]
+    primary_plan = _plan_dict_from_text(plan_text)
+    plans: list[dict] = []
+
+    if n_parallel > 1:
+        plans = _extract_parallel_plans(plan_text, n_parallel)
+        if not plans:
+            plans = [primary_plan]
+
+        # If the initial planning response did not include enough distinct
+        # approach sections, request additional alternatives explicitly.
+        attempts = 0
+        while len(plans) < n_parallel and attempts < n_parallel * 2:
+            attempts += 1
+            existing_summaries = [p.get("approach_summary", "") for p in plans]
+            alt_prompt = build_planner_alternative_prompt(existing_summaries)
+            alt_kwargs = dict(_kwargs)
+            alt_kwargs["prompt"] = alt_prompt
+            alt_kwargs["resume"] = session_id
+            alt_text, _ = await run_planning_agent(
+                **alt_kwargs,
+            )
+            alt_plan = _plan_dict_from_text(alt_text)
+            alt_key = " ".join(alt_plan["plan_text"].lower().split())
+            existing_keys = {" ".join(p["plan_text"].lower().split()) for p in plans}
+            if alt_key not in existing_keys:
+                plans.append(alt_plan)
 
     plan_dict: dict = {
-        "approach_summary": approach_summary,
-        "plan_text": plan_text,
-        # Fallback list with a single entry used by older code paths
-        "plan": [{"step": 1, "description": plan_text}],
-        # Parallel plans are not supported in plan mode; orchestrator falls back
-        # to single-plan execution when this list is empty.
-        "plans": [],
+        "approach_summary": primary_plan["approach_summary"],
+        "plan_text": primary_plan["plan_text"],
+        "plan": primary_plan["plan"],
+        "plans": plans,
     }
     return plan_dict, session_id
