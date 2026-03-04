@@ -6,21 +6,25 @@ block at the very top:
 
     ---
     competition_id: my-competition
-    platform: kaggle          # kaggle | zindi | fake
-    metric: auc_roc
-    direction: maximize       # maximize | minimize
-    data_dir: data            # relative to competition dir, or absolute
+    platform: kaggle          # kaggle | zindi | fake | none  (default: none)
+    metric: auc_roc           # optional — omit for open/app tasks
+    direction: maximize       # required when metric is set: maximize | minimize
+    data_dir: data            # optional — relative to competition dir, or absolute
     ---
 
 Fields:
-  competition_id  (required) — slug used for platform API calls
-  platform        (required) — kaggle | zindi | fake
-  metric          (required) — e.g. auc_roc, rmse, logloss
-  direction       (required) — maximize | minimize
-  data_dir        (optional, default: "data") — path to the data folder
+  competition_id  (required) — slug used for platform API calls and logging
+  platform        (optional, default: "none") — kaggle | zindi | fake | none
+  metric          (optional) — e.g. auc_roc, rmse, logloss.
+                               Omit for open-ended tasks (app building, etc.).
+                               If provided, direction must also be provided.
+  direction       (required when metric is set) — maximize | minimize
+  data_dir        (optional, default: "data") — path to the data folder.
+                  Only validated to exist when metric is set.
 
-The rest of the README is the human-readable competition description that
-agents also read for context.
+The rest of the README is the human-readable task description that agents
+also read for context. For open-ended tasks this is the primary source of
+truth — agents derive goal, deliverables, and self-assessment criteria from it.
 """
 
 from __future__ import annotations
@@ -37,10 +41,11 @@ def load_competition_config(competition_dir: str) -> dict:
     Parse README.md frontmatter in competition_dir.
 
     Returns dict with keys:
-        competition_id, platform, metric, direction, data_dir (absolute path)
+        competition_id, platform, metric (may be None), direction (may be None),
+        data_dir (absolute path)
 
     Raises CompetitionConfigError if README.md is missing, has no frontmatter,
-    or is missing required fields.
+    is missing competition_id, or provides metric without direction (or vice-versa).
     """
     readme = Path(competition_dir) / "README.md"
     if not readme.exists():
@@ -58,30 +63,52 @@ def load_competition_config(competition_dir: str) -> dict:
 
     cfg = _parse_frontmatter(readme)
 
-    missing = [
-        k
-        for k in ("competition_id", "platform", "metric", "direction")
-        if not cfg.get(k)
-    ]
-    if missing:
+    # competition_id is always required
+    if not cfg.get("competition_id"):
         raise CompetitionConfigError(
-            f"README.md frontmatter missing required fields: {missing}"
+            "README.md frontmatter missing required field: competition_id"
         )
-    if cfg["platform"] not in ("kaggle", "zindi", "fake"):
+
+    # platform is optional — default "none" (local/artifact submission)
+    platform = cfg.get("platform") or "none"
+    if platform not in ("kaggle", "zindi", "fake", "none"):
         raise CompetitionConfigError(
-            f"platform must be kaggle | zindi | fake, got {cfg['platform']!r}"
+            f"platform must be kaggle | zindi | fake | none, got {platform!r}"
         )
-    if cfg["direction"] not in ("maximize", "minimize"):
+    cfg["platform"] = platform
+
+    # metric + direction are both optional but must come together
+    has_metric = bool(cfg.get("metric"))
+    has_direction = bool(cfg.get("direction"))
+    if has_metric != has_direction:
+        raise CompetitionConfigError(
+            "README.md frontmatter: 'metric' and 'direction' must both be provided "
+            "or both omitted. Got metric="
+            f"{cfg.get('metric')!r}, direction={cfg.get('direction')!r}"
+        )
+    if has_direction and cfg["direction"] not in ("maximize", "minimize"):
         raise CompetitionConfigError(
             f"direction must be maximize | minimize, got {cfg['direction']!r}"
         )
 
+    # Normalise absent metric/direction to None (str coercion may have made them "None")
+    cfg["metric"] = cfg.get("metric") or None
+    cfg["direction"] = cfg.get("direction") or None
+
     # Resolve data_dir relative to competition_dir
-    data_dir = cfg.get("data_dir") or "data"
-    p = Path(data_dir)
+    data_dir_explicit = "data_dir" in cfg  # True only when user set it in frontmatter
+    p = Path(cfg.get("data_dir") or "data")
     if not p.is_absolute():
         p = Path(competition_dir) / p
     cfg["data_dir"] = str(p.resolve())
+
+    # Only require the data directory to exist for metric-driven (ML) competitions
+    # or when the user explicitly declared data_dir in the frontmatter.
+    if (has_metric or data_dir_explicit) and not p.exists():
+        raise CompetitionConfigError(
+            f"data_dir {str(p)!r} does not exist. "
+            "Create the directory or fix the 'data_dir' field in README.md frontmatter."
+        )
 
     return cfg
 

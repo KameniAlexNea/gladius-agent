@@ -208,9 +208,12 @@ __marimo__/
 state/experiments
 
 # claude exec
-examples/fake_competition/CLAUDE.md
-examples/fake_competition/.mcp.json
-examples/fake_competition/.claude
-examples/fake_competition/.gladius
-examples/fake_competition/scripts
-examples/fake_competition/catboost_info
+*.out
+examples/*/CLAUDE.md
+examples/*/.mcp.json
+examples/*/.claude
+examples/*/.gladius
+examples/*/scripts
+examples/*/catboost_info
+examples/*/*.py
+examples/app_competition

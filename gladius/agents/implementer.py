@@ -17,18 +17,31 @@ if TYPE_CHECKING:
 
 OUTPUT_SCHEMA = {
     "type": "object",
-    "required": ["status", "oof_score"],
+    "required": ["status", "oof_score", "quality_score"],
     "properties": {
         "status": {
             "type": "string",
             "enum": ["success", "error", "timeout", "oom"],
         },
         "oof_score": {
-            "type": "number",
+            "type": ["number", "null"],
             "description": (
-                "OOF/validation score achieved. "
-                "Use the competition metric direction: higher is better for maximize, lower for minimize. "
-                "Set to -1 if the run failed."
+                "OOF/validation score achieved for metric-driven competitions. "
+                "Use the competition metric direction: higher is better for maximize, "
+                "lower for minimize. Set to -1 if the run failed. "
+                "Set to null if there is no target metric (open-ended task)."
+            ),
+        },
+        "quality_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": (
+                "Self-assessed quality score 0–100. "
+                "For metric-driven tasks: 0=failure, 50=below-baseline, 75=solid, 100=perfect. "
+                "For open-ended tasks: rate completeness and correctness of the deliverable "
+                "against the task description in README.md. "
+                "Always required; use 0 on error or timeout."
             ),
         },
         "solution_files": {
@@ -38,7 +51,10 @@ OUTPUT_SCHEMA = {
         },
         "submission_file": {
             "type": "string",
-            "description": "Path to the test-set submission CSV (empty string if not produced)",
+            "description": (
+                "Path to the main deliverable — CSV for ML competitions, "
+                "zip/binary/URL-file for open-ended tasks. Empty string if not produced."
+            ),
         },
         "notes": {
             "type": "string",
@@ -61,7 +77,7 @@ async def run_implementer(
     """
     Execute the plan. Return result dict matching OUTPUT_SCHEMA.
     """
-    steps_text = "\n".join(
+    steps_text = plan.get("plan_text") or "\n".join(
         f"  {s['step']}. {s['description']}" for s in plan.get("plan", [])
     )
 
@@ -87,14 +103,19 @@ Report the final {state.target_metric} score in oof_score.
         agent_name="implementer",
         prompt=prompt,
         system_prompt=(
-            "You are an expert ML engineer executing a competition experiment. "
-            "You implement, run, debug, and iterate until the experiment completes. "
+            "You are an expert engineer executing a task. "
+            "You implement, run, debug, and iterate until the task is complete. "
             "You measure results yourself and report them accurately. "
-            "Always read CLAUDE.md at the start for competition context. "
-            "Before reporting your final result, read .claude/skills/code-review/SKILL.md "
-            "and fix every CRITICAL item (leakage, metric correctness, submission format)."
+            "Always read CLAUDE.md at the start for task context. "
+            "Before reporting your final result, invoke the code-review skill by calling "
+            "the Skill tool: Skill({\"name\": \"code-review\"}). "
+            "The Skill tool runs the skill and returns its output directly in the same turn — "
+            "do NOT use TaskOutput or any other tool to wait for it. "
+            "Fix every CRITICAL item the skill reports before submitting results. "
+            "NEVER modify or overwrite CLAUDE.md — it is managed exclusively by the orchestrator. "
+            "NEVER spawn Task subagents."
         ),
-        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite", "Skill"],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
         max_turns=80,
