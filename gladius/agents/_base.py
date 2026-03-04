@@ -27,6 +27,7 @@ from claude_agent_sdk import (
 from claude_agent_sdk._errors import MessageParseError
 from claude_agent_sdk.types import (
     AssistantMessage,
+    PermissionResultAllow,
     SystemMessage,
     TextBlock,
     ThinkingBlock,
@@ -486,6 +487,18 @@ async def run_agent(
     raise RuntimeError("run_agent: max retries exceeded")
 
 
+async def _approve_exit_plan_mode(
+    tool_name: str, input_data: dict, context: object
+) -> PermissionResultAllow:
+    """Auto-approve ExitPlanMode so the model doesn't get a confirmation prompt.
+
+    Without this callback the SDK returns "Exit plan mode?" as the tool result,
+    which confuses the model into calling ExitPlanMode a second time (wasting
+    ~10 turns before the plan is finally captured).
+    """
+    return PermissionResultAllow(updated_input=input_data)
+
+
 async def run_planning_agent(
     *,
     agent_name: str = "planner",
@@ -540,6 +553,7 @@ async def run_planning_agent(
         },
         allowed_tools=allowed_tools,
         permission_mode="plan",
+        can_use_tool=_approve_exit_plan_mode,
         cwd=cwd,
         resume=resume,
         mcp_servers=mcp_servers or {},
@@ -564,7 +578,11 @@ async def run_planning_agent(
                     + resume_str
                 )
 
-            async for message in query(prompt=prompt, options=options):
+            # can_use_tool requires streaming (AsyncIterable) prompt, not a plain string.
+            async def _prompt_stream():
+                yield {"type": "user", "message": {"role": "user", "content": prompt}}
+
+            async for message in query(prompt=_prompt_stream(), options=options):
                 if verbose:
                     _log_message(agent_name, message)
                 if isinstance(message, SystemMessage) and message.subtype == "init":
