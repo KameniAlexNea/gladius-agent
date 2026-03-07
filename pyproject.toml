@@ -40,3 +40,6 @@ gladius = "gladius.orchestrator:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["gladius*"]
+
+[tool.setuptools.package-data]
+"gladius.utils" = ["templates/**/*"]
