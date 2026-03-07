@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Fully autonomous multi-agent ML competition system"
 requires-python = ">=3.10"
 dependencies = [
-    "claude-agent-sdk>=0.1.44",
+    "claude-agent-sdk==0.1.44",
     "psutil>=5.9.0",
     "kaggle>=1.6.0",
     "requests>=2.31.0",
@@ -29,6 +29,9 @@ dev = [
     "optuna>=4.7.0",
     "pandas>=2.3.3",
     "numpy>=1.24.0",
+]
+jupyter = [
+    "jupyter-mcp-server>=0.1.0",
 ]
 
 [project.scripts]

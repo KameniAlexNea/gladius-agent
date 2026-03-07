@@ -32,6 +32,8 @@ async def run_implementer(
     """
     Execute the plan. Return result dict matching OUTPUT_SCHEMA.
     """
+    from gladius.utils.jupyter_mcp import build_jupyter_mcp_config
+
     prompt = build_implementer_prompt(plan=plan, target_metric=state.target_metric)
     result, _ = await run_agent(
         agent_name="implementer",
@@ -46,9 +48,11 @@ async def run_implementer(
             "Grep",
             "TodoWrite",
             "Skill",
+            "mcp__jupyter__*",
         ],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
+        mcp_servers=build_jupyter_mcp_config(),
         max_turns=80,
     )
     return result

@@ -13,13 +13,13 @@ block at the very top:
     ---
 
 Fields:
-  competition_id  (required) — slug used for platform API calls and logging
-  platform        (optional, default: "none") — kaggle | zindi | fake | none
-  metric          (optional) — e.g. auc_roc, rmse, logloss.
-                               Omit for open-ended tasks (app building, etc.).
-                               If provided, direction must also be provided.
-  direction       (required when metric is set) — maximize | minimize
-  data_dir        (optional, default: "data") — path to the data folder.
+  competition_id    (required) — slug used for platform API calls and logging
+  platform          (optional, default: "none") — kaggle | zindi | fake | none
+  metric            (optional) — e.g. auc_roc, rmse, logloss.
+                                 Omit for open-ended tasks (app building, etc.).
+                                 If provided, direction must also be provided.
+  direction         (required when metric is set) — maximize | minimize
+  data_dir          (optional, default: "data") — path to the data folder.
                                     Resolved to an absolute path; existence is validated later
                                     by runtime components that actually read the files.
 
