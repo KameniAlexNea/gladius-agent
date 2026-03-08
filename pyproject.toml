@@ -18,6 +18,10 @@ dependencies = [
     "ollama>=0.6.1",
     "pytest>=9.0.2",
     "tox>=4.46.3",
+    "lightgbm>=4.6.0",
+    "scikit-learn>=1.7.2",
+    "pandas>=2.3.3",
+    "numpy>=2.2.6",
 ]
 
 [project.optional-dependencies]

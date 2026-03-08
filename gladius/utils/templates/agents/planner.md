@@ -7,7 +7,6 @@ description: >
   iteration.
 tools: Read, Glob, Grep, WebSearch, TodoWrite
 model: {{GLADIUS_MODEL}}
-memory: project
 maxTurns: 40
 permissionMode: plan
 ---

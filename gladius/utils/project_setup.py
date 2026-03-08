@@ -155,12 +155,16 @@ Invoke skills with the `Skill` tool — the output is returned inline, do NOT us
 | --- | --- |
 | `code-review` | **Required before reporting results** — catches leakage & metric bugs |
 | `ml-pipeline` | Writing CV / feature / submission code — patterns, baselines, metric formulas |
+| `ml-project-structure` | **Invoke first** — set up `src/` package layout before writing any solution code |
 | `adversarial-validation` | Detect train/test distribution shift; find leaking features |
 | `feature-engineering` | Systematic feature recipes, SHAP importance, feature pruning |
 | `hpo` | Bayesian hyperparameter search with Optuna (after baseline is solid) |
 | `ensembling` | OOF blending, rank averaging, stacking, hill-climbing selection |
 | `research` | Find SOTA techniques on ArXiv + Kaggle forums for this task type |
-| `skill-lookup` | Read a curated external skill (SHAP, TimesFM, Transformers, Polars…) from disk |
+| `polars`            | Fast DataFrame ops for large datasets (Arrow backend, lazy eval) |
+| `transformers`      | HuggingFace Transformers for NLP/vision competitions |
+| `pytorch-lightning` | Structured DL training loops, multi-GPU, callbacks |
+| `timesfm`           | Google TimesFM zero-shot time-series forecasting |
 | `submit-check` | Validate submission CSV format before uploading |
 | `jupyter-mcp` | When you want to work in a Jupyter notebook — starts Jupyter + MCP server |
 | `git-workflow` | After each working solution |
@@ -281,6 +285,7 @@ def setup_project_dir(
 
     if is_ml:
         _copy_skill(root, "ml-pipeline")
+        _copy_skill(root, "ml-project-structure")
         _copy_skill(root, "submit-check")
         _copy_skill(root, "jupyter-mcp")
         _copy_skill(root, "adversarial-validation")
@@ -288,6 +293,10 @@ def setup_project_dir(
         _copy_skill(root, "hpo")
         _copy_skill(root, "ensembling")
         _copy_skill(root, "research")
+        _copy_skill(root, "polars")
+        _copy_skill(root, "transformers")
+        _copy_skill(root, "pytorch-lightning")
+        _copy_skill(root, "timesfm")
         _copy_skill(root, "code-review-ml", dest_name="code-review")
         _copy_skill(root, "git-workflow-ml", dest_name="git-workflow")
     else:
@@ -296,10 +305,6 @@ def setup_project_dir(
         _copy_skill(root, "git-workflow-task", dest_name="git-workflow")
 
     _copy_skill(root, "uv-venv")
-    if is_ml:
-        sci_skills = _find_science_skills_dir(project_dir)
-        if sci_skills:
-            _write_skill_lookup(root, sci_skills)
     _write_claude_settings(root, state)
     _write_mcp_json(root, platform=platform)
     _copy_hook(root, "after_edit.sh")
@@ -308,126 +313,6 @@ def setup_project_dir(
 
 
 # ── Template helpers ──────────────────────────────────────────────────────────
-
-
-# Curated subset of claude-scientific-skills relevant to ML competitions,
-# keyed by skill directory name → one-line description for the index table.
-_SCIENCE_SKILLS_ML: dict[str, str] = {
-    "exploratory-data-analysis": "Auto-detect 200+ file formats; generate EDA report with quality metrics",
-    "shap": "All SHAP explainer types, 7 plot kinds, interaction analysis, bias/fairness",
-    "statistical-analysis": "Test selection, assumption checking, effect sizes, APA reporting",
-    "timesfm-forecasting": "Google TimesFM zero-shot time-series forecasting",
-    "transformers": "HuggingFace Transformers for NLP/vision competitions",
-    "pytorch-lightning": "Structured deep learning training loops with Lightning",
-    "scikit-learn": "Comprehensive sklearn patterns, pipelines, and model selection",
-    "polars": "Fast columnar data processing for large competition datasets",
-    "dask": "Out-of-core parallel processing when data doesn't fit in RAM",
-    "matplotlib": "Publication-quality static plots",
-    "seaborn": "Statistical visualisation with minimal code",
-    "plotly": "Interactive plots and dashboards",
-    "stable-baselines3": "Reinforcement learning baselines",
-    "pymc": "Bayesian modelling and probabilistic programming",
-    "statsmodels": "Statistical models: OLS, GLM, time-series (ARIMA/SARIMA)",
-    "umap-learn": "UMAP dimensionality reduction for exploration and features",
-    "hypothesis-generation": "Structured scientific hypothesis generation",
-    "scientific-critical-thinking": "Systematic reasoning and assumption checking",
-}
-
-
-def _find_science_skills_dir(project_dir: str) -> Path | None:
-    """
-    Locate the claude-scientific-skills/scientific-skills directory.
-
-    Checks, in order:
-    1. SCIENCE_SKILLS_DIR env var
-    2. <project_dir>/claude-scientific-skills/scientific-skills
-    3. <gladius_repo_root>/claude-scientific-skills/scientific-skills
-    """
-    env = os.environ.get("SCIENCE_SKILLS_DIR")
-    if env:
-        p = Path(env)
-        if p.is_dir():
-            return p
-
-    for base in (Path(project_dir), Path(__file__).parent.parent.parent):
-        candidate = base / "claude-scientific-skills" / "scientific-skills"
-        if candidate.is_dir():
-            return candidate
-
-    return None
-
-
-def _write_skill_lookup(root: Path, science_skills_dir: Path) -> None:
-    """
-    Write .claude/skills/skill-lookup/SKILL.md pointing to the external repo.
-
-    This skill is always overwritten so the path stays current if the repo moves.
-    """
-    path = root / ".claude" / "skills" / "skill-lookup" / "SKILL.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    rows = "\n".join(
-        f"| `{name}` | {desc} |"
-        for name, desc in _SCIENCE_SKILLS_ML.items()
-        if (science_skills_dir / name).is_dir()
-    )
-
-    path.write_text(
-        f"""\
----
-name: skill-lookup
-description: >
-  Look up a ready-made external skill from the claude-scientific-skills library.
-  Invoke before writing code that uses a specialised library (SHAP, TimesFM,
-  Transformers, PyTorch Lightning, Polars, etc.).
----
-
-## External skill library
-
-A curated skill library is available on disk at:
-
-```
-{science_skills_dir}
-```
-
-Each skill is a directory containing `SKILL.md` (and optionally `references/`
-and `scripts/`).
-
-## How to use
-
-Before writing code for a specialised library, read its skill file:
-
-```
-Read {science_skills_dir}/<skill-name>/SKILL.md
-```
-
-For deep-dive reference material also read `references/` files inside that
-directory if they exist.
-
-## Available ML-relevant skills
-
-| Skill | When to use |
-| --- | --- |
-{rows}
-
-## When to invoke skill-lookup
-
-- You are about to use a library listed above and want curated patterns/examples.
-- The local skills (`shap`, `feature-engineering`, etc.) don't cover the API
-  detail you need.
-- You are working on a time-series, NLP, or deep-learning competition and want
-  the best practises for the relevant library.
-- Before writing any Polars / Dask code for large datasets.
-
-## Keeping the library up to date
-
-```bash
-cd {science_skills_dir.parent.parent}
-git pull
-```
-""",
-        encoding="utf-8",
-    )
 
 
 def _write_agent(root: Path, name: str) -> None:

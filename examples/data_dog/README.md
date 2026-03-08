@@ -1,3 +1,11 @@
+---
+competition_id: financial-well-being-sme
+platform: zindi
+metric: f1-score
+direction: maximize
+data_dir: dataorg-financial-health-prediction-challenge
+---
+
 Can you predict the financial well-being of small businesses?
 
 Across Southern Africa, small and medium-sized enterprises (SMEs) are vital to employment, innovation, and economic growth, yet many remain financially fragile and excluded from formal financial systems. Limited access to credit, unstable cash flow, and exposure to shocks such as illness or climate events make them vulnerable. Traditional measures like revenue or profit do not capture an SME’s true financial well-being. To support SMEs more effectively, there is a need for a holistic measure that reflects resilience, savings habits, and access to finance.
