@@ -1,0 +1,3 @@
+[submodule "claude-scientific-skills"]
+	path = claude-scientific-skills
+	url = https://github.com/K-Dense-AI/claude-scientific-skills.git
