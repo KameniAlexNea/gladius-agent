@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import textwrap
+from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import (
@@ -69,12 +70,16 @@ _PLANNER_AGENT_DEF = AgentDefinition(
         "- You NEVER write or edit any files yourself.\n"
         "- You NEVER spawn Task subagents.\n"
         "- You NEVER write implementation code.\n"
-        "Use only Read, Glob, Grep, WebSearch, TodoWrite."
+        "- Skills: use Skill{} to READ a skill and understand it. Do NOT call any MCP "
+        "tool (mcp__*) — those only work for the implementer. Instead, include explicit "
+        "'invoke skill X' steps in your plan for the implementer.\n"
+        "Use only Read, Glob, Grep, WebSearch, Skill, TodoWrite."
     ),
     # TodoWrite lets the planner track its own multi-step exploration progress.
     # Task must NOT be listed — subagents cannot spawn sub-subagents.
     # Bash is intentionally excluded — plan mode is read-only research.
-    tools=["Read", "Glob", "Grep", "WebSearch", "TodoWrite"],
+    # Skill: allows reading .claude/skills/*/SKILL.md to inform the plan.
+    tools=["Read", "Glob", "Grep", "WebSearch", "Skill", "TodoWrite"],
     model=_model,
 )
 
@@ -89,7 +94,7 @@ _IMPLEMENTER_AGENT_DEF = AgentDefinition(
         "Start by reading CLAUDE.md for competition context, then the plan you received.\n"
         "Implement completely: write code, run it, fix errors, iterate until done.\n\n"
         "Before reporting results, invoke the code-review skill:\n"
-        "  Skill({\"name\": \"code-review\"})\n"
+        '  Skill({"name": "code-review"})\n'
         "The Skill tool returns its output directly in the same turn — "
         "do NOT use TaskOutput to wait for it. "
         "Fix every CRITICAL item reported before submitting.\n\n"
@@ -202,6 +207,25 @@ def _fmt_result(content: Any, max_len: int = 400) -> str:
     if len(text) > max_len:
         text = text[:max_len] + " …"
     return text
+
+
+def _validate_runtime_invocation(
+    *,
+    agent_name: str,
+    cwd: str,
+    allowed_tools: list[str],
+    max_turns: int | None,
+) -> None:
+    if not os.environ.get("GLADIUS_MODEL"):
+        raise RuntimeError(
+            "GLADIUS_MODEL is not set. Add it to your competition .env before running agents."
+        )
+    if not Path(cwd).exists():
+        raise RuntimeError(f"Agent cwd does not exist: {cwd}")
+    if not allowed_tools:
+        raise RuntimeError(f"{agent_name}: allowed_tools cannot be empty")
+    if max_turns is not None and max_turns <= 0:
+        raise RuntimeError(f"{agent_name}: max_turns must be > 0")
 
 
 # Todo status icons — used when rendering TodoWrite tool calls
@@ -334,6 +358,13 @@ async def run_agent(
     (structured_output, session_id)
     """
 
+    _validate_runtime_invocation(
+        agent_name=agent_name,
+        cwd=cwd,
+        allowed_tools=allowed_tools,
+        max_turns=max_turns,
+    )
+
     def _stderr_cb(line: str) -> None:
         print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
 
@@ -428,7 +459,9 @@ async def run_agent(
                         text = block.text.strip()
                         # Strip optional markdown code fence
                         if text.startswith("```"):
-                            text = text[text.index("\n") + 1:] if "\n" in text else text
+                            text = (
+                                text[text.index("\n") + 1 :] if "\n" in text else text
+                            )
                             if text.rstrip().endswith("```"):
                                 text = text.rstrip()[:-3].rstrip()
                         if text.startswith("{"):
@@ -487,15 +520,31 @@ async def run_agent(
     raise RuntimeError("run_agent: max retries exceeded")
 
 
-async def _approve_exit_plan_mode(
-    tool_name: str, input_data: dict, context: object
-) -> PermissionResultAllow:
-    """Auto-approve ExitPlanMode so the model doesn't get a confirmation prompt.
+# Tools the planner must never call — deny them even if the local model tries.
+_PLAN_MODE_DENIED_TOOLS = frozenset(
+    {"Write", "Edit", "MultiEdit", "Bash", "Task", "computer"}
+)
 
-    Without this callback the SDK returns "Exit plan mode?" as the tool result,
-    which confuses the model into calling ExitPlanMode a second time (wasting
-    ~10 turns before the plan is finally captured).
+
+async def _approve_exit_plan_mode(tool_name: str, input_data: dict, context: object):
+    """Block write tools in planning mode; auto-approve everything else.
+
+    In plan mode the SDK calls can_use_tool for anything that needs explicit
+    approval (write ops, ExitPlanMode).  Read-only tools (Read, Glob, Grep,
+    WebSearch) are allowed by the permission layer before this callback fires.
+
+    - Write/Edit/Bash/Task → Deny (planner is read-only)
+    - ExitPlanMode, TodoWrite, Read, … → Allow
     """
+    from claude_agent_sdk.types import PermissionResultDeny
+
+    if tool_name in _PLAN_MODE_DENIED_TOOLS:
+        return PermissionResultDeny(
+            message=(
+                f"Tool '{tool_name}' is not permitted in planning mode. "
+                "Use only Read, Glob, Grep, WebSearch, Skill, TodoWrite, or ExitPlanMode."
+            )
+        )
     return PermissionResultAllow(updated_input=input_data)
 
 
@@ -524,6 +573,13 @@ async def run_planning_agent(
         plan_text  — full markdown plan from ExitPlanMode.input["plan"]
         session_id — can be resumed for a follow-up non-plan call if needed
     """
+
+    _validate_runtime_invocation(
+        agent_name=agent_name,
+        cwd=cwd,
+        allowed_tools=allowed_tools,
+        max_turns=max_turns,
+    )
 
     def _stderr_cb(line: str) -> None:
         print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
@@ -569,6 +625,7 @@ async def run_planning_agent(
             result_msg: ResultMessage | None = None
             early_session_id: str | None = None
             captured_plan: str | None = None
+            last_text_block: str = ""
 
             if verbose:
                 resume_str = f"  resume={resume[:8]}…" if resume else ""
@@ -587,14 +644,22 @@ async def run_planning_agent(
                     _log_message(agent_name, message)
                 if isinstance(message, SystemMessage) and message.subtype == "init":
                     early_session_id = message.data.get("session_id")
-                # Capture plan from ExitPlanMode tool use block
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
+                        # Primary path: model called ExitPlanMode (Claude / plan-mode aware).
                         if (
                             isinstance(block, ToolUseBlock)
                             and block.name == "ExitPlanMode"
                         ):
                             captured_plan = block.input.get("plan", "")
+                        # Fallback: capture the last substantial text block so that
+                        # models which don't support ExitPlanMode (e.g. Ollama/Qwen)
+                        # still produce a usable plan from their final text output.
+                        elif (
+                            isinstance(block, TextBlock)
+                            and len(block.text.strip()) > 100
+                        ):
+                            last_text_block = block.text.strip()
                 if isinstance(message, ResultMessage):
                     result_msg = message
 
@@ -605,10 +670,17 @@ async def run_planning_agent(
                     f"Planning agent returned error result: {result_msg.result}"
                 )
             if not captured_plan:
-                raise RuntimeError(
-                    "Planning agent did not emit ExitPlanMode — no plan captured. "
-                    "The model may not support planning mode."
-                )
+                if last_text_block:
+                    logger.warning(
+                        f"[{agent_name}] ExitPlanMode not called — using last text "
+                        "block as plan (model may not support planning mode)."
+                    )
+                    captured_plan = last_text_block
+                else:
+                    raise RuntimeError(
+                        "Planning agent did not emit ExitPlanMode and produced no "
+                        "usable text output. The model may not support planning mode."
+                    )
 
             session_id = result_msg.session_id or early_session_id or ""
             return captured_plan, session_id

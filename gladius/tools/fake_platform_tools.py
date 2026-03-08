@@ -25,6 +25,9 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from gladius.tools._response import err as _err
+from gladius.tools._response import ok as _ok
+
 # ── Seeded fake competitors on the leaderboard ────────────────────────────────
 _FAKE_LEADERBOARD = [
     {"username": "ml_wizard", "score": 0.9512, "submissions": 12},
@@ -98,10 +101,7 @@ async def fake_submit(args: dict[str, Any]) -> dict[str, Any]:
         comment = args.get("comment", "")
 
         if not Path(file_path).exists():
-            return {
-                "content": [{"type": "text", "text": f"File not found: {file_path}"}],
-                "is_error": True,
-            }
+            return _err("file_not_found", f"File not found: {file_path}")
 
         score = _score_submission(file_path)
         history = _load_history()
@@ -124,24 +124,17 @@ async def fake_submit(args: dict[str, Any]) -> dict[str, Any]:
         )
         rank = all_scores.index(score) + 1
 
-        return {
-            "content": [
-                {
-                    "type": "text",
-                    "text": (
-                        f"Submission accepted.\n"
-                        f"Public AUC-ROC: {score:.6f}\n"
-                        f"Leaderboard rank: {rank}/{len(all_scores)}\n"
-                        f"File: {file_path}"
-                    ),
-                }
-            ]
-        }
+        return _ok(
+            (
+                f"Submission accepted.\n"
+                f"Public AUC-ROC: {score:.6f}\n"
+                f"Leaderboard rank: {rank}/{len(all_scores)}\n"
+                f"File: {file_path}"
+            ),
+            data={"score": round(score, 6), "rank": rank, "total": len(all_scores)},
+        )
     except Exception as e:
-        return {
-            "content": [{"type": "text", "text": f"Scoring error: {e}"}],
-            "is_error": True,
-        }
+        return _err("scoring_failed", f"Scoring error: {e}")
 
 
 @tool(
@@ -177,9 +170,9 @@ async def fake_leaderboard(args: dict[str, Any]) -> dict[str, Any]:
                 f"{i:>4}  {r['username']:<20}  {r['score']:>10.6f}  {r['submissions']:>11}{marker}"
             )
 
-        return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+        return _ok("\n".join(lines), data={"top_n": top_n})
     except Exception as e:
-        return {"content": [{"type": "text", "text": f"Error: {e}"}], "is_error": True}
+        return _err("leaderboard_failed", f"Error: {e}")
 
 
 @tool(
@@ -193,16 +186,16 @@ async def fake_submission_history(args: dict[str, Any]) -> dict[str, Any]:
     try:
         history = _load_history()
         if not history:
-            return {"content": [{"type": "text", "text": "No submissions yet."}]}
+            return _ok("No submissions yet.", data={"count": 0})
 
         lines = [f"{'#':>3}  {'Timestamp':<24}  {'Score':>10}  Comment"]
         for i, e in enumerate(history, 1):
             lines.append(
                 f"{i:>3}  {e['timestamp']:<24}  {e['score']:>10.6f}  {e.get('comment', '')}"
             )
-        return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+        return _ok("\n".join(lines), data={"count": len(history)})
     except Exception as e:
-        return {"content": [{"type": "text", "text": f"Error: {e}"}], "is_error": True}
+        return _err("history_failed", f"Error: {e}")
 
 
 @tool(
@@ -236,9 +229,16 @@ async def fake_status(args: dict[str, Any]) -> dict[str, Any]:
             f"Current rank: {rank_str}",
             "Remaining submissions: unlimited",
         ]
-        return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+        return _ok(
+            "\n".join(lines),
+            data={
+                "total_submissions": len(history),
+                "best_score": own_best,
+                "rank": rank_str,
+            },
+        )
     except Exception as e:
-        return {"content": [{"type": "text", "text": f"Error: {e}"}], "is_error": True}
+        return _err("status_failed", f"Error: {e}")
 
 
 # ── MCP server instance ───────────────────────────────────────────────────────

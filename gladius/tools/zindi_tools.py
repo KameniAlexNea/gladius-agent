@@ -18,6 +18,9 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from gladius.tools._response import err as _err
+from gladius.tools._response import ok as _ok
+
 
 def _get_user():
     """Authenticate and return a connected Zindian instance."""
@@ -56,15 +59,9 @@ async def zindi_submit(args: dict[str, Any]) -> dict[str, Any]:
 
         remaining = user.remaining_subimissions
         if remaining <= 0:
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "No remaining submissions today. Try again tomorrow.",
-                    }
-                ],
-                "is_error": True,
-            }
+            return _err(
+                "quota_exceeded", "No remaining submissions today. Try again tomorrow."
+            )
 
         user.submit(
             filepaths=[args["file_path"]],
@@ -72,23 +69,16 @@ async def zindi_submit(args: dict[str, Any]) -> dict[str, Any]:
         )
 
         remaining_after = user.remaining_subimissions
-        return {
-            "content": [
-                {
-                    "type": "text",
-                    "text": (
-                        f"Submission accepted.\n"
-                        f"File: {args['file_path']}\n"
-                        f"Remaining submissions today: {remaining_after}"
-                    ),
-                }
-            ]
-        }
+        return _ok(
+            (
+                f"Submission accepted.\n"
+                f"File: {args['file_path']}\n"
+                f"Remaining submissions today: {remaining_after}"
+            ),
+            data={"remaining_submissions": remaining_after},
+        )
     except Exception as e:
-        return {
-            "content": [{"type": "text", "text": f"Submission error: {e}"}],
-            "is_error": True,
-        }
+        return _err("submission_failed", f"Submission error: {e}")
 
 
 @tool(
@@ -105,10 +95,10 @@ async def zindi_leaderboard(args: dict[str, Any]) -> dict[str, Any]:
         top_n = int(args.get("top_n", 20))
         lb = user.leaderboard()
         if lb is None:
-            return {"content": [{"type": "text", "text": "Leaderboard unavailable."}]}
-        return {"content": [{"type": "text", "text": lb.head(top_n).to_string()}]}
+            return _err("leaderboard_unavailable", "Leaderboard unavailable.")
+        return _ok(lb.head(top_n).to_string(), data={"top_n": top_n})
     except Exception as e:
-        return {"content": [{"type": "text", "text": f"Error: {e}"}], "is_error": True}
+        return _err("leaderboard_failed", f"Error: {e}")
 
 
 @tool(
@@ -124,12 +114,10 @@ async def zindi_submission_history(args: dict[str, Any]) -> dict[str, Any]:
         user = _get_user()
         sb = user.submission_board()
         if sb is None:
-            return {
-                "content": [{"type": "text", "text": "No submission history found."}]
-            }
-        return {"content": [{"type": "text", "text": sb.to_string()}]}
+            return _err("history_unavailable", "No submission history found.")
+        return _ok(sb.to_string())
     except Exception as e:
-        return {"content": [{"type": "text", "text": f"Error: {e}"}], "is_error": True}
+        return _err("history_failed", f"Error: {e}")
 
 
 @tool(
@@ -147,9 +135,15 @@ async def zindi_status(args: dict[str, Any]) -> dict[str, Any]:
             f"Current rank: {user.my_rank}",
             f"Remaining submissions today: {user.remaining_subimissions}",
         ]
-        return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+        return _ok(
+            "\n".join(lines),
+            data={
+                "rank": user.my_rank,
+                "remaining_submissions": user.remaining_subimissions,
+            },
+        )
     except Exception as e:
-        return {"content": [{"type": "text", "text": f"Error: {e}"}], "is_error": True}
+        return _err("status_failed", f"Error: {e}")
 
 
 # ── MCP server instance ───────────────────────────────────────────────────────

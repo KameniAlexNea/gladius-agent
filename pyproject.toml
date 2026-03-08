@@ -8,30 +8,34 @@ version = "0.1.0"
 description = "Fully autonomous multi-agent ML competition system"
 requires-python = ">=3.10"
 dependencies = [
-    "claude-agent-sdk>=0.1.44",
-    "numpy>=1.24.0",
-    "scikit-learn>=1.4.0",
-    "scipy>=1.11.0",
+    "claude-agent-sdk==0.1.44",
     "psutil>=5.9.0",
     "kaggle>=1.6.0",
     "requests>=2.31.0",
     "python-dotenv>=1.0.0",
     "zindi>=0.0.3",
     "pyyaml>=6.0",
-    "pandas>=2.3.3",
     "ollama>=0.6.1",
     "pytest>=9.0.2",
     "tox>=4.46.3",
-    "optuna>=4.7.0",
-    "catboost>=1.2.10",
     "lightgbm>=4.6.0",
-    "xgboost>=3.2.0",
+    "scikit-learn>=1.7.2",
+    "pandas>=2.3.3",
+    "numpy>=2.2.6",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "scikit-learn>=1.4.0",
+    "scipy>=1.11.0",
+    "optuna>=4.7.0",
+    "pandas>=2.3.3",
+    "numpy>=1.24.0",
+]
+jupyter = [
+    "jupyter-mcp-server>=0.1.0",
 ]
 
 [project.scripts]
@@ -40,3 +44,6 @@ gladius = "gladius.orchestrator:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["gladius*"]
+
+[tool.setuptools.package-data]
+"gladius.utils" = ["templates/**/*"]

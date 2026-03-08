@@ -11,81 +11,22 @@ each time.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from gladius.agents._base import run_agent
+from gladius.agents.specs.summarizer_spec import (
+    SUMMARIZER_OUTPUT_SCHEMA,
+    SUMMARIZER_SYSTEM_PROMPT,
+    build_summarizer_prompt,
+)
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
-# ── System prompt ─────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """\
-You are an expert ML research analyst maintaining a living knowledge base for a
-competition-solving agent.
-
-Your task: read the existing MEMORY.md and the latest-iteration result, then
-rewrite MEMORY.md with updated, concise learnings.
-
-MEMORY.md format (strict — keep sections in this order, start directly with the # heading,
-no YAML frontmatter, no code fences, no --- separators):
-
-# Planner Memory — {competition_id}
-> Auto-updated by summarizer. Last iteration: N
-
-## Key Data Insights
-Short bullets about the dataset: shape, class balance, missing values, id/time columns,
-quirks that affect modelling.
-
-## What Works  ✅
-Bullets of confirmed improvements with approximate OOF delta and iteration number.
-Keep at most 10 entries; drop oldest when exceeding.
-
-## What Fails / Dead Ends  ❌
-Bullets of approaches that hurt score, timed out, or errored. Include the reason.
-Keep at most 10 entries.
-
-## Patterns & Hypotheses  💡
-Open hypotheses not yet tested, or correlations observed in data.
-Keep at most 8 entries; remove ones already confirmed/refuted.
-
-## Experiment Score History
-Markdown table: | iter | OOF | approach | notes |
-Keep ALL entries, newest first.
-
-## Suggested Next Directions
-Ordered list: highest-expected-gain first.  Max 5 items.
-Be specific (e.g. "Add lag features on user_id × day_of_week").
-
-Rules:
-- Be concise — every bullet should fit on one line.
-- Never invent data you haven't been given.
-- Keep cumulative history (don't delete good entries just to shorten).
-- Return the complete rewritten MEMORY.md text in `memory_content` — do NOT use
-  the Write tool; the orchestrator writes the file on your behalf.
-"""
-
-# Minimal schema — the agent writes MEMORY.md directly with the Write tool.
-OUTPUT_SCHEMA = {
-    "type": "object",
-    "required": ["summary", "memory_content"],
-    "properties": {
-        "summary": {
-            "type": "string",
-            "description": "One-sentence summary of the key learning from this iteration.",
-        },
-        "memory_content": {
-            "type": "string",
-            "description": (
-                "The complete updated MEMORY.md text (all sections, newest entries "
-                "integrated). Must start directly with '# Planner Memory' — "
-                "no YAML frontmatter, no code fences, no --- separators."
-            ),
-        },
-    },
-    "additionalProperties": False,
-}
+# Backwards-compatible aliases for existing imports/tests.
+SYSTEM_PROMPT = SUMMARIZER_SYSTEM_PROMPT
+OUTPUT_SCHEMA = SUMMARIZER_OUTPUT_SCHEMA
 
 
 async def run_summarizer(
@@ -102,57 +43,19 @@ async def run_summarizer(
         Path(project_dir) / ".claude" / "agent-memory" / "planner" / "MEMORY.md"
     )
 
-    # Recent experiments context (last 10)
-    recent = list(reversed(state.experiments[-10:]))
-
-    # Score context varies by task type
-    if state.target_metric:
-        score_ctx = (
-            f"- Metric      : {state.target_metric} ({state.metric_direction})\n"
-            f"- Best OOF so far: {f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none yet'}"
-        )
-    else:
-        score_ctx = (
-            f"- Task type   : open-ended (no numeric metric)\n"
-            f"- Best quality so far: {f'{state.best_quality_score}/100' if state.best_quality_score is not None else 'none yet'}"
-        )
-
-    prompt = f"""\
-## Summarizer Task
-
-Update the planner memory file after completing iteration {state.iteration}.
-
-### Competition context
-- Competition : {state.competition_id}
-{score_ctx}
-- Total experiments: {len(state.experiments)}
-
-### Latest experiment result
-```json
-{json.dumps(latest_experiment, indent=2)}
-```
-
-### Validation notes (from validation agent)
-{validation_notes or "_(none)_"}
-
-### Failed runs this competition
-```json
-{json.dumps(state.failed_runs[-5:], indent=2)}
-```
-
-### All experiments so far (OOF + approach)
-{json.dumps([{"iter": e.get("iteration"), "oof": e.get("oof_score"), "approach": e.get("approach", "")} for e in recent], indent=2)}
-
-### Your task
-1. Read the current MEMORY.md at `{memory_path}`.
-2. Integrate the new result — update "What Works", "What Fails", "Patterns",
-   "Experiment Score History", and "Suggested Next Directions".
-3. Return the **complete rewritten MEMORY.md content** in the `memory_content` field.
-   Do NOT write any files — the orchestrator will write MEMORY.md for you.
-4. Return a one-sentence `summary` of the key learning from this iteration.
-
-The planner reads this file at the start of every session — make it dense and actionable.
-"""
+    prompt = build_summarizer_prompt(
+        iteration=state.iteration,
+        competition_id=state.competition_id,
+        target_metric=state.target_metric,
+        metric_direction=state.metric_direction,
+        best_oof_score=state.best_oof_score,
+        best_quality_score=state.best_quality_score,
+        experiments=state.experiments,
+        failed_runs=state.failed_runs,
+        latest_experiment=latest_experiment,
+        validation_notes=validation_notes,
+        memory_path=str(memory_path),
+    )
     result, _ = await run_agent(
         agent_name="summarizer",
         prompt=prompt,
@@ -169,17 +72,18 @@ The planner reads this file at the start of every session — make it dense and 
         # Handles: ```markdown\n...\n``` or ```\n...\n``` (any language tag).
         # Loops in case of multiple/nested wrapping.
         import re
+
         stripped = memory_content.strip()
         while True:
-            cleaned = re.sub(r'^```[^\n]*\n', '', stripped)  # remove opening fence line
-            cleaned = re.sub(r'\n```\s*$', '', cleaned)       # remove closing fence line
+            cleaned = re.sub(r"^```[^\n]*\n", "", stripped)  # remove opening fence line
+            cleaned = re.sub(r"\n```\s*$", "", cleaned)  # remove closing fence line
             cleaned = cleaned.strip()
             if cleaned == stripped:
                 break  # no more fences to strip
             stripped = cleaned
         # Remove leading/trailing --- separators the LLM sometimes adds
-        stripped = re.sub(r'^---\s*\n', '', stripped)
-        stripped = re.sub(r'\n---\s*$', '', stripped).strip()
+        stripped = re.sub(r"^---\s*\n", "", stripped)
+        stripped = re.sub(r"\n---\s*$", "", stripped).strip()
         memory_content = stripped
         memory_path.parent.mkdir(parents=True, exist_ok=True)
         memory_path.write_text(memory_content, encoding="utf-8")

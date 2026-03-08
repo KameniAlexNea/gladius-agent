@@ -55,6 +55,7 @@ class CompetitionState:
     # Error tracking
     consecutive_errors: int = 0
     error_log: list = field(default_factory=list)  # {iteration, phase, error}
+    last_stop_reason: Optional[str] = None
 
     # Leaderboard score tracking
     lb_scores: list = field(default_factory=list)  # {score, timestamp, public_lb}
@@ -107,7 +108,8 @@ class StateStore:
                 consecutive_errors  INTEGER NOT NULL,
                 planner_session_id  TEXT,
                 current_plan        TEXT,       -- JSON: nested plan dict
-                last_submission_date TEXT
+                last_submission_date TEXT,
+                last_stop_reason    TEXT
             );
 
             CREATE TABLE IF NOT EXISTS experiments (
@@ -155,7 +157,8 @@ class StateStore:
                 submission_count        INTEGER NOT NULL,
                 consecutive_errors      INTEGER NOT NULL,
                 experiments_count       INTEGER NOT NULL,
-                failed_runs_count       INTEGER NOT NULL
+                failed_runs_count       INTEGER NOT NULL,
+                stop_reason             TEXT
             );
         """
         )
@@ -168,6 +171,8 @@ class StateStore:
             ("current_state", "best_quality_score", "REAL"),
             ("experiments", "quality_score", "REAL"),
             ("state_history", "best_quality_score", "REAL"),
+            ("current_state", "last_stop_reason", "TEXT"),
+            ("state_history", "stop_reason", "TEXT"),
         ]:
             try:
                 self.conn.execute(f"SELECT {_col} FROM {_tbl} LIMIT 1")
@@ -233,8 +238,8 @@ class StateStore:
                     (id, iteration, phase, best_oof_score, best_submission_score,
                      best_quality_score, best_submission_path, submission_count,
                      consecutive_errors, planner_session_id, current_plan,
-                     last_submission_date)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     last_submission_date, last_stop_reason)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     state.iteration,
@@ -248,6 +253,7 @@ class StateStore:
                     state.planner_session_id,
                     json.dumps(state.current_plan) if state.current_plan else None,
                     state.last_submission_date,
+                    state.last_stop_reason,
                 ),
             )
 
@@ -334,8 +340,9 @@ class StateStore:
                 INSERT INTO state_history
                     (iteration, phase, best_oof_score, best_submission_score,
                      best_quality_score, best_submission_path, submission_count,
-                     consecutive_errors, experiments_count, failed_runs_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     consecutive_errors, experiments_count, failed_runs_count,
+                     stop_reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     state.iteration,
@@ -348,6 +355,7 @@ class StateStore:
                     state.consecutive_errors,
                     len(state.experiments),
                     len(state.failed_runs),
+                    state.last_stop_reason,
                 ),
             )
 
@@ -419,6 +427,7 @@ class StateStore:
                 json.loads(curr["current_plan"]) if curr["current_plan"] else None
             ),
             last_submission_date=curr["last_submission_date"],
+            last_stop_reason=curr["last_stop_reason"],
             experiments=experiments,
             failed_runs=failed_runs,
             error_log=error_log,

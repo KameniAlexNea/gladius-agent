@@ -11,6 +11,9 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from gladius.tools._response import err as _err
+from gladius.tools._response import ok as _ok
+
 
 @tool(
     "kaggle_submit",
@@ -34,7 +37,9 @@ async def kaggle_submit(args: dict[str, Any]) -> dict[str, Any]:
         text=True,
     )
     output = (result.stdout + result.stderr).strip()
-    return {"content": [{"type": "text", "text": output}]}
+    if result.returncode != 0:
+        return _err("submission_failed", output or "Kaggle submission failed")
+    return _ok(output or "Kaggle submission accepted")
 
 
 @tool(
@@ -56,9 +61,14 @@ async def kaggle_leaderboard(args: dict[str, Any]) -> dict[str, Any]:
         capture_output=True,
         text=True,
     )
+    if result.returncode != 0:
+        return _err(
+            "leaderboard_unavailable",
+            (result.stderr or result.stdout).strip() or "Failed to fetch leaderboard",
+        )
     top_n = args.get("top_n", 20)
     lines = result.stdout.strip().split("\n")[: top_n + 1]  # +1 for header
-    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+    return _ok("\n".join(lines), data={"top_n": top_n})
 
 
 @tool(
@@ -79,7 +89,13 @@ async def kaggle_submission_history(args: dict[str, Any]) -> dict[str, Any]:
         capture_output=True,
         text=True,
     )
-    return {"content": [{"type": "text", "text": result.stdout.strip()}]}
+    if result.returncode != 0:
+        return _err(
+            "history_unavailable",
+            (result.stderr or result.stdout).strip()
+            or "Failed to fetch submission history",
+        )
+    return _ok(result.stdout.strip())
 
 
 # ── MCP server instance ───────────────────────────────────────────────────────
