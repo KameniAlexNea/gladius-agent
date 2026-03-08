@@ -302,6 +302,7 @@ def setup_project_dir(
 
     _write_agent(root, "planner")
     _write_agent(root, "implementer")
+    _write_subagents(root)
 
     # Copy all 170+ upstream scientific skills first (idempotent).
     _copy_all_scientific_skills(root)
@@ -341,6 +342,25 @@ def _write_agent(root: Path, name: str) -> None:
         os.environ.get("GLADIUS_MODEL", "GLADIUS_MODEL_NOT_SET"),
     )
     path.write_text(content, encoding="utf-8")
+
+
+def _write_subagents(root: Path) -> None:
+    """Copy supplementary subagent templates into .claude/agents/ (idempotent).
+
+    Handles all *.md files in templates/agents/ except planner and implementer,
+    which are managed by _write_agent() with {{GLADIUS_MODEL}} substitution.
+    New files are only written once — existing files are preserved so teams can
+    customise them without being overwritten on every run.
+    """
+    agents_dir = root / ".claude" / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    managed = {"planner", "implementer"}
+    for src in sorted((_TEMPLATES / "agents").glob("*.md")):
+        if src.stem in managed:
+            continue
+        dest = agents_dir / src.name
+        if not dest.exists():
+            shutil.copy(src, dest)
 
 
 def _copy_all_scientific_skills(root: Path) -> None:

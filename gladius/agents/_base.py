@@ -86,30 +86,41 @@ _PLANNER_AGENT_DEF = AgentDefinition(
 
 _IMPLEMENTER_AGENT_DEF = AgentDefinition(
     description=(
-        "Expert ML engineer. Executes a given plan end-to-end: writes code, runs it, "
-        "debugs errors, measures the competition metric, and reports results. "
-        "Always gets fresh context — does not retain state between invocations."
+        "ML experiment coordinator. Orchestrates specialized subagents "
+        "(ml-scaffolder, ml-developer, ml-scientist, ml-evaluator, code-reviewer, "
+        "submission-builder) to run a complete experiment. Routes between phases by "
+        "reading EXPERIMENT_STATE.json — never by parsing subagent messages."
     ),
     prompt=(
-        "You are an expert ML engineer executing a competition experiment.\n\n"
-        "Start by reading CLAUDE.md for competition context, then the plan you received.\n"
-        "Implement completely: write code, run it, fix errors, iterate until done.\n\n"
-        "Before reporting results, invoke the code-review skill:\n"
-        '  Skill({"name": "code-review"})\n'
-        "The Skill tool returns its output directly in the same turn — "
-        "do NOT use TaskOutput to wait for it. "
-        "Fix every CRITICAL item reported before submitting.\n\n"
+        "You are the ML experiment coordinator.\n\n"
+        "Your job: run a complete experiment by coordinating specialized subagents.\n"
+        "You do NOT write code or run commands directly.\n\n"
+        "Start every session:\n"
+        "1. Read CLAUDE.md for competition context.\n"
+        "2. Read the plan provided in your task description.\n"
+        "3. Initialise .claude/EXPERIMENT_STATE.json if it doesn't exist (write `{}`).\n\n"
+        "Artifact protocol: after every subagent completes, READ\n"
+        ".claude/EXPERIMENT_STATE.json to determine the next phase.\n"
+        "Do NOT parse subagent conversation text to make routing decisions.\n\n"
+        "Routing: SCAFFOLD → DEVELOP → EVALUATE → REVIEW → (loop or SUBMIT).\n"
+        "Execution issues after REVIEW → re-spawn ml-developer.\n"
+        "Logical ML bugs after REVIEW → ml-scientist → DEVELOP → EVALUATE → REVIEW.\n"
+        "No CRITICAL issues → SUBMIT.\n\n"
         "STRICT RULES:\n"
-        "- NEVER modify or overwrite CLAUDE.md — it is managed by the orchestrator.\n"
-        "- NEVER spawn Task subagents.\n"
-        "- Once you have reported results via StructuredOutput, stop immediately. "
-        "Do NOT run any further tool calls after calling StructuredOutput.\n"
-        "Report: status, oof_score, quality_score, solution_files, submission_file, notes."
+        "- NEVER modify CLAUDE.md.\n"
+        "- Only write to .claude/EXPERIMENT_STATE.json — no other files.\n"
+        "- Once you have reported results via StructuredOutput, stop immediately."
     ),
-    # TodoWrite lets the implementer track steps (write code, run, fix, measure, submit).
-    # Task must NOT be listed here — subagents cannot spawn sub-subagents.
-    # Skill lets the implementer invoke code-review, task-review, ml-pipeline, etc.
-    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite", "Skill"],
+    # Agent() allows spawning the named subagents only — no unbounded delegation.
+    # Read + Write (state file only) + Glob + TodoWrite are the coordinator's tools.
+    # No Bash, Edit, Grep, or Skill — those belong to the worker subagents.
+    tools=[
+        "Agent(ml-scaffolder,ml-developer,ml-scientist,ml-evaluator,code-reviewer,submission-builder)",
+        "Read",
+        "Write",
+        "Glob",
+        "TodoWrite",
+    ],
     model=_model,
 )
 
