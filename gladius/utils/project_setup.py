@@ -160,22 +160,20 @@ Invoke skills with the `Skill` tool — the output is returned inline, do NOT us
 
 | Skill name | When to invoke |
 | --- | --- |
-| `code-review` | **Required before reporting results** — catches leakage & metric bugs |
-| `ml-pipeline` | Writing CV / feature / submission code — patterns, baselines, metric formulas |
-| `ml-project-structure` | **Invoke first** — set up `src/` package layout before writing any solution code |
+| `ml-setup` | **Invoke first** — project layout (`src/`) + CV patterns, baselines, metric formulas |
+| `code-review` | **Required before reporting results** — catches leakage, metric errors, submission bugs |
 | `adversarial-validation` | Detect train/test distribution shift; find leaking features |
 | `feature-engineering` | Systematic feature recipes, SHAP importance, feature pruning |
 | `hpo` | Bayesian hyperparameter search with Optuna (after baseline is solid) |
 | `ensembling` | OOF blending, rank averaging, stacking, hill-climbing selection |
-| `research` | Find SOTA techniques on ArXiv + Kaggle forums for this task type |
 | `submit-check` | Validate submission CSV format before uploading |
 | `jupyter-mcp` | When you want to work in a Jupyter notebook — starts Jupyter + MCP server |
 | `git-workflow` | After each working solution |
 | `uv-venv` | Installing packages and running scripts |
 
 > 170+ additional scientific & ML library skills are also available (polars, transformers,
-> pytorch-lightning, timesfm, shap, scikit-learn, pymc, and many more).
-> Run `ls .claude/skills/` to see the full list.
+> pytorch-lightning, timesfm, shap, scikit-learn, pymc, research-lookup, perplexity-search,
+> parallel-web, and many more). Run `ls .claude/skills/` to see the full list.
 """
     else:
         best_quality = (
@@ -209,8 +207,7 @@ Invoke skills with the `Skill` tool — the output is returned inline, do NOT us
 
 | Skill name | When to invoke |
 | --- | --- |
-| `code-review` | **Required before reporting results** — catches crashes & missing features |
-| `task-review` | **Required before reporting results** — quality self-assessment checklist |
+| `code-review` | **Required before reporting results** — checks correctness, completeness, packaging, and assigns quality score 0–100 |
 | `git-workflow` | After each working iteration |
 | `uv-venv` | Installing packages and running scripts |
 """
@@ -294,21 +291,18 @@ def setup_project_dir(
     _copy_all_scientific_skills(root)
 
     if is_ml:
-        _copy_skill(root, "ml-pipeline")
-        _copy_skill(root, "ml-project-structure")
+        _copy_skill(root, "ml-setup")
         _copy_skill(root, "submit-check")
         _copy_skill(root, "jupyter-mcp")
         _copy_skill(root, "adversarial-validation")
         _copy_skill(root, "feature-engineering")
         _copy_skill(root, "hpo")
         _copy_skill(root, "ensembling")
-        _copy_skill(root, "research")
-        _copy_skill(root, "code-review-ml", dest_name="code-review")
-        _copy_skill(root, "git-workflow-ml", dest_name="git-workflow")
+        _copy_skill(root, "code-review")
     else:
-        _copy_skill(root, "task-review")
-        _copy_skill(root, "code-review-task", dest_name="code-review")
-        _copy_skill(root, "git-workflow-task", dest_name="git-workflow")
+        _copy_skill(root, "code-review")
+
+    _copy_skill(root, "git-workflow")
 
     _copy_skill(root, "uv-venv")
     _write_claude_settings(root, state)

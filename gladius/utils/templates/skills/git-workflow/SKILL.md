@@ -3,21 +3,30 @@ name: git-workflow
 description: Commit every working iteration with a descriptive message
 ---
 
-After implementing a solution that runs without errors and produces an OOF score,
-stage and commit it locally:
+After implementing a solution or deliverable that runs end-to-end without errors,
+stage and commit it locally.
+
+## ML competition
 
 ```bash
 git add -A
 git commit -m "iter-{N}: {approach_summary} — OOF {metric}={score:.6f}"
 ```
 
-Guidelines:
+## Open-ended task
+
+```bash
+git add -A
+git commit -m "iter-{N}: {change_summary} — quality {score}/100"
+```
+
+## Guidelines
+
 - Commit only after the deliverable runs end-to-end without errors.
 - Use `git add -A` to stage everything (source files, artifacts, run scripts).
-- Message format: `iter-{N}: <one-sentence approach> — OOF {metric}={score:.6f}`
 - Never force-push. Never rebase during a run.
-- If a run fails, do NOT commit. Just proceed to the next iteration.
-- Check `git status` before committing to avoid committing unintended files.
+- If a run fails, do NOT commit — proceed to the next iteration.
+- Check `git status` before committing to avoid staging unintended files.
 - `.gladius/` and `data/` should already be in `.gitignore` — verify if unsure.
 
-Tip: use `git log --oneline -10` to review recent iteration history.
+Tip: `git log --oneline -10` to review recent iteration history.
