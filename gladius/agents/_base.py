@@ -12,8 +12,8 @@ import asyncio
 import json
 import logging
 import os
-from pathlib import Path
 import textwrap
+from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import (
@@ -516,25 +516,32 @@ async def run_agent(
     raise RuntimeError("run_agent: max retries exceeded")
 
 
-async def _approve_exit_plan_mode(
-    tool_name: str, input_data: dict, context: object
-):
-    """Auto-approve ExitPlanMode; deny everything else in plan mode.
+# Tools the planner must never call — deny them even if the local model tries.
+_PLAN_MODE_DENIED_TOOLS = frozenset(
+    {"Write", "Edit", "MultiEdit", "Bash", "Task", "computer"}
+)
 
-    Without this, the SDK returns "Exit plan mode?" as the tool result which
-    confuses the model. Denying non-read-only tools prevents the planner from
-    calling Bash/Write/Task even when the local model tries to.
+
+async def _approve_exit_plan_mode(tool_name: str, input_data: dict, context: object):
+    """Block write tools in planning mode; auto-approve everything else.
+
+    In plan mode the SDK calls can_use_tool for anything that needs explicit
+    approval (write ops, ExitPlanMode).  Read-only tools (Read, Glob, Grep,
+    WebSearch) are allowed by the permission layer before this callback fires.
+
+    - Write/Edit/Bash/Task → Deny (planner is read-only)
+    - ExitPlanMode, TodoWrite, Read, … → Allow
     """
     from claude_agent_sdk.types import PermissionResultDeny
 
-    if tool_name == "ExitPlanMode":
-        return PermissionResultAllow(updated_input=input_data)
-    return PermissionResultDeny(
-        message=(
-            f"Tool '{tool_name}' is not permitted in planning mode. "
-            "Use only Read, Glob, Grep, WebSearch, TodoWrite, or ExitPlanMode."
+    if tool_name in _PLAN_MODE_DENIED_TOOLS:
+        return PermissionResultDeny(
+            message=(
+                f"Tool '{tool_name}' is not permitted in planning mode. "
+                "Use only Read, Glob, Grep, WebSearch, TodoWrite, or ExitPlanMode."
+            )
         )
-    )
+    return PermissionResultAllow(updated_input=input_data)
 
 
 async def run_planning_agent(

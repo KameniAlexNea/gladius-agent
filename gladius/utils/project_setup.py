@@ -327,7 +327,9 @@ def _write_agent(root: Path, name: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _copy_skill(root: Path, template_name: str, *, dest_name: str | None = None) -> None:
+def _copy_skill(
+    root: Path, template_name: str, *, dest_name: str | None = None
+) -> None:
     """Copy a skill template into the competition's .claude/skills/ tree (idempotent)."""
     skill_name = dest_name or template_name
     path = root / ".claude" / "skills" / skill_name / "SKILL.md"

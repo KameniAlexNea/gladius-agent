@@ -247,7 +247,11 @@ async def fake_status(args: dict[str, Any]) -> dict[str, Any]:
         ]
         return _ok(
             "\n".join(lines),
-            data={"total_submissions": len(history), "best_score": own_best, "rank": rank_str},
+            data={
+                "total_submissions": len(history),
+                "best_score": own_best,
+                "rank": rank_str,
+            },
         )
     except Exception as e:
         return _err("status_failed", f"Error: {e}")

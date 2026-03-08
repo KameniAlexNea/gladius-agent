@@ -405,7 +405,9 @@ def test_submission_score_updates_lb_tracking(monkeypatch, tmp_path):
     assert state.lb_scores[0]["score"] == 0.8312
 
 
-def test_personal_production_guardrail_stops_on_agent_call_budget(monkeypatch, tmp_path):
+def test_personal_production_guardrail_stops_on_agent_call_budget(
+    monkeypatch, tmp_path
+):
     monkeypatch.setenv("GLADIUS_MODEL", "test-model")
 
     competition_dir = tmp_path / "competition"

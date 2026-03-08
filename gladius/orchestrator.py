@@ -426,7 +426,10 @@ async def run_competition(
                 return False
             return True
 
-        if max_failed_runs_total is not None and len(state.failed_runs) >= max_failed_runs_total:
+        if (
+            max_failed_runs_total is not None
+            and len(state.failed_runs) >= max_failed_runs_total
+        ):
             _halt_with_reason(
                 state,
                 phase="guardrail",
@@ -486,7 +489,9 @@ async def run_competition(
                 )
                 if n_parallel > 1 and len(alt_plans) > 1:
                     plans_to_run = alt_plans[:n_parallel]
-                    if not _consume_agent_calls("parallel implementers", len(plans_to_run)):
+                    if not _consume_agent_calls(
+                        "parallel implementers", len(plans_to_run)
+                    ):
                         continue
                     logger.info(f"Running {len(plans_to_run)} parallel implementers")
                     results = await asyncio.gather(
@@ -656,7 +661,9 @@ async def run_competition(
             elif state.phase == "validation":
                 latest = state.experiments[-1]
                 oof_score = latest.get("oof_score")  # None for open-ended tasks
-                quality_score = latest.get("quality_score", 0) or 0  # implementer self-score
+                quality_score = (
+                    latest.get("quality_score", 0) or 0
+                )  # implementer self-score
                 submission_file = latest["submission_file"]
 
                 # Reset daily submission counter when the calendar date rolls over.
@@ -714,7 +721,7 @@ async def run_competition(
                 # For ML tasks: compare oof_score against best_oof_score.
                 # For open tasks: compare quality_score against best_quality_score.
                 primary_score = (
-                    (hybrid_quality_score if state.target_metric is None else oof_score)
+                    hybrid_quality_score if state.target_metric is None else oof_score
                 )
                 best_primary = (
                     state.best_quality_score

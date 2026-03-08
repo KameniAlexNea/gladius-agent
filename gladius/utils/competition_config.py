@@ -97,7 +97,7 @@ def load_competition_config(competition_dir: str) -> dict:
     cfg["direction"] = cfg.get("direction") or None
 
     # Resolve data_dir relative to competition_dir
-    data_dir_explicit = "data_dir" in cfg  # True only when user set it in frontmatter
+    # data_dir_explicit = "data_dir" in cfg  # True only when user set it in frontmatter
     p = Path(cfg.get("data_dir") or "data")
     if not p.is_absolute():
         p = Path(competition_dir) / p
