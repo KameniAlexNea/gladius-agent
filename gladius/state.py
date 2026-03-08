@@ -160,6 +160,33 @@ class StateStore:
                 failed_runs_count       INTEGER NOT NULL,
                 stop_reason             TEXT
             );
+
+            -- Per-agent-call stats: timing, turns, cost, errors.
+            CREATE TABLE IF NOT EXISTS agent_runs (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                iteration       INTEGER NOT NULL,
+                phase           TEXT NOT NULL,
+                agent_name      TEXT NOT NULL,
+                started_at      TEXT,               -- ISO-8601 UTC timestamp
+                duration_ms     INTEGER,            -- wall-clock ms in orchestrator
+                num_turns       INTEGER,            -- SDK-reported turns (when available)
+                cost_usd        REAL,               -- SDK-reported cost (when available)
+                session_id      TEXT,
+                is_error        INTEGER NOT NULL DEFAULT 0,
+                notes           TEXT                -- e.g. "resumed", "json_fallback"
+            );
+
+            -- Code file evolution: one row per (iteration, file path).
+            -- content_hash lets you detect changes across iterations cheaply.
+            CREATE TABLE IF NOT EXISTS code_snapshots (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                iteration       INTEGER NOT NULL,
+                file_path       TEXT NOT NULL,
+                content_hash    TEXT NOT NULL,      -- sha256 hex
+                size_bytes      INTEGER NOT NULL,
+                saved_at        TEXT DEFAULT (datetime('now')),
+                UNIQUE(iteration, file_path)
+            );
         """
         )
         self.conn.commit()
@@ -358,6 +385,94 @@ class StateStore:
                     state.last_stop_reason,
                 ),
             )
+
+    # ── Agent run stats ───────────────────────────────────────────────────────
+
+    def record_agent_run(
+        self,
+        *,
+        iteration: int,
+        phase: str,
+        agent_name: str,
+        started_at: str,
+        duration_ms: int,
+        is_error: bool = False,
+        num_turns: int | None = None,
+        cost_usd: float | None = None,
+        session_id: str | None = None,
+        notes: str | None = None,
+    ) -> None:
+        """Append one row to agent_runs (non-transactional, best-effort)."""
+        try:
+            with self.conn:
+                self.conn.execute(
+                    """
+                    INSERT INTO agent_runs
+                        (iteration, phase, agent_name, started_at, duration_ms,
+                         num_turns, cost_usd, session_id, is_error, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        iteration,
+                        phase,
+                        agent_name,
+                        started_at,
+                        duration_ms,
+                        num_turns,
+                        cost_usd,
+                        session_id,
+                        1 if is_error else 0,
+                        notes,
+                    ),
+                )
+        except Exception:
+            pass  # stats are best-effort; never crash the main loop
+
+    # ── Code snapshots ────────────────────────────────────────────────────────
+
+    def record_code_snapshots(
+        self,
+        iteration: int,
+        file_paths: list[str],
+        project_dir: str,
+    ) -> None:
+        """Hash each solution file and insert an (iteration, path, hash) row.
+
+        UNIQUE(iteration, file_path) prevents duplicates on re-save.
+        Missing or unreadable files are silently skipped.
+        """
+        import hashlib
+        from pathlib import Path
+
+        rows: list[tuple] = []
+        for fp in file_paths:
+            p = Path(fp) if Path(fp).is_absolute() else Path(project_dir) / fp
+            try:
+                data = p.read_bytes()
+                rows.append(
+                    (
+                        iteration,
+                        str(fp),
+                        hashlib.sha256(data).hexdigest(),
+                        len(data),
+                    )
+                )
+            except OSError:
+                pass
+
+        if rows:
+            try:
+                with self.conn:
+                    self.conn.executemany(
+                        """
+                        INSERT OR IGNORE INTO code_snapshots
+                            (iteration, file_path, content_hash, size_bytes)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        rows,
+                    )
+            except Exception:
+                pass  # best-effort
 
     # ── Load ──────────────────────────────────────────────────────────────────
 

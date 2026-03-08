@@ -36,6 +36,7 @@ from claude_agent_sdk.types import (
     ToolUseBlock,
     UserMessage,
 )
+from llm_output_parser import parse_json as _parse_json
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,8 @@ _IMPLEMENTER_AGENT_DEF = AgentDefinition(
         "STRICT RULES:\n"
         "- NEVER modify or overwrite CLAUDE.md — it is managed by the orchestrator.\n"
         "- NEVER spawn Task subagents.\n"
+        "- Once you have reported results via StructuredOutput, stop immediately. "
+        "Do NOT run any further tool calls after calling StructuredOutput.\n"
         "Report: status, oof_score, quality_score, solution_files, submission_file, notes."
     ),
     # TodoWrite lets the implementer track steps (write code, run, fix, measure, submit).
@@ -445,8 +448,6 @@ async def run_agent(
 
             if result_msg is None:
                 raise RuntimeError("No ResultMessage received from agent")
-            if result_msg.is_error:
-                raise RuntimeError(f"Agent returned error result: {result_msg.result}")
 
             structured = result_msg.structured_output
 
@@ -454,26 +455,31 @@ async def run_agent(
             # required JSON as plain text instead of calling the StructuredOutput
             # tool. Extract it from the last assistant message in that case.
             if structured is None and last_assistant_msg is not None:
-                for block in last_assistant_msg.content:
-                    if isinstance(block, TextBlock):
-                        text = block.text.strip()
-                        # Strip optional markdown code fence
-                        if text.startswith("```"):
-                            text = (
-                                text[text.index("\n") + 1 :] if "\n" in text else text
-                            )
-                            if text.rstrip().endswith("```"):
-                                text = text.rstrip()[:-3].rstrip()
-                        if text.startswith("{"):
-                            try:
-                                structured = json.loads(text)
-                                logger.warning(
-                                    f"[{agent_name}] structured_output was None — "
-                                    "extracted JSON from last assistant text block (fallback)"
-                                )
-                                break
-                            except json.JSONDecodeError:
-                                pass
+                _full_text = "\n".join(
+                    block.text.strip()
+                    for block in last_assistant_msg.content
+                    if isinstance(block, TextBlock) and block.text.strip()
+                )
+                if _full_text:
+                    try:
+                        structured = _parse_json(_full_text)
+                        logger.warning(
+                            f"[{agent_name}] structured_output was None — "
+                            "extracted JSON from assistant text (llm_output_parser fallback)"
+                        )
+                    except Exception:
+                        pass
+
+            # Models like Qwen may call StructuredOutput but then keep running tool
+            # calls until max_turns is hit, producing is_error=True on ResultMessage.
+            # Prefer the captured structured_output over the error in that case.
+            if result_msg.is_error and structured is None:
+                raise RuntimeError(f"Agent returned error result: {result_msg.result}")
+            if result_msg.is_error and structured is not None:
+                logger.warning(
+                    f"[{agent_name}] ResultMessage is_error=True but structured_output "
+                    "was captured — using it (model ran extra turns after StructuredOutput)."
+                )
 
             if structured is None:
                 raise RuntimeError(

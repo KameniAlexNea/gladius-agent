@@ -25,6 +25,8 @@ import os
 import shutil
 import sys
 import time
+from datetime import datetime as _dt
+from datetime import timezone as _tz
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -497,12 +499,22 @@ async def run_competition(
             if state.phase == "planning":
                 if not _consume_agent_call("planner"):
                     continue
+                _t0 = time.perf_counter()
+                _started_at = _dt.now(_tz.utc).isoformat()
                 plan, session_id = await run_planner(
                     state,
                     data_dir,
                     project_dir,
                     platform=platform,
                     n_parallel=n_parallel,
+                )
+                store.record_agent_run(
+                    iteration=state.iteration,
+                    phase="planning",
+                    agent_name="planner",
+                    started_at=_started_at,
+                    duration_ms=int((time.perf_counter() - _t0) * 1000),
+                    session_id=session_id,
                 )
                 state.current_plan = plan
                 state.planner_session_id = session_id
@@ -533,10 +545,13 @@ async def run_competition(
                     ):
                         continue
                     logger.info(f"Running {len(plans_to_run)} parallel implementers")
+                    _t0_impl = time.perf_counter()
+                    _started_impl = _dt.now(_tz.utc).isoformat()
                     results = await asyncio.gather(
                         *[run_implementer(p, state, project_dir) for p in plans_to_run],
                         return_exceptions=True,
                     )
+                    _impl_dur_ms = int((time.perf_counter() - _t0_impl) * 1000)
                     # Flatten: keep successful results, log failures
                     successful: list[dict] = []
                     for i, r in enumerate(results):
@@ -607,7 +622,15 @@ async def run_competition(
                     )
                     # Record all successful runs as experiments — result last so
                     # experiments[-1] always points to the best.
-                    for r in successful:
+                    for i_s, r in enumerate(successful):
+                        store.record_agent_run(
+                            iteration=state.iteration,
+                            phase="implementing",
+                            agent_name="implementer",
+                            started_at=_started_impl,
+                            duration_ms=_impl_dur_ms,
+                            notes=f"parallel {i_s + 1}/{len(successful)}",
+                        )
                         if r is not result:
                             state.experiments.append(
                                 {
@@ -620,6 +643,11 @@ async def run_competition(
                                     "approach": "",
                                 }
                             )
+                            store.record_code_snapshots(
+                                state.iteration,
+                                r.get("solution_files", []),
+                                project_dir,
+                            )
                     state.experiments.append(
                         {
                             "iteration": state.iteration,
@@ -631,12 +659,30 @@ async def run_competition(
                             "approach": "",
                         }
                     )
+                    store.record_code_snapshots(
+                        state.iteration, result.get("solution_files", []), project_dir
+                    )
                 else:
                     # ── Sequential single implementer ─────────────────────
                     if not _consume_agent_call("implementer"):
                         continue
+                    _t0_impl = time.perf_counter()
+                    _started_impl = _dt.now(_tz.utc).isoformat()
                     result = await run_implementer(
                         state.current_plan, state, project_dir
+                    )
+                    store.record_agent_run(
+                        iteration=state.iteration,
+                        phase="implementing",
+                        agent_name="implementer",
+                        started_at=_started_impl,
+                        duration_ms=int((time.perf_counter() - _t0_impl) * 1000),
+                        is_error=result.get("status") != "success",
+                        notes=(
+                            result.get("status")
+                            if result.get("status") != "success"
+                            else None
+                        ),
                     )
 
                     if result["status"] != "success":
@@ -676,6 +722,9 @@ async def run_competition(
                                 else ""
                             ),
                         }
+                    )
+                    store.record_code_snapshots(
+                        state.iteration, result.get("solution_files", []), project_dir
                     )
 
                 # ── Common post-implementation logic (parallel + sequential) ─
@@ -731,6 +780,8 @@ async def run_competition(
                 else:
                     if not _consume_agent_call("validation"):
                         continue
+                    _t0_val = time.perf_counter()
+                    _started_val = _dt.now(_tz.utc).isoformat()
                     try:
                         validation = await run_validation_agent(
                             solution_path=", ".join(latest.get("solution_files", [])),
@@ -741,7 +792,23 @@ async def run_competition(
                             project_dir=project_dir,
                             platform=platform,
                         )
+                        store.record_agent_run(
+                            iteration=state.iteration,
+                            phase="validation",
+                            agent_name="validation",
+                            started_at=_started_val,
+                            duration_ms=int((time.perf_counter() - _t0_val) * 1000),
+                        )
                     except Exception as exc:
+                        store.record_agent_run(
+                            iteration=state.iteration,
+                            phase="validation",
+                            agent_name="validation",
+                            started_at=_started_val,
+                            duration_ms=int((time.perf_counter() - _t0_val) * 1000),
+                            is_error=True,
+                            notes=str(exc)[:200],
+                        )
                         logger.warning(
                             f"Validation agent failed: {exc} "
                             f"— using deterministic fallback, summarizer will still run"
@@ -865,11 +932,20 @@ async def run_competition(
                 try:
                     if not _consume_agent_call("summarizer"):
                         continue
+                    _t0_sum = time.perf_counter()
+                    _started_sum = _dt.now(_tz.utc).isoformat()
                     summary = await run_summarizer(
                         state,
                         project_dir,
                         latest_experiment=latest,
                         validation_notes=validation.get("reasoning", ""),
+                    )
+                    store.record_agent_run(
+                        iteration=state.iteration,
+                        phase="summarizing",
+                        agent_name="summarizer",
+                        started_at=_started_sum,
+                        duration_ms=int((time.perf_counter() - _t0_sum) * 1000),
                     )
                     if summary:
                         logger.info(f"Summarizer: {summary}")
