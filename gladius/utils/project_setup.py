@@ -18,22 +18,32 @@ strings. Modify them there; this module is logic only.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
 _TEMPLATES = Path(__file__).parent / "templates"
-# Path to the claude-scientific-skills submodule (173+ upstream skills).
-# Gracefully absent when running from a bare pip install (wheel) or when the
-# submodule hasn't been initialised yet — setup_project_dir degrades without it.
-_SCIENTIFIC_SKILLS = (
-    Path(__file__).parent.parent.parent / "claude-scientific-skills" / "scientific-skills"
-)
+
+# Path to the claude-scientific-skills directory (173+ upstream skills).
+# Resolution order:
+#   1. GLADIUS_SCIENTIFIC_SKILLS_PATH env var (absolute or relative path)
+#   2. Default: claude-scientific-skills/scientific-skills/ submodule next to this repo
+# Set GLADIUS_SCIENTIFIC_SKILLS_PATH in your .env to override.
+def _resolve_scientific_skills_path() -> Path:
+    env_val = os.environ.get("GLADIUS_SCIENTIFIC_SKILLS_PATH", "").strip()
+    if env_val:
+        return Path(env_val).expanduser().resolve()
+    return Path(__file__).parent.parent.parent / "claude-scientific-skills" / "scientific-skills"
+
+_SCIENTIFIC_SKILLS = _resolve_scientific_skills_path()
 
 
 # ── CLAUDE.md ─────────────────────────────────────────────────────────────────
@@ -330,10 +340,20 @@ def _write_agent(root: Path, name: str) -> None:
 def _copy_all_scientific_skills(root: Path) -> None:
     """Copy every skill from the claude-scientific-skills submodule (idempotent).
 
-    Silently skips if the submodule hasn't been initialised or isn't present
-    (e.g. plain pip install from a wheel).
+    Emits a warning and skips if the submodule hasn't been initialised or if
+    GLADIUS_SCIENTIFIC_SKILLS_PATH points to a non-existent directory.
     """
     if not _SCIENTIFIC_SKILLS.is_dir():
+        logger.warning(
+            "claude-scientific-skills not found at '%s' — 170+ scientific skills will "
+            "be skipped.\n"
+            "To fix, run one of:\n"
+            "  git submodule update --init          # if you cloned this repo\n"
+            "  git clone https://github.com/K-Dense-AI/claude-scientific-skills.git\n"
+            "Or set GLADIUS_SCIENTIFIC_SKILLS_PATH=/path/to/scientific-skills in your "
+            ".env file.",
+            _SCIENTIFIC_SKILLS,
+        )
         return
     skills_dest = root / ".claude" / "skills"
     skills_dest.mkdir(parents=True, exist_ok=True)
