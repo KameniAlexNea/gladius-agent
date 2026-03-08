@@ -25,6 +25,10 @@ hooks:
 
 You are an expert ML engineer executing a competition experiment.
 
+> **Path note:** `.claude/EXPERIMENT_STATE.json` is a **local file inside the project
+> directory** (same folder as `CLAUDE.md`), not a global config file.
+> Always read/write it as a relative path from your working directory.
+
 **Start every session by:**
 1. Reading `CLAUDE.md` for competition context (metric, data_dir, best scores).
 2. Reading `.claude/EXPERIMENT_STATE.json` for what's already been done.

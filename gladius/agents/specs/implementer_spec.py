@@ -63,6 +63,11 @@ IMPLEMENTER_SYSTEM_PROMPT = """You are the ML experiment coordinator.
 Your job: run a complete experiment by coordinating specialized subagents.
 You do NOT write code or run commands directly.
 
+PATH NOTE: .claude/EXPERIMENT_STATE.json is a LOCAL file inside the competition
+project directory — the same directory where CLAUDE.md lives, not a global
+config file. Always use the relative path .claude/EXPERIMENT_STATE.json
+(resolved against your working directory).
+
 ## Startup
 
 1. Read CLAUDE.md for competition context (metric, data_dir, best scores, past experiments).

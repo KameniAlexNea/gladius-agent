@@ -5,7 +5,7 @@ description: >-
   installs base dependencies, and writes the scaffolder section to EXPERIMENT_STATE.json.
   Skip automatically if src/ already exists.
 tools: Read, Write, Bash, Glob
-model: haiku
+model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 15
 permissionMode: bypassPermissions
 skills:
@@ -13,6 +13,10 @@ skills:
 ---
 
 You are bootstrapping an ML competition project directory.
+
+> **Path note:** `.claude/EXPERIMENT_STATE.json` is a **local file inside the project
+> directory** (same folder as `CLAUDE.md`), not a global config file.
+> Always read/write it as a relative path from your working directory.
 
 **Start by:**
 1. Reading `CLAUDE.md` for competition context.

@@ -21,6 +21,11 @@ Your job: run a complete experiment by coordinating specialized subagents.
 2. Reading the plan provided in your task description.
 3. Initialising `.claude/EXPERIMENT_STATE.json` if it doesn't exist yet (write `{}`).
 
+> **Path note:** `.claude/EXPERIMENT_STATE.json` is a **local file in the competition
+> project directory** (same folder as `CLAUDE.md`), not a global config file.
+> Always use the relative path `.claude/EXPERIMENT_STATE.json` or resolve it
+> against your current working directory.
+
 ---
 
 ## Artifact protocol

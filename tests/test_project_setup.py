@@ -104,3 +104,47 @@ def test_subagent_files_contain_experiment_state_reference(tmp_path):
         if "EXPERIMENT_STATE" not in (agents_dir / f"{name}.md").read_text(encoding="utf-8")
     ]
     assert not missing, f"Missing EXPERIMENT_STATE.json reference in: {missing}"
+
+
+def test_subagent_small_model_default_is_inherit(tmp_path, monkeypatch):
+    """Without GLADIUS_SMALL_MODEL set, model: inherit must appear for scaffolder/evaluator."""
+    monkeypatch.delenv("GLADIUS_SMALL_MODEL", raising=False)
+    state = _state(tmp_path)
+    setup_project_dir(state, str(tmp_path), platform="fake")
+
+    agents_dir = tmp_path / ".claude" / "agents"
+    for name in ("ml-scaffolder", "ml-evaluator"):
+        content = (agents_dir / f"{name}.md").read_text(encoding="utf-8")
+        assert "model: inherit" in content, f"{name}.md should default to model: inherit"
+        assert "haiku" not in content, f"{name}.md must not contain hardcoded 'haiku'"
+
+
+def test_subagent_small_model_env_var_substituted(tmp_path, monkeypatch):
+    """GLADIUS_SMALL_MODEL env var is substituted into the scaffolder/evaluator templates."""
+    monkeypatch.setenv("GLADIUS_SMALL_MODEL", "claude-haiku-4-5")
+    state = _state(tmp_path)
+    setup_project_dir(state, str(tmp_path), platform="fake")
+
+    agents_dir = tmp_path / ".claude" / "agents"
+    for name in ("ml-scaffolder", "ml-evaluator"):
+        content = (agents_dir / f"{name}.md").read_text(encoding="utf-8")
+        assert "model: claude-haiku-4-5" in content, (
+            f"{name}.md should contain the substituted model name"
+        )
+        assert "{{GLADIUS_SMALL_MODEL}}" not in content, (
+            f"{name}.md must not contain the raw placeholder"
+        )
+
+
+def test_subagent_no_tilde_claude_path(tmp_path):
+    """No subagent template should reference ~/.claude — only local .claude/ paths."""
+    state = _state(tmp_path)
+    setup_project_dir(state, str(tmp_path), platform="fake")
+
+    agents_dir = tmp_path / ".claude" / "agents"
+    offenders = [
+        name
+        for name in _SUBAGENT_NAMES
+        if "~/.claude" in (agents_dir / f"{name}.md").read_text(encoding="utf-8")
+    ]
+    assert not offenders, f"Templates must not reference ~/.claude: {offenders}"

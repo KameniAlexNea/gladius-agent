@@ -351,16 +351,23 @@ def _write_subagents(root: Path) -> None:
     which are managed by _write_agent() with {{GLADIUS_MODEL}} substitution.
     New files are only written once — existing files are preserved so teams can
     customise them without being overwritten on every run.
+
+    {{GLADIUS_SMALL_MODEL}} is substituted at copy time. Defaults to "inherit"
+    (uses whatever model the parent session is running) when the env var is unset.
     """
     agents_dir = root / ".claude" / "agents"
     agents_dir.mkdir(parents=True, exist_ok=True)
+    small_model = os.environ.get("GLADIUS_SMALL_MODEL", "inherit")
     managed = {"planner", "implementer"}
     for src in sorted((_TEMPLATES / "agents").glob("*.md")):
         if src.stem in managed:
             continue
         dest = agents_dir / src.name
         if not dest.exists():
-            shutil.copy(src, dest)
+            content = src.read_text(encoding="utf-8").replace(
+                "{{GLADIUS_SMALL_MODEL}}", small_model
+            )
+            dest.write_text(content, encoding="utf-8")
 
 
 def _copy_all_scientific_skills(root: Path) -> None:

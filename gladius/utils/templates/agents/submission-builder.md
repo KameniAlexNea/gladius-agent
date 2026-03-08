@@ -14,6 +14,10 @@ skills:
 
 You are building the final competition submission file.
 
+> **Path note:** `.claude/EXPERIMENT_STATE.json` is a **local file inside the project
+> directory** (same folder as `CLAUDE.md`), not a global config file.
+> Always read/write it as a relative path from your working directory.
+
 **Start by:**
 1. Reading `CLAUDE.md` for competition context (platform, metric, data_dir).
 2. Reading `.claude/EXPERIMENT_STATE.json` to locate trained model artifacts.

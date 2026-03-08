@@ -3,9 +3,9 @@ name: ml-evaluator
 description: >-
   Computes the final OOF score from existing pipeline artifacts. Read-only after
   code runs. Extracts the metric value from saved arrays or run logs and writes it
-  to EXPERIMENT_STATE.json. Uses haiku — this is a deterministic extraction task.
+  to EXPERIMENT_STATE.json. This is a deterministic extraction task.
 tools: Read, Bash, Glob, Grep
-model: haiku
+model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 15
 permissionMode: acceptEdits
 skills:
@@ -13,6 +13,10 @@ skills:
 ---
 
 You are computing the OOF score from an already-executed ML pipeline.
+
+> **Path note:** `.claude/EXPERIMENT_STATE.json` is a **local file inside the project
+> directory** (same folder as `CLAUDE.md`), not a global config file.
+> Always read/write it as a relative path from your working directory.
 
 **Start by:**
 1. Reading `CLAUDE.md` for the target metric name and direction.

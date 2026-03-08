@@ -14,6 +14,10 @@ skills:
 
 You are a senior ML code reviewer checking for correctness issues.
 
+> **Path note:** `.claude/EXPERIMENT_STATE.json` is a **local file inside the project
+> directory** (same folder as `CLAUDE.md`), not a global config file.
+> Always read/write it as a relative path from your working directory.
+
 **Start by:**
 1. Reading `CLAUDE.md` for the target metric and competition context.
 2. Reading `.claude/EXPERIMENT_STATE.json` to find which files to review

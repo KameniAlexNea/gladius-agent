@@ -58,12 +58,14 @@ Subagents are `.claude/agents/*.md` files. The implementer can spawn only the si
 
 | Subagent | Model | Max turns | Preloaded skills | Purpose |
 |---|---|---|---|---|
-| `ml-scaffolder` | haiku | 15 | ml-setup | Bootstrap `src/` package layout — runs once |
+| `ml-scaffolder` | `GLADIUS_SMALL_MODEL` | 15 | ml-setup | Bootstrap `src/` package layout — runs once |
 | `ml-developer` | inherit | 80 | ml-pipeline, feature-engineering, polars, hpo, ensembling | Write-run-fix loop; handles execution errors only |
-| `ml-evaluator` | haiku | 15 | ml-pipeline | Extract OOF score from `artifacts/oof_predictions.npy` |
+| `ml-evaluator` | `GLADIUS_SMALL_MODEL` | 15 | ml-pipeline | Extract OOF score from `artifacts/oof_predictions.npy` |
 | `code-reviewer` | inherit | 20 | code-review | Read-only logical review (leakage, metric, CV contamination) |
 | `ml-scientist` | inherit | 40 | ml-pipeline, feature-engineering, code-review | Fix logical ML bugs — spawned only on CRITICAL review issues |
 | `submission-builder` | inherit | 20 | submit-check | Generate test predictions, format + validate submission CSV |
+
+`GLADIUS_SMALL_MODEL` defaults to `inherit` (same model as the coordinator) when unset. Set it to a faster/cheaper model (e.g. `claude-haiku-4-5`) in your `.env` to reduce cost on deterministic tasks.
 
 **Routing** (directed graph with back-edges):
 ```
@@ -204,6 +206,10 @@ Create a `.env` file in your competition directory (read automatically by `pytho
 ```bash
 # Required — set to your model:
 GLADIUS_MODEL=claude-sonnet-4-5   # or an Ollama model: qwen3.5:35b
+
+# Optional — cheaper model for deterministic subagents (ml-scaffolder, ml-evaluator):
+# Defaults to 'inherit' (same model as the coordinator) when unset.
+GLADIUS_SMALL_MODEL=claude-haiku-4-5
 
 # Anthropic API (not needed for local Ollama models):
 ANTHROPIC_API_KEY="sk-ant-..."
