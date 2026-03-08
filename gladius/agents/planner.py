@@ -129,6 +129,7 @@ async def run_planner(
             "Glob",
             "Grep",
             "WebSearch",
+            "Skill",
             "TodoWrite",
         ],
         cwd=project_dir,

@@ -84,8 +84,12 @@ STRICT RULES — you are in READ-ONLY planning mode:
 Do NOT run Bash commands.
 Do NOT write or edit ANY files — not MEMORY.md, not plan files, not anything.
 Do NOT spawn Task subagents.
-Use ONLY Read, Glob, Grep, WebSearch, TodoWrite.
+Skills: call Skill{"skill": "<name>"} to read and understand a skill's content.
+  Do NOT call any mcp__* tool — those are only available to the implementer.
+  Instead, write explicit "invoke skill X" steps in your plan for the implementer.
+Use ONLY Read, Glob, Grep, WebSearch, Skill, TodoWrite.
 Call ExitPlanMode when your plan is ready — that is the ONLY output channel."""
+
 
 
 def build_planner_alternative_prompt(existing_summaries: list[str]) -> str:

@@ -70,12 +70,16 @@ _PLANNER_AGENT_DEF = AgentDefinition(
         "- You NEVER write or edit any files yourself.\n"
         "- You NEVER spawn Task subagents.\n"
         "- You NEVER write implementation code.\n"
-        "Use only Read, Glob, Grep, WebSearch, TodoWrite."
+        "- Skills: use Skill{} to READ a skill and understand it. Do NOT call any MCP "
+        "tool (mcp__*) — those only work for the implementer. Instead, include explicit "
+        "'invoke skill X' steps in your plan for the implementer.\n"
+        "Use only Read, Glob, Grep, WebSearch, Skill, TodoWrite."
     ),
     # TodoWrite lets the planner track its own multi-step exploration progress.
     # Task must NOT be listed — subagents cannot spawn sub-subagents.
     # Bash is intentionally excluded — plan mode is read-only research.
-    tools=["Read", "Glob", "Grep", "WebSearch", "TodoWrite"],
+    # Skill: allows reading .claude/skills/*/SKILL.md to inform the plan.
+    tools=["Read", "Glob", "Grep", "WebSearch", "Skill", "TodoWrite"],
     model=_model,
 )
 
@@ -538,7 +542,7 @@ async def _approve_exit_plan_mode(tool_name: str, input_data: dict, context: obj
         return PermissionResultDeny(
             message=(
                 f"Tool '{tool_name}' is not permitted in planning mode. "
-                "Use only Read, Glob, Grep, WebSearch, TodoWrite, or ExitPlanMode."
+                "Use only Read, Glob, Grep, WebSearch, Skill, TodoWrite, or ExitPlanMode."
             )
         )
     return PermissionResultAllow(updated_input=input_data)
