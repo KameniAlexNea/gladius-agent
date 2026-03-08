@@ -28,6 +28,12 @@ if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
 _TEMPLATES = Path(__file__).parent / "templates"
+# Path to the claude-scientific-skills submodule (173+ upstream skills).
+# Gracefully absent when running from a bare pip install (wheel) or when the
+# submodule hasn't been initialised yet — setup_project_dir degrades without it.
+_SCIENTIFIC_SKILLS = (
+    Path(__file__).parent.parent.parent / "claude-scientific-skills" / "scientific-skills"
+)
 
 
 # ── CLAUDE.md ─────────────────────────────────────────────────────────────────
@@ -162,15 +168,14 @@ Invoke skills with the `Skill` tool — the output is returned inline, do NOT us
 | `hpo` | Bayesian hyperparameter search with Optuna (after baseline is solid) |
 | `ensembling` | OOF blending, rank averaging, stacking, hill-climbing selection |
 | `research` | Find SOTA techniques on ArXiv + Kaggle forums for this task type |
-| `polars`            | Fast DataFrame ops for large datasets (Arrow backend, lazy eval) |
-| `transformers`      | HuggingFace Transformers for NLP/vision competitions |
-| `pytorch-lightning` | Structured DL training loops, multi-GPU, callbacks |
-| `timesfm`           | Google TimesFM zero-shot time-series forecasting |
-| `shap`              | SHAP values for feature importance and model explainability |
 | `submit-check` | Validate submission CSV format before uploading |
 | `jupyter-mcp` | When you want to work in a Jupyter notebook — starts Jupyter + MCP server |
 | `git-workflow` | After each working solution |
 | `uv-venv` | Installing packages and running scripts |
+
+> 170+ additional scientific & ML library skills are also available (polars, transformers,
+> pytorch-lightning, timesfm, shap, scikit-learn, pymc, and many more).
+> Run `ls .claude/skills/` to see the full list.
 """
     else:
         best_quality = (
@@ -285,6 +290,9 @@ def setup_project_dir(
     _write_agent(root, "planner")
     _write_agent(root, "implementer")
 
+    # Copy all 170+ upstream scientific skills first (idempotent).
+    _copy_all_scientific_skills(root)
+
     if is_ml:
         _copy_skill(root, "ml-pipeline")
         _copy_skill(root, "ml-project-structure")
@@ -295,11 +303,6 @@ def setup_project_dir(
         _copy_skill(root, "hpo")
         _copy_skill(root, "ensembling")
         _copy_skill(root, "research")
-        _copy_skill(root, "polars")
-        _copy_skill(root, "transformers")
-        _copy_skill(root, "pytorch-lightning")
-        _copy_skill(root, "timesfm")
-        _copy_skill(root, "shap")
         _copy_skill(root, "code-review-ml", dest_name="code-review")
         _copy_skill(root, "git-workflow-ml", dest_name="git-workflow")
     else:
@@ -328,6 +331,25 @@ def _write_agent(root: Path, name: str) -> None:
         os.environ.get("GLADIUS_MODEL", "GLADIUS_MODEL_NOT_SET"),
     )
     path.write_text(content, encoding="utf-8")
+
+
+def _copy_all_scientific_skills(root: Path) -> None:
+    """Copy every skill from the claude-scientific-skills submodule (idempotent).
+
+    Silently skips if the submodule hasn't been initialised or isn't present
+    (e.g. plain pip install from a wheel).
+    """
+    if not _SCIENTIFIC_SKILLS.is_dir():
+        return
+    skills_dest = root / ".claude" / "skills"
+    skills_dest.mkdir(parents=True, exist_ok=True)
+    for skill_dir in sorted(_SCIENTIFIC_SKILLS.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        dest = skills_dest / skill_dir.name
+        if (dest / "SKILL.md").exists():
+            continue
+        shutil.copytree(skill_dir, dest, dirs_exist_ok=True)
 
 
 def _copy_skill(
