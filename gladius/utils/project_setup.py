@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -165,6 +166,7 @@ Invoke skills with the `Skill` tool — the output is returned inline, do NOT us
 | `transformers`      | HuggingFace Transformers for NLP/vision competitions |
 | `pytorch-lightning` | Structured DL training loops, multi-GPU, callbacks |
 | `timesfm`           | Google TimesFM zero-shot time-series forecasting |
+| `shap`              | SHAP values for feature importance and model explainability |
 | `submit-check` | Validate submission CSV format before uploading |
 | `jupyter-mcp` | When you want to work in a Jupyter notebook — starts Jupyter + MCP server |
 | `git-workflow` | After each working solution |
@@ -297,6 +299,7 @@ def setup_project_dir(
         _copy_skill(root, "transformers")
         _copy_skill(root, "pytorch-lightning")
         _copy_skill(root, "timesfm")
+        _copy_skill(root, "shap")
         _copy_skill(root, "code-review-ml", dest_name="code-review")
         _copy_skill(root, "git-workflow-ml", dest_name="git-workflow")
     else:
@@ -330,16 +333,25 @@ def _write_agent(root: Path, name: str) -> None:
 def _copy_skill(
     root: Path, template_name: str, *, dest_name: str | None = None
 ) -> None:
-    """Copy a skill template into the competition's .claude/skills/ tree (idempotent)."""
+    """Copy a skill template into the competition's .claude/skills/ tree (idempotent).
+
+    If the template is a directory (new multi-file format with SKILL.md + references/
+    + scripts/ subdirectories), the whole tree is copied.  Falls back to the legacy
+    single-file format (.md) for any skill not yet converted.
+    """
     skill_name = dest_name or template_name
-    path = root / ".claude" / "skills" / skill_name / "SKILL.md"
-    if path.exists():
+    dest = root / ".claude" / "skills" / skill_name
+    if (dest / "SKILL.md").exists():
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        (_TEMPLATES / "skills" / f"{template_name}.md").read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
+    template_dir = _TEMPLATES / "skills" / template_name
+    if template_dir.is_dir():
+        shutil.copytree(template_dir, dest, dirs_exist_ok=True)
+    else:
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "SKILL.md").write_text(
+            (_TEMPLATES / "skills" / f"{template_name}.md").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
 
 
 def _copy_hook(root: Path, filename: str) -> None:

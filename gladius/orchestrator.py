@@ -378,6 +378,30 @@ async def run_competition(
             )
             state.max_iterations = max_iterations
 
+        # Recalibrate best scores if experiments exist but bests were never
+        # persisted (e.g. because validation crashed before the update ran).
+        if state.experiments:
+            if target_metric and state.best_oof_score is None:
+                scored = [e["oof_score"] for e in state.experiments if e.get("oof_score") is not None]
+                if scored:
+                    state.best_oof_score = max(scored) if metric_direction != "minimize" else min(scored)
+                    logger.info(f"Recalibrated best_oof_score from experiments: {state.best_oof_score:.6f}")
+            elif not target_metric and state.best_quality_score is None:
+                scored = [e["quality_score"] for e in state.experiments if e.get("quality_score") is not None]
+                if scored:
+                    state.best_quality_score = max(scored)
+                    logger.info(f"Recalibrated best_quality_score from experiments: {state.best_quality_score}/100")
+
+        # If state was halted by consecutive validation crashes but iterations
+        # remain, reset so the next resume can continue normally.
+        if state.phase == "done" and state.iteration < state.max_iterations:
+            logger.info(
+                f"Resuming: phase='done' but only {state.iteration}/{state.max_iterations} "
+                f"iterations used — resetting to planning"
+            )
+            state.phase = "planning"
+            state.consecutive_errors = 0
+
     # Bootstrap project directory with Claude Code native config (.claude/,
     # skills, hooks, agent definitions, MEMORY.md). Idempotent — safe to call
     # on resume.
@@ -692,15 +716,28 @@ async def run_competition(
                 else:
                     if not _consume_agent_call("validation"):
                         continue
-                    validation = await run_validation_agent(
-                        solution_path=", ".join(latest.get("solution_files", [])),
-                        oof_score=oof_score,
-                        quality_score=quality_score,
-                        submission_path=submission_file,
-                        state=state,
-                        project_dir=project_dir,
-                        platform=platform,
-                    )
+                    try:
+                        validation = await run_validation_agent(
+                            solution_path=", ".join(latest.get("solution_files", [])),
+                            oof_score=oof_score,
+                            quality_score=quality_score,
+                            submission_path=submission_file,
+                            state=state,
+                            project_dir=project_dir,
+                            platform=platform,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            f"Validation agent failed: {exc} "
+                            f"— using deterministic fallback, summarizer will still run"
+                        )
+                        validation = {
+                            "is_improvement": None,
+                            "submit": False,
+                            "stop": False,
+                            "reasoning": f"Validation agent failed: {exc}",
+                            "next_directions": ["Retry validation in next iteration"],
+                        }
 
                 validator_quality_score = validation.get("quality_score")
                 if state.target_metric is None:

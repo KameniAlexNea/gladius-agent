@@ -5,8 +5,7 @@ metric: f1-score
 direction: maximize
 data_dir: dataorg-financial-health-prediction-challenge
 ---
-
-Can you predict the financial well-being of small businesses?
+Can you predict the financial well-being of small businesses? (current best performance I got without you is 0.895390236 F1 Score on LB)
 
 Across Southern Africa, small and medium-sized enterprises (SMEs) are vital to employment, innovation, and economic growth, yet many remain financially fragile and excluded from formal financial systems. Limited access to credit, unstable cash flow, and exposure to shocks such as illness or climate events make them vulnerable. Traditional measures like revenue or profit do not capture an SME’s true financial well-being. To support SMEs more effectively, there is a need for a holistic measure that reflects resilience, savings habits, and access to finance.
 
@@ -185,9 +184,6 @@ Monitoring of submissions
 We will review the top 10 solutions of every challenge when the challenge ends.
 
 We reserve the right to request code from any user at any time during a challenge. You will have 24 hours to submit your code following the rules for code review (see above). Zindi reserves the right not to explain our reasons for requesting code. If you do not submit your code within 24 hours you will be disqualified from winning any challenges or Zindi points for the next six months. If you fall under suspicion again and your code is requested and you fail to submit your code within 24 hours, your Zindi account will be disabled and you will be disqualified from winning any challenges or Zindi points with any other account.
-
-
-
 
 About
 
