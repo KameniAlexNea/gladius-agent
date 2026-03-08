@@ -49,17 +49,37 @@ async def run_validation_agent(
     quota_instruction: str = ""
 
     if platform == "zindi":
-        from gladius.tools.zindi_tools import zindi_server
+        import sys
 
-        mcp_servers = {"zindi": zindi_server}
+        mcp_servers = {
+            "zindi": {
+                "type": "stdio",
+                "command": sys.executable,
+                "args": [
+                    "-c",
+                    "from gladius.tools.zindi_tools import zindi_server; "
+                    "import asyncio; asyncio.run(zindi_server.run())",
+                ],
+            }
+        }
         quota_tool = "mcp__zindi__zindi_status"
         quota_instruction = (
             "3. Call `zindi_status` to get today's remaining submission quota.\n"
         )
     elif platform == "kaggle":
-        from gladius.tools.kaggle_tools import kaggle_server
+        import sys
 
-        mcp_servers = {"kaggle": kaggle_server}
+        mcp_servers = {
+            "kaggle": {
+                "type": "stdio",
+                "command": sys.executable,
+                "args": [
+                    "-c",
+                    "from gladius.tools.kaggle_tools import kaggle_server; "
+                    "import asyncio; asyncio.run(kaggle_server.run())",
+                ],
+            }
+        }
         quota_tool = "mcp__kaggle__kaggle_submission_history"
         quota_instruction = (
             "3. Call `kaggle_submission_history` and count how many submissions "

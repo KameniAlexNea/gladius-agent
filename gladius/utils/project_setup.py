@@ -240,7 +240,7 @@ Invoke skills with the `Skill` tool — the output is returned inline, do NOT us
 ## Agent Memory
 
 If you are the **planner**, read your agent memory at
-`.claude/agent-memory/planner/MEMORY.md` before exploring.
+`{Path(project_dir).resolve()}/.claude/agent-memory/planner/MEMORY.md` before exploring.
 Update it with insights after each exploration session.
 
 If you are an **implementer**, focus only on executing the given plan.

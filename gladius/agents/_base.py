@@ -518,14 +518,23 @@ async def run_agent(
 
 async def _approve_exit_plan_mode(
     tool_name: str, input_data: dict, context: object
-) -> PermissionResultAllow:
-    """Auto-approve ExitPlanMode so the model doesn't get a confirmation prompt.
+):
+    """Auto-approve ExitPlanMode; deny everything else in plan mode.
 
-    Without this callback the SDK returns "Exit plan mode?" as the tool result,
-    which confuses the model into calling ExitPlanMode a second time (wasting
-    ~10 turns before the plan is finally captured).
+    Without this, the SDK returns "Exit plan mode?" as the tool result which
+    confuses the model. Denying non-read-only tools prevents the planner from
+    calling Bash/Write/Task even when the local model tries to.
     """
-    return PermissionResultAllow(updated_input=input_data)
+    from claude_agent_sdk.types import PermissionResultDeny
+
+    if tool_name == "ExitPlanMode":
+        return PermissionResultAllow(updated_input=input_data)
+    return PermissionResultDeny(
+        message=(
+            f"Tool '{tool_name}' is not permitted in planning mode. "
+            "Use only Read, Glob, Grep, WebSearch, TodoWrite, or ExitPlanMode."
+        )
+    )
 
 
 async def run_planning_agent(
