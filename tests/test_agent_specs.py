@@ -1,5 +1,7 @@
+from gladius.agents._base import _SUBAGENT_DEFINITIONS
 from gladius.agents.specs.implementer_spec import (
     IMPLEMENTER_OUTPUT_SCHEMA,
+    IMPLEMENTER_SYSTEM_PROMPT,
     build_implementer_prompt,
 )
 from gladius.agents.specs.planner_spec import build_planner_prompt
@@ -57,3 +59,48 @@ def test_implementer_schema_required_keys_stable():
     assert "status" in required
     assert "oof_score" in required
     assert "quality_score" in required
+
+
+# ── Coordinator-specific tests ────────────────────────────────────────────────
+
+
+def test_implementer_system_prompt_is_coordinator_not_code_writer():
+    """Coordinator prompt must describe routing, not direct code execution."""
+    assert "coordinator" in IMPLEMENTER_SYSTEM_PROMPT.lower()
+    assert "EXPERIMENT_STATE.json" in IMPLEMENTER_SYSTEM_PROMPT
+    # Coordinator explicitly states it does NOT write code.
+    assert "do not write code" in IMPLEMENTER_SYSTEM_PROMPT.lower()
+    # Must NOT contain old monolithic-engineer patterns.
+    assert "Skill(" not in IMPLEMENTER_SYSTEM_PROMPT
+    assert "mcp__jupyter" not in IMPLEMENTER_SYSTEM_PROMPT
+
+
+def test_implementer_system_prompt_describes_routing_graph():
+    """All six subagent names and the routing keywords must be present."""
+    for subagent in (
+        "ml-scaffolder",
+        "ml-developer",
+        "ml-evaluator",
+        "code-reviewer",
+        "ml-scientist",
+        "submission-builder",
+    ):
+        assert subagent in IMPLEMENTER_SYSTEM_PROMPT, f"{subagent!r} missing from prompt"
+    for keyword in ("SCAFFOLD", "DEVELOP", "EVALUATE", "REVIEW", "SUBMIT"):
+        assert keyword in IMPLEMENTER_SYSTEM_PROMPT, f"{keyword!r} missing from routing"
+
+
+def test_implementer_agent_def_uses_agent_tool_not_bash():
+    """Coordinator must use Agent() to delegate — never Bash, Edit, or Grep."""
+    agent_def = _SUBAGENT_DEFINITIONS["implementer"]
+    tool_str = " ".join(agent_def.tools)
+    assert "Agent(" in tool_str
+    assert "ml-scaffolder" in tool_str
+    assert "ml-developer" in tool_str
+    assert "ml-scientist" in tool_str
+    assert "ml-evaluator" in tool_str
+    assert "code-reviewer" in tool_str
+    assert "submission-builder" in tool_str
+    # These must NOT appear — coordinator should not run code directly.
+    for forbidden in ("Bash", "Edit", "Grep", "Skill"):
+        assert forbidden not in tool_str, f"{forbidden!r} must not be in coordinator tools"
