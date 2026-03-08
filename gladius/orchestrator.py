@@ -382,15 +382,29 @@ async def run_competition(
         # persisted (e.g. because validation crashed before the update ran).
         if state.experiments:
             if target_metric and state.best_oof_score is None:
-                scored = [e["oof_score"] for e in state.experiments if e.get("oof_score") is not None]
+                scored = [
+                    e["oof_score"]
+                    for e in state.experiments
+                    if e.get("oof_score") is not None
+                ]
                 if scored:
-                    state.best_oof_score = max(scored) if metric_direction != "minimize" else min(scored)
-                    logger.info(f"Recalibrated best_oof_score from experiments: {state.best_oof_score:.6f}")
+                    state.best_oof_score = (
+                        max(scored) if metric_direction != "minimize" else min(scored)
+                    )
+                    logger.info(
+                        f"Recalibrated best_oof_score from experiments: {state.best_oof_score:.6f}"
+                    )
             elif not target_metric and state.best_quality_score is None:
-                scored = [e["quality_score"] for e in state.experiments if e.get("quality_score") is not None]
+                scored = [
+                    e["quality_score"]
+                    for e in state.experiments
+                    if e.get("quality_score") is not None
+                ]
                 if scored:
                     state.best_quality_score = max(scored)
-                    logger.info(f"Recalibrated best_quality_score from experiments: {state.best_quality_score}/100")
+                    logger.info(
+                        f"Recalibrated best_quality_score from experiments: {state.best_quality_score}/100"
+                    )
 
         # If state was halted by consecutive validation crashes but iterations
         # remain, reset so the next resume can continue normally.
@@ -462,6 +476,7 @@ async def run_competition(
                     f"({len(state.failed_runs)}/{max_failed_runs_total})"
                 ),
             )
+            continue
 
         _score_str = (
             f"quality={f'{state.best_quality_score}/100' if state.best_quality_score is not None else 'none'}"

@@ -112,8 +112,8 @@ Execute the plan completely:
 - Write all required code
 - Run it
 - Fix any errors that come up
-- Measure and report the {target_metric} score
+- Measure and report the {target_metric or "quality"} score
 
 You decide file names, structure, libraries — there are no constraints.
-Report the final {target_metric} score in oof_score.
+Report the final {target_metric or "quality"} score in oof_score.
 """

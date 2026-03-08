@@ -23,7 +23,7 @@ def hill_climb(
     n_rounds: int = 200,
     maximize: bool = True,
 ) -> dict[str, float]:
-    names   = list(oof_preds.keys())
+    names = list(oof_preds.keys())
     oof_arr = np.column_stack([oof_preds[n] for n in names])
 
     best_score = -np.inf if maximize else np.inf
@@ -37,16 +37,18 @@ def hill_climb(
             s = metric_fn(y_true, candidate)
             if (maximize and s > best_score) or (not maximize and s < best_score):
                 best_score = s
-                best_add   = name
+                best_add = name
         if best_add is None:
             break
         chosen.append(best_add)
 
     counts = {n: chosen.count(n) for n in set(chosen)}
-    total  = sum(counts.values())
+    total = sum(counts.values())
     weights = {n: c / total for n, c in counts.items()}
 
-    print(f"Hill-climb OOF: {best_score:.6f}  ({len(chosen)} additions, {len(counts)} unique models)")
+    print(
+        f"Hill-climb OOF: {best_score:.6f}  ({len(chosen)} additions, {len(counts)} unique models)"
+    )
     for n, w in sorted(weights.items(), key=lambda x: -x[1]):
         print(f"  {n}: {w:.4f}")
 

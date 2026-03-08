@@ -91,7 +91,6 @@ Use ONLY Read, Glob, Grep, WebSearch, Skill, TodoWrite.
 Call ExitPlanMode when your plan is ready — that is the ONLY output channel."""
 
 
-
 def build_planner_alternative_prompt(existing_summaries: list[str]) -> str:
     existing_text = "\n".join(f"- {s}" for s in existing_summaries) or "- (none)"
     return f"""\

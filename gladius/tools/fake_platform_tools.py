@@ -25,6 +25,9 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from gladius.tools._response import err as _err
+from gladius.tools._response import ok as _ok
+
 # ── Seeded fake competitors on the leaderboard ────────────────────────────────
 _FAKE_LEADERBOARD = [
     {"username": "ml_wizard", "score": 0.9512, "submissions": 12},
@@ -33,25 +36,6 @@ _FAKE_LEADERBOARD = [
     {"username": "overfit_king", "score": 0.9047, "submissions": 44},
     {"username": "baseline_bob", "score": 0.8733, "submissions": 3},
 ]
-
-
-def _ok(text: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "content": [{"type": "text", "text": text}],
-        "status": "ok",
-    }
-    if data is not None:
-        payload["data"] = data
-    return payload
-
-
-def _err(error_type: str, text: str) -> dict[str, Any]:
-    return {
-        "content": [{"type": "text", "text": text}],
-        "status": "error",
-        "error_type": error_type,
-        "is_error": True,
-    }
 
 
 def _answers_path() -> Path:

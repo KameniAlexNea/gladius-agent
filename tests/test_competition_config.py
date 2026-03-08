@@ -131,7 +131,7 @@ def test_missing_competition_id(tmp_path):
         ---
     """,
     )
-    with pytest.raises(CompetitionConfigError, match="missing required fields"):
+    with pytest.raises(CompetitionConfigError, match="missing required field"):
         load_competition_config(str(tmp_path))
 
 

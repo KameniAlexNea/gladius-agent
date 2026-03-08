@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import shap
 from sklearn.inspection import permutation_importance
-from sklearn.metrics import roc_auc_score  # replace with competition metric
 
 
 def shap_importance(model, X_train: pd.DataFrame) -> pd.Series:
@@ -18,8 +17,8 @@ def shap_importance(model, X_train: pd.DataFrame) -> pd.Series:
     Compute mean |SHAP| per feature using TreeExplainer.
     Returns a Series sorted descending.
     """
-    explainer  = shap.TreeExplainer(model)
-    shap_vals  = explainer.shap_values(X_train)
+    explainer = shap.TreeExplainer(model)
+    shap_vals = explainer.shap_values(X_train)
     # Binary classification: shap_values returns list [class0, class1]
     if isinstance(shap_vals, list):
         shap_vals = shap_vals[1]
@@ -31,7 +30,9 @@ def shap_importance(model, X_train: pd.DataFrame) -> pd.Series:
     return mean_abs
 
 
-def permutation_importance_ranking(model, X_val: pd.DataFrame, y_val, n_repeats: int = 10) -> pd.Series:
+def permutation_importance_ranking(
+    model, X_val: pd.DataFrame, y_val, n_repeats: int = 10
+) -> pd.Series:
     """Model-agnostic importance via permutation (slower, more general)."""
     result = permutation_importance(
         model, X_val, y_val, n_repeats=n_repeats, random_state=42, scoring="roc_auc"
@@ -47,7 +48,7 @@ def incremental_pruning(
     y: pd.Series,
     df_full: pd.DataFrame,
     candidate_features: list[str],
-    evaluate_cv_fn,          # callable(X, y) -> float
+    evaluate_cv_fn,  # callable(X, y) -> float
     min_delta: float = 0.0005,
 ) -> tuple[list[str], float]:
     """

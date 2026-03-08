@@ -625,6 +625,7 @@ async def run_planning_agent(
             result_msg: ResultMessage | None = None
             early_session_id: str | None = None
             captured_plan: str | None = None
+            last_text_block: str = ""
 
             if verbose:
                 resume_str = f"  resume={resume[:8]}…" if resume else ""
@@ -643,14 +644,22 @@ async def run_planning_agent(
                     _log_message(agent_name, message)
                 if isinstance(message, SystemMessage) and message.subtype == "init":
                     early_session_id = message.data.get("session_id")
-                # Capture plan from ExitPlanMode tool use block
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
+                        # Primary path: model called ExitPlanMode (Claude / plan-mode aware).
                         if (
                             isinstance(block, ToolUseBlock)
                             and block.name == "ExitPlanMode"
                         ):
                             captured_plan = block.input.get("plan", "")
+                        # Fallback: capture the last substantial text block so that
+                        # models which don't support ExitPlanMode (e.g. Ollama/Qwen)
+                        # still produce a usable plan from their final text output.
+                        elif (
+                            isinstance(block, TextBlock)
+                            and len(block.text.strip()) > 100
+                        ):
+                            last_text_block = block.text.strip()
                 if isinstance(message, ResultMessage):
                     result_msg = message
 
@@ -661,10 +670,17 @@ async def run_planning_agent(
                     f"Planning agent returned error result: {result_msg.result}"
                 )
             if not captured_plan:
-                raise RuntimeError(
-                    "Planning agent did not emit ExitPlanMode — no plan captured. "
-                    "The model may not support planning mode."
-                )
+                if last_text_block:
+                    logger.warning(
+                        f"[{agent_name}] ExitPlanMode not called — using last text "
+                        "block as plan (model may not support planning mode)."
+                    )
+                    captured_plan = last_text_block
+                else:
+                    raise RuntimeError(
+                        "Planning agent did not emit ExitPlanMode and produced no "
+                        "usable text output. The model may not support planning mode."
+                    )
 
             session_id = result_msg.session_id or early_session_id or ""
             return captured_plan, session_id

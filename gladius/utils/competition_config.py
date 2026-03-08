@@ -67,7 +67,7 @@ def load_competition_config(competition_dir: str) -> dict:
     # competition_id is always required
     if not cfg.get("competition_id"):
         raise CompetitionConfigError(
-            "README.md frontmatter missing required fields: competition_id"
+            "README.md frontmatter missing required field: competition_id"
         )
 
     # platform is optional — default "none" (local/artifact submission)

@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
 _TEMPLATES = Path(__file__).parent / "templates"
 
+
 # Path to the claude-scientific-skills directory (173+ upstream skills).
 # Resolution order:
 #   1. GLADIUS_SCIENTIFIC_SKILLS_PATH env var (absolute or relative path)
@@ -41,7 +42,12 @@ def _resolve_scientific_skills_path() -> Path:
     env_val = os.environ.get("GLADIUS_SCIENTIFIC_SKILLS_PATH", "").strip()
     if env_val:
         return Path(env_val).expanduser().resolve()
-    return Path(__file__).parent.parent.parent / "claude-scientific-skills" / "scientific-skills"
+    return (
+        Path(__file__).parent.parent.parent
+        / "claude-scientific-skills"
+        / "scientific-skills"
+    )
+
 
 _SCIENTIFIC_SKILLS = _resolve_scientific_skills_path()
 

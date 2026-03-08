@@ -23,12 +23,14 @@ def stack(
 ):
     names = list(oof_preds.keys())
     X_meta_train = np.column_stack([oof_preds[n] for n in names])
-    X_meta_test  = np.column_stack([test_preds[n] for n in names])
+    X_meta_test = np.column_stack([test_preds[n] for n in names])
 
     if task == "classification":
         meta = LogisticRegression(C=1.0, max_iter=2000)
         cv_scores = cross_val_score(
-            meta, X_meta_train, y_train,
+            meta,
+            X_meta_train,
+            y_train,
             cv=StratifiedKFold(n_folds, shuffle=True, random_state=42),
             scoring="roc_auc",
         )
@@ -38,7 +40,9 @@ def stack(
     else:
         meta = Ridge(alpha=1.0)
         cv_scores = cross_val_score(
-            meta, X_meta_train, y_train,
+            meta,
+            X_meta_train,
+            y_train,
             cv=n_folds,
             scoring="neg_root_mean_squared_error",
         )

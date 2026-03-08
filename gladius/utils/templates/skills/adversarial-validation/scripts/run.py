@@ -13,20 +13,22 @@ from lightgbm import LGBMClassifier
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 
-DATA_DIR = "data"    # <- adjust to your data_dir
-TARGET   = "target"  # <- replace with actual target column name
+DATA_DIR = "data"  # <- adjust to your data_dir
+TARGET = "target"  # <- replace with actual target column name
 
 
 def run_adversarial_validation(data_dir: str = DATA_DIR, target: str = TARGET):
     train = pd.read_csv(f"{data_dir}/train.csv")
-    test  = pd.read_csv(f"{data_dir}/test.csv")
+    test = pd.read_csv(f"{data_dir}/test.csv")
 
     train_feat = train.drop(columns=[target], errors="ignore")
     common_cols = [c for c in train_feat.columns if c in test.columns]
 
     adv = pd.concat(
-        [train_feat[common_cols].assign(_is_test=0),
-         test[common_cols].assign(_is_test=1)],
+        [
+            train_feat[common_cols].assign(_is_test=0),
+            test[common_cols].assign(_is_test=1),
+        ],
         ignore_index=True,
     )
     X = adv.drop(columns=["_is_test"])
@@ -65,11 +67,11 @@ def run_adversarial_validation(data_dir: str = DATA_DIR, target: str = TARGET):
     print(top_feats.to_string())
 
     # --- Sample weights for train (rescale so mean=1) ---
-    train_X = X.iloc[:len(train_feat)]
-    train_y = y.iloc[:len(train_feat)]
+    train_X = X.iloc[: len(train_feat)]
+    train_y = y.iloc[: len(train_feat)]
     clf_adv = LGBMClassifier(n_estimators=200, random_state=42, verbose=-1)
     clf_adv.fit(train_X, train_y)
-    p = clf_adv.predict_proba(train_X)[:, 1]   # P(is_test | features)
+    p = clf_adv.predict_proba(train_X)[:, 1]  # P(is_test | features)
     adv_weights = np.clip(p / (1 - p + 1e-6), 0.1, 10.0)
     adv_weights /= adv_weights.mean()
     print(f"\nSample weight range: {adv_weights.min():.3f}–{adv_weights.max():.3f}")

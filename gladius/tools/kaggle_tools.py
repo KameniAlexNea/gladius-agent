@@ -11,24 +11,8 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-
-def _ok(text: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "content": [{"type": "text", "text": text}],
-        "status": "ok",
-    }
-    if data is not None:
-        payload["data"] = data
-    return payload
-
-
-def _err(error_type: str, text: str) -> dict[str, Any]:
-    return {
-        "content": [{"type": "text", "text": text}],
-        "status": "error",
-        "error_type": error_type,
-        "is_error": True,
-    }
+from gladius.tools._response import err as _err
+from gladius.tools._response import ok as _ok
 
 
 @tool(
