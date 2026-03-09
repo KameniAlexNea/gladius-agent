@@ -1,18 +1,16 @@
 """
-Shared agent runner helper.
+Shared agent runner.
 
-Every agent calls run_agent() which wraps claude_agent_sdk.query() and
-returns (structured_output, session_id).
+run_agent()          — structured-output agents (implementer, validation, summarizer)
+run_planning_agent() — plan-mode agent (planner); exits via ExitPlanMode
 
-All messages (tool calls, text, tool results, thinking) are streamed to the
-console in real-time so you can see exactly what Claude is doing.
+Both stream all SDK messages to the console in real-time and return
+(result, session_id).
 """
 
 import asyncio
-import json
 import logging
 import os
-import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -31,200 +29,17 @@ from claude_agent_sdk.types import (
     PermissionResultAllow,
     SystemMessage,
     TextBlock,
-    ThinkingBlock,
-    ToolResultBlock,
     ToolUseBlock,
-    UserMessage,
 )
 from llm_output_parser import parse_json as _parse_json
 
+from gladius.agents._agent_defs import _SUBAGENT_DEFINITIONS  # re-exported for callers
+from gladius.agents._console import _BLUE, _BOLD, _RED, _c, _log_message
+
 logger = logging.getLogger(__name__)
 
-# ── Programmatic agent definitions ────────────────────────────────────────────
-# Passed to every ClaudeAgentOptions so that:
-#   1. Task subagents inherit bypassPermissions from the parent call (not
-#      the filesystem .claude/agents/*.md which have acceptEdits).
-#   2. Programmatic definitions always take precedence over filesystem files.
-# Note: Task is intentionally omitted from subagent tool lists to prevent
-# unbounded recursion.
-# _model is resolved at module load; run_agent() re-reads GLADIUS_MODEL at
-# call time (after load_dotenv) so the .env value is always used.
-# Missing GLADIUS_MODEL is a hard error — no silent fallback to a cloud model.
-_model = os.environ.get("GLADIUS_MODEL") or ""
-_PLANNER_AGENT_DEF = AgentDefinition(
-    description=(
-        "Expert ML competition analyst. Explores data, reviews experiment history, "
-        "and proposes the highest-impact next approach via planning mode (ExitPlanMode). "
-        "Invoke at the start of each competition iteration when a fresh plan is needed."
-    ),
-    prompt=(
-        "You are an expert ML competition analyst.\n\n"
-        "Start every session:\n"
-        "1. Read CLAUDE.md — competition state, best scores, recent experiments.\n"
-        "2. Read .claude/agent-memory/planner/MEMORY.md — accumulated knowledge.\n"
-        "3. Explore the data directory and existing solution files.\n\n"
-        "Your job: understand what has been tried, identify the highest-impact next "
-        "approach, produce a concrete ordered action plan the implementer can follow "
-        "blindly. Update memory with new insights.\n\n"
-        "STRICT RULES — you are in READ-ONLY planning mode:\n"
-        "- You NEVER run Bash commands.\n"
-        "- You NEVER write or edit any files yourself.\n"
-        "- You NEVER spawn Task subagents.\n"
-        "- You NEVER write implementation code.\n"
-        "- Skills: use Skill{} to READ a skill and understand it. Do NOT call any MCP "
-        "tool (mcp__*) — those only work for the implementer. Instead, include explicit "
-        "'invoke skill X' steps in your plan for the implementer.\n"
-        "Use only Read, Glob, Grep, WebSearch, Skill, TodoWrite."
-    ),
-    # TodoWrite lets the planner track its own multi-step exploration progress.
-    # Task must NOT be listed — subagents cannot spawn sub-subagents.
-    # Bash is intentionally excluded — plan mode is read-only research.
-    # Skill: allows reading .claude/skills/*/SKILL.md to inform the plan.
-    tools=["Read", "Glob", "Grep", "WebSearch", "Skill", "TodoWrite"],
-    model=_model,
-)
 
-_IMPLEMENTER_AGENT_DEF = AgentDefinition(
-    description=(
-        "ML experiment coordinator. Orchestrates specialized subagents "
-        "(ml-scaffolder, ml-developer, ml-scientist, ml-evaluator, code-reviewer, "
-        "submission-builder) to run a complete experiment. Routes between phases by "
-        "reading EXPERIMENT_STATE.json — never by parsing subagent messages."
-    ),
-    prompt=(
-        "You are the ML experiment coordinator.\n\n"
-        "Your job: run a complete experiment by coordinating specialized subagents.\n"
-        "You do NOT write code or run commands directly.\n\n"
-        "PATH NOTE: .claude/EXPERIMENT_STATE.json is a LOCAL file inside the competition\n"
-        "project directory — the same directory where CLAUDE.md lives, not a global\n"
-        "config file. Always use the relative path .claude/EXPERIMENT_STATE.json\n"
-        "(resolved against your working directory).\n\n"
-        "Start every session:\n"
-        "1. Read CLAUDE.md for competition context.\n"
-        "2. Read the plan provided in your task description.\n"
-        "3. Initialise .claude/EXPERIMENT_STATE.json if it doesn't exist (write `{}`).\n\n"
-        "Artifact protocol: after every subagent completes, READ\n"
-        ".claude/EXPERIMENT_STATE.json to determine the next phase.\n"
-        "Do NOT parse subagent conversation text to make routing decisions.\n\n"
-        "Routing: SCAFFOLD → DEVELOP → EVALUATE → REVIEW → (loop or SUBMIT).\n"
-        "Execution issues after REVIEW → re-spawn ml-developer.\n"
-        "Logical ML bugs after REVIEW → ml-scientist → DEVELOP → EVALUATE → REVIEW.\n"
-        "No CRITICAL issues → SUBMIT.\n\n"
-        "STRICT RULES:\n"
-        "- NEVER modify CLAUDE.md.\n"
-        "- Only write to .claude/EXPERIMENT_STATE.json — no other files.\n"
-        "- Once you have reported results via StructuredOutput, stop immediately."
-    ),
-    # Agent() allows spawning the named subagents only — no unbounded delegation.
-    # Read + Write (state file only) + Glob + TodoWrite are the coordinator's tools.
-    # No Bash, Edit, Grep, or Skill — those belong to the worker subagents.
-    tools=[
-        "Agent(ml-scaffolder,ml-developer,ml-scientist,ml-evaluator,code-reviewer,submission-builder)",
-        "Read",
-        "Write",
-        "Glob",
-        "TodoWrite",
-    ],
-    model=_model,
-)
-
-_SUMMARIZER_AGENT_DEF = AgentDefinition(
-    description=(
-        "Expert ML research analyst that reviews experiment results and rewrites the "
-        "planner memory file. Read-only: it never edits code or data files — it only "
-        "reads existing files and returns structured analysis."
-    ),
-    prompt=(
-        "You are an expert ML research analyst maintaining a living knowledge base.\n\n"
-        "You review experiment results and produce a concise, structured update for the "
-        "planner's MEMORY.md file. You NEVER write files yourself — you return the "
-        "full updated memory content as structured output.\n\n"
-        "Always read the existing MEMORY.md before producing the update so you preserve "
-        "historical entries."
-    ),
-    # Read-only tools only — the orchestrator writes MEMORY.md from the output.
-    tools=["Read", "Grep"],
-    model=_model,
-)
-
-_VALIDATION_AGENT_DEF = AgentDefinition(
-    description=(
-        "Validates experiment results and recommends whether to submit to the platform. "
-        "Read-only: it never modifies files or state — it only observes and reports "
-        "structured decisions (is_improvement, submit, reasoning)."
-    ),
-    prompt=(
-        "You are a competition result validator.\n\n"
-        "You compare new experiment scores against the current best, check submission "
-        "artifact format by reading files, query platform quota via MCP tools, and return "
-        "a structured JSON decision. You NEVER write files or mutate state.\n\n"
-        "STRICT RULES — you are READ-ONLY:\n"
-        "- NEVER run Bash commands.\n"
-        "- NEVER write, edit, or delete any files.\n"
-        "Use only Read, Grep, and any MCP quota tools provided."
-    ),
-    # Read-only tools only — MCP quota tools are injected per-call by run_validation_agent().
-    tools=["Read", "Grep"],
-    model=_model,
-)
-
-# Registry used by every agent call — overrides .claude/agents/*.md files
-_SUBAGENT_DEFINITIONS: dict[str, AgentDefinition] = {
-    "planner": _PLANNER_AGENT_DEF,
-    "implementer": _IMPLEMENTER_AGENT_DEF,
-    "summarizer": _SUMMARIZER_AGENT_DEF,
-    "validation": _VALIDATION_AGENT_DEF,
-}
-
-# ── Console colours (degrade gracefully in non-TTY) ───────────────────────────
-_RESET = "\033[0m"
-_BOLD = "\033[1m"
-_DIM = "\033[2m"
-_CYAN = "\033[36m"
-_GREEN = "\033[32m"
-_YELLOW = "\033[33m"
-_RED = "\033[31m"
-_BLUE = "\033[34m"
-_GREY = "\033[90m"
-
-
-def _c(color: str, text: str) -> str:
-    """Wrap text in ANSI color codes."""
-    return f"{color}{text}{_RESET}"
-
-
-def _fmt_input(tool_input: dict, max_len: int = 300) -> str:
-    """Compact single-line representation of tool input, capped at max_len chars."""
-    try:
-        s = json.dumps(tool_input, ensure_ascii=False)
-    except Exception:
-        s = str(tool_input)
-    if len(s) > max_len:
-        s = s[:max_len] + " …"
-    return s
-
-
-def _fmt_result(content: Any, max_len: int = 400) -> str:
-    """Extract readable text from a tool result content value."""
-    if content is None:
-        return "(empty)"
-    if isinstance(content, str):
-        text = content
-    elif isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, dict) and "text" in item:
-                parts.append(item["text"])
-            else:
-                parts.append(str(item))
-        text = "\n".join(parts)
-    else:
-        text = str(content)
-
-    text = text.strip()
-    if len(text) > max_len:
-        text = text[:max_len] + " …"
-    return text
+# ── Private helpers ───────────────────────────────────────────────────────────
 
 
 def _validate_runtime_invocation(
@@ -246,111 +61,36 @@ def _validate_runtime_invocation(
         raise RuntimeError(f"{agent_name}: max_turns must be > 0")
 
 
-# Todo status icons — used when rendering TodoWrite tool calls
-_TODO_ICON = {"completed": "✅", "in_progress": "🔧", "pending": "⬜"}
-
-
-def _log_message(agent_name: str, message: Any) -> None:
-    """Pretty-print a single SDK message to stdout."""
-
-    if isinstance(message, SystemMessage):
-        # Sessions doc: first message is subtype="init" and contains session_id.
-        # Log it early so it's visible before any tool calls.
-        if message.subtype == "init":
-            sid = message.data.get("session_id", "?")
-            print(_c(_GREY, f"  🔑 [{agent_name}] session={sid[:16]}…"))
-
-    elif isinstance(
-        message, AssistantMessage
-    ):  # Emit any error before printing content blocks so it's never missed.
-        if message.error:
-            print(
-                _c(_RED, f"  ⚠ [{agent_name}] AssistantMessage error: {message.error}")
-            )  # Show a visual marker when this message originates from inside a subagent.
-        sub_tag = _c(_DIM + _GREY, " ➣subagent") if message.parent_tool_use_id else ""
-
-        for block in message.content:
-            if isinstance(block, TextBlock) and block.text.strip():
-                for line in textwrap.wrap(block.text.strip(), width=120):
-                    print(_c(_CYAN, f"  💬 [{agent_name}]{sub_tag} {line}"))
-
-            elif isinstance(block, ThinkingBlock) and block.thinking.strip():
-                snippet = block.thinking.strip()[:200].replace("\n", " ")
-                print(_c(_GREY, f"  🧠 [{agent_name}]{sub_tag} (thinking) {snippet} …"))
-
-            elif isinstance(block, ToolUseBlock):
-                if block.name == "TodoWrite":
-                    # Todo doc: render the task list with status icons so progress
-                    # is immediately visible in the console stream.
-                    todos = block.input.get("todos", [])
-                    n_done = sum(1 for t in todos if t.get("status") == "completed")
-                    print(
-                        _c(_BOLD + _YELLOW, f"  📋 [{agent_name}]{sub_tag} TodoWrite")
-                        + _c(_DIM, f"  {n_done}/{len(todos)} done")
-                    )
-                    for t in todos:
-                        icon = _TODO_ICON.get(t.get("status", "pending"), "⬜")
-                        text = t.get("activeForm") or t.get("content", "")
-                        print(f"       {icon}  {_c(_DIM, str(text)[:100])}")
-
-                elif block.name == "ExitPlanMode":
-                    # Planning mode doc: Claude finishes planning with ExitPlanMode.
-                    # Show the first few lines of the plan text so progress is visible.
-                    plan_preview = (
-                        block.input.get("plan", "").strip().splitlines()[0][:120]
-                    )
-                    print(
-                        _c(_BOLD + _GREEN, f"  📝 [{agent_name}]{sub_tag} ExitPlanMode")
-                        + _c(_DIM, f"  {plan_preview}")
-                    )
-
-                elif block.name == "Task":
-                    # Subagents doc: Task is how Claude spawns subagents.
-                    # Show which subagent type and the task description clearly.
-                    subagent_type = block.input.get("subagent_type", "?")
-                    description = block.input.get("description", "")
-                    snippet = block.input.get("prompt", "")[:80].replace("\n", " ")
-                    print(
-                        _c(
-                            _BOLD + _BLUE,
-                            f"  🤖 [{agent_name}]{sub_tag} Task → {subagent_type}",
-                        )
-                        + _c(_DIM, f"  [{description}]  {snippet}…")
-                    )
-
-                else:
-                    inp_str = _fmt_input(block.input)
-                    print(
-                        _c(
-                            _BOLD + _YELLOW,
-                            f"  🔧 [{agent_name}]{sub_tag} {block.name}",
-                        )
-                        + _c(_DIM, f"  {inp_str}")
-                    )
-
-    elif isinstance(message, UserMessage):
-        if isinstance(message.content, list):
-            for block in message.content:
-                if isinstance(block, ToolResultBlock):
-                    result_str = _fmt_result(block.content)
-                    marker = _c(_RED, "  ✗") if block.is_error else _c(_GREEN, "  ✓")
-                    for i, line in enumerate(result_str.splitlines()):
-                        prefix = f"{marker} [{agent_name}] " if i == 0 else "      "
-                        print(f"{prefix}{_c(_DIM, line)}")
-
-    elif isinstance(message, ResultMessage):
-        cost = f"  cost=${message.total_cost_usd:.4f}" if message.total_cost_usd else ""
-        status = _c(_RED, "ERROR") if message.is_error else _c(_GREEN, "OK")
-        print(
-            _c(_BOLD, f"  ━━ [{agent_name}] done")
-            + f"  status={status}"
-            + f"  turns={message.num_turns}"
-            + f"  {message.duration_ms / 1000:.1f}s"
-            + _c(_DIM, cost)
+def _get_runtime_model() -> str:
+    """Re-read GLADIUS_MODEL at call time so load_dotenv() is always respected."""
+    model = os.environ.get("GLADIUS_MODEL")
+    if not model:
+        raise RuntimeError(
+            "GLADIUS_MODEL is not set. "
+            "Add it to your competition's .env file, e.g.:\n"
+            "  GLADIUS_MODEL=qwen3-coder"
         )
+    return model
 
 
-# ── Main helper ───────────────────────────────────────────────────────────────
+def _build_runtime_agents(model: str) -> dict[str, AgentDefinition]:
+    """Stamp the live model name into every entry in the registry."""
+    return {
+        k: AgentDefinition(
+            description=v.description,
+            prompt=v.prompt,
+            tools=v.tools,
+            model=model,
+        )
+        for k, v in _SUBAGENT_DEFINITIONS.items()
+    }
+
+
+def _stderr_cb(line: str) -> None:
+    print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
+
+
+# ── run_agent ─────────────────────────────────────────────────────────────────
 
 
 async def run_agent(
@@ -371,11 +111,8 @@ async def run_agent(
     """
     Run a single Claude agent call, streaming all messages to stdout.
 
-    Returns
-    -------
-    (structured_output, session_id)
+    Returns (structured_output, session_id).
     """
-
     _validate_runtime_invocation(
         agent_name=agent_name,
         cwd=cwd,
@@ -383,37 +120,10 @@ async def run_agent(
         max_turns=max_turns,
     )
 
-    def _stderr_cb(line: str) -> None:
-        print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
-
-    # Re-read model from env at call time: load_dotenv() in the orchestrator
-    # runs after module import, so module-level _model may be stale.
-    _runtime_model = os.environ.get("GLADIUS_MODEL")
-    if not _runtime_model:
-        raise RuntimeError(
-            "GLADIUS_MODEL is not set. "
-            "Add it to your competition's .env file, e.g.:\n"
-            "  GLADIUS_MODEL=qwen3-coder"
-        )
-    _runtime_agents = {
-        k: AgentDefinition(
-            description=v.description,
-            prompt=v.prompt,
-            tools=v.tools,
-            model=_runtime_model,
-        )
-        for k, v in _SUBAGENT_DEFINITIONS.items()
-    }
-
+    _runtime_model = _get_runtime_model()
     options = ClaudeAgentOptions(
-        # Use Claude Code's built-in system prompt as the base so agents get
-        # full tool-use knowledge, safety guidelines, and code-gen best
-        # practices — then append the role-specific instructions.
-        system_prompt={
-            "type": "preset",
-            "preset": "claude_code",
-            "append": system_prompt,
-        },
+        # Claude Code's built-in system prompt as the base; role instructions appended.
+        system_prompt={"type": "preset", "preset": "claude_code", "append": system_prompt},
         allowed_tools=allowed_tools,
         permission_mode="bypassPermissions",
         output_format={"type": "json_schema", "schema": output_schema},
@@ -422,13 +132,10 @@ async def run_agent(
         mcp_servers=mcp_servers or {},
         max_turns=max_turns,
         stderr=_stderr_cb,
-        # Load CLAUDE.md and .claude/settings.json (hooks, env vars) from
-        # the competition project directory.
+        # Load CLAUDE.md and .claude/settings.json from the competition directory.
         setting_sources=["project"],
-        # Programmatic agent definitions override .claude/agents/*.md files.
-        # Ensures Task subagents inherit bypassPermissions (not acceptEdits).
-        # Model is resolved at call time from GLADIUS_MODEL env var.
-        agents=_runtime_agents,
+        # Programmatic defs override .claude/agents/*.md and inherit bypassPermissions.
+        agents=_build_runtime_agents(_runtime_model),
         model=_runtime_model,
         **option_kwargs,
     )
@@ -437,10 +144,9 @@ async def run_agent(
         try:
             result_msg: ResultMessage | None = None
             last_assistant_msg: AssistantMessage | None = None
-            # Sessions doc: the SystemMessage(subtype="init") arrives before any
-            # tool calls and contains the session_id.  Capture it early so we
-            # have a fallback session_id even if the run crashes before ResultMessage
-            # (e.g. rate-limit kill, OOM, network drop).
+            # Capture session_id from SystemMessage(subtype="init") early — it
+            # arrives before any tool calls and serves as a fallback if the run
+            # crashes before ResultMessage (rate-limit kill, OOM, network drop).
             early_session_id: str | None = None
 
             if verbose:
@@ -466,9 +172,8 @@ async def run_agent(
 
             structured = result_msg.structured_output
 
-            # Fallback: local models (Ollama, GLM, etc.) sometimes output the
-            # required JSON as plain text instead of calling the StructuredOutput
-            # tool. Extract it from the last assistant message in that case.
+            # Fallback: local models (Ollama, GLM, etc.) sometimes emit the
+            # required JSON as plain text instead of calling StructuredOutput.
             if structured is None and last_assistant_msg is not None:
                 _full_text = "\n".join(
                     block.text.strip()
@@ -485,9 +190,8 @@ async def run_agent(
                     except Exception:
                         pass
 
-            # Models like Qwen may call StructuredOutput but then keep running tool
-            # calls until max_turns is hit, producing is_error=True on ResultMessage.
-            # Prefer the captured structured_output over the error in that case.
+            # Qwen-style: model calls StructuredOutput then keeps running until
+            # max_turns, producing is_error=True.  Prefer the captured output.
             if result_msg.is_error and structured is None:
                 raise RuntimeError(f"Agent returned error result: {result_msg.result}")
             if result_msg.is_error and structured is not None:
@@ -501,10 +205,7 @@ async def run_agent(
                     "Agent returned no structured_output (schema not satisfied?)"
                 )
 
-            return (
-                structured,
-                result_msg.session_id or early_session_id or "",
-            )
+            return structured, result_msg.session_id or early_session_id or ""
 
         except CLINotFoundError:
             raise  # Fatal — Claude Code CLI not installed
@@ -527,8 +228,7 @@ async def run_agent(
 
         except MessageParseError as e:
             # Can occur with Ollama models that omit Anthropic-specific fields
-            # (e.g. 'signature' on thinking blocks).  Retry may help if it's
-            # transient, but usually indicates a model compatibility issue.
+            # (e.g. 'signature' on thinking blocks).
             if attempt == max_retries - 1:
                 raise
             logger.warning(f"MessageParseError on attempt {attempt + 1}: {e}, retrying")
@@ -541,21 +241,18 @@ async def run_agent(
     raise RuntimeError("run_agent: max retries exceeded")
 
 
+# ── run_planning_agent ────────────────────────────────────────────────────────
+
 # Tools the planner must never call — deny them even if the local model tries.
-_PLAN_MODE_DENIED_TOOLS = frozenset(
-    {"Write", "Edit", "MultiEdit", "Bash", "Task", "computer"}
-)
+_PLAN_MODE_DENIED_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "Bash", "Task", "computer"})
 
 
 async def _approve_exit_plan_mode(tool_name: str, input_data: dict, context: object):
     """Block write tools in planning mode; auto-approve everything else.
 
-    In plan mode the SDK calls can_use_tool for anything that needs explicit
-    approval (write ops, ExitPlanMode).  Read-only tools (Read, Glob, Grep,
-    WebSearch) are allowed by the permission layer before this callback fires.
-
-    - Write/Edit/Bash/Task → Deny (planner is read-only)
-    - ExitPlanMode, TodoWrite, Read, … → Allow
+    SDK calls can_use_tool for anything needing explicit approval (write ops,
+    ExitPlanMode).  Read-only tools are allowed by the permission layer before
+    this callback fires.
     """
     from claude_agent_sdk.types import PermissionResultDeny
 
@@ -585,16 +282,11 @@ async def run_planning_agent(
     """
     Run a Claude agent in planning mode (permission_mode="plan").
 
-    Claude uses read-only tools to research, then exits via the built-in
-    ``ExitPlanMode`` tool call which carries the plan as a markdown string.
+    Claude uses read-only tools to research, then exits via ExitPlanMode which
+    carries the plan as a markdown string.
 
-    Returns
-    -------
-    (plan_text, session_id)
-        plan_text  — full markdown plan from ExitPlanMode.input["plan"]
-        session_id — can be resumed for a follow-up non-plan call if needed
+    Returns (plan_text, session_id).
     """
-
     _validate_runtime_invocation(
         agent_name=agent_name,
         cwd=cwd,
@@ -602,32 +294,9 @@ async def run_planning_agent(
         max_turns=max_turns,
     )
 
-    def _stderr_cb(line: str) -> None:
-        print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
-
-    _runtime_model = os.environ.get("GLADIUS_MODEL")
-    if not _runtime_model:
-        raise RuntimeError(
-            "GLADIUS_MODEL is not set. "
-            "Add it to your competition's .env file, e.g.:\n"
-            "  GLADIUS_MODEL=qwen3-coder"
-        )
-    _runtime_agents = {
-        k: AgentDefinition(
-            description=v.description,
-            prompt=v.prompt,
-            tools=v.tools,
-            model=_runtime_model,
-        )
-        for k, v in _SUBAGENT_DEFINITIONS.items()
-    }
-
+    _runtime_model = _get_runtime_model()
     options = ClaudeAgentOptions(
-        system_prompt={
-            "type": "preset",
-            "preset": "claude_code",
-            "append": system_prompt,
-        },
+        system_prompt={"type": "preset", "preset": "claude_code", "append": system_prompt},
         allowed_tools=allowed_tools,
         permission_mode="plan",
         can_use_tool=_approve_exit_plan_mode,
@@ -637,7 +306,7 @@ async def run_planning_agent(
         max_turns=max_turns,
         stderr=_stderr_cb,
         setting_sources=["project"],
-        agents=_runtime_agents,
+        agents=_build_runtime_agents(_runtime_model),
         model=_runtime_model,
     )
 
@@ -656,7 +325,7 @@ async def run_planning_agent(
                     + resume_str
                 )
 
-            # can_use_tool requires streaming (AsyncIterable) prompt, not a plain string.
+            # can_use_tool requires a streaming prompt, not a plain string.
             async def _prompt_stream():
                 yield {"type": "user", "message": {"role": "user", "content": prompt}}
 
@@ -667,19 +336,12 @@ async def run_planning_agent(
                     early_session_id = message.data.get("session_id")
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
-                        # Primary path: model called ExitPlanMode (Claude / plan-mode aware).
-                        if (
-                            isinstance(block, ToolUseBlock)
-                            and block.name == "ExitPlanMode"
-                        ):
+                        # Primary: model called ExitPlanMode.
+                        if isinstance(block, ToolUseBlock) and block.name == "ExitPlanMode":
                             captured_plan = block.input.get("plan", "")
-                        # Fallback: capture the last substantial text block so that
-                        # models which don't support ExitPlanMode (e.g. Ollama/Qwen)
-                        # still produce a usable plan from their final text output.
-                        elif (
-                            isinstance(block, TextBlock)
-                            and len(block.text.strip()) > 100
-                        ):
+                        # Fallback: models that don't support ExitPlanMode (Ollama/Qwen)
+                        # produce the plan as a final text block.
+                        elif isinstance(block, TextBlock) and len(block.text.strip()) > 100:
                             last_text_block = block.text.strip()
                 if isinstance(message, ResultMessage):
                     result_msg = message
@@ -703,8 +365,7 @@ async def run_planning_agent(
                         "usable text output. The model may not support planning mode."
                     )
 
-            session_id = result_msg.session_id or early_session_id or ""
-            return captured_plan, session_id
+            return captured_plan, result_msg.session_id or early_session_id or ""
 
         except CLINotFoundError:
             raise
@@ -736,3 +397,4 @@ async def run_planning_agent(
             logger.warning(f"RuntimeError on attempt {attempt + 1}: {e}, retrying")
 
     raise RuntimeError("run_planning_agent: max retries exceeded")
+
