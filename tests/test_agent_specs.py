@@ -51,6 +51,7 @@ def test_validation_prompt_metric_mode_contains_submission_checks():
         submission_count=1,
         max_submissions_per_day=5,
         quota_instruction="",
+        project_dir="/tmp/project",
     )
 
     assert "OOF score     : 0.812300" in prompt

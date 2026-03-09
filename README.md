@@ -222,7 +222,10 @@ KAGGLE_KEY="..."
 ZINDI_USERNAME="..."
 ZINDI_PASSWORD="..."
 
-# Optional — 0-based index of the Zindi challenge to select:
+# Preferred — immutable challenge_id/slug (from competition README config):
+ZINDI_CHALLENGE_ID="financial-well-being-sme"
+
+# Optional fallback — 0-based index of the Zindi challenge to select:
 ZINDI_CHALLENGE_INDEX=0
 ```
 

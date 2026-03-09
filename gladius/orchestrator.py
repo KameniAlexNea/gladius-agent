@@ -36,6 +36,16 @@ from gladius.utils.project_setup import setup_project_dir, write_claude_md
 logger = logging.getLogger(__name__)
 
 
+def _has_iteration_result(state: CompetitionState) -> bool:
+    """Return True if the current iteration already has a usable experiment artifact."""
+    for exp in reversed(state.experiments):
+        if exp.get("iteration") != state.iteration:
+            continue
+        if exp.get("submission_file") or exp.get("oof_score") is not None:
+            return True
+    return False
+
+
 def _halt_with_reason(state: CompetitionState, *, phase: str, reason: str) -> None:
     state.last_stop_reason = reason
     state.error_log.append(
@@ -227,7 +237,12 @@ async def run_competition(
         try:
             if state.phase == "planning":
                 if await run_planning_phase(
-                    state, store, data_dir, project_dir, platform, n_parallel,
+                    state,
+                    store,
+                    data_dir,
+                    project_dir,
+                    platform,
+                    n_parallel,
                     run_planner=run_planner,
                     consume_agent_call=_consume_agent_call,
                     check_budget=_check_iteration_runtime_budget,
@@ -236,7 +251,10 @@ async def run_competition(
 
             elif state.phase == "implementing":
                 if await run_implementation_phase(
-                    state, store, project_dir, n_parallel,
+                    state,
+                    store,
+                    project_dir,
+                    n_parallel,
                     run_implementer=run_implementer,
                     consume_agent_call=_consume_agent_call,
                     consume_agent_calls=_consume_agent_calls,
@@ -246,7 +264,11 @@ async def run_competition(
 
             elif state.phase == "validation":
                 if await run_validation_phase(
-                    state, store, project_dir, platform, auto_submit,
+                    state,
+                    store,
+                    project_dir,
+                    platform,
+                    auto_submit,
                     run_validation_agent=run_validation_agent,
                     run_summarizer=run_summarizer,
                     submit=submit,
@@ -280,7 +302,14 @@ async def run_competition(
                 state.last_stop_reason = "consecutive error budget exceeded (3/3)"
                 state.phase = "done"
             else:
-                state.phase = "planning"
+                if state.phase == "implementing" and _has_iteration_result(state):
+                    logger.warning(
+                        "Implementation failed after producing artifacts; "
+                        "continuing with validation phase"
+                    )
+                    state.phase = "validation"
+                else:
+                    state.phase = "planning"
 
         finally:
             store.save(state)

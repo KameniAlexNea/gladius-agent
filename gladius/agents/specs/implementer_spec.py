@@ -72,7 +72,9 @@ config file. Always use the relative path .claude/EXPERIMENT_STATE.json
 
 1. Read CLAUDE.md for competition context (metric, data_dir, best scores, past experiments).
 2. Read the plan provided in your task description.
-3. Initialise .claude/EXPERIMENT_STATE.json if it doesn't exist yet (write `{}`).
+3. Start with a fresh .claude/EXPERIMENT_STATE.json for this iteration:
+    - if missing, create it as `{}`
+    - if present, reset it to `{}` before spawning subagents
 
 ## Artifact protocol
 

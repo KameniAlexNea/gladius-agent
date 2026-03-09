@@ -55,9 +55,7 @@ def _submit_to_zindi(
         return False, "auth_missing"
     try:
         user = Zindian(username=username, fixed_password=password)
-        user.select_a_challenge(
-            fixed_index=int(os.getenv("ZINDI_CHALLENGE_INDEX", "0"))
-        )
+        _select_zindi_challenge(user=user, competition_id=competition_id)
         if user.remaining_subimissions <= 0:
             logger.warning("Zindi: no remaining submissions today")
             return False, "quota_exceeded"
@@ -69,6 +67,31 @@ def _submit_to_zindi(
     except Exception as exc:
         logger.error(f"Zindi submission error: {exc}")
         return False, "submission_failed"
+
+
+def _select_zindi_challenge(*, user, competition_id: str) -> None:
+    """Select Zindi challenge by immutable challenge_id, fallback to index env."""
+    if competition_id:
+        try:
+            user.select_a_challenge(challenge_id=competition_id)
+            return
+        except Exception as exc:
+            logger.warning(
+                "Could not select Zindi challenge by challenge_id='%s': %s",
+                competition_id,
+                exc,
+            )
+
+    fallback_idx = os.getenv("ZINDI_CHALLENGE_INDEX")
+    if fallback_idx is None:
+        raise RuntimeError(
+            "Could not resolve Zindi challenge. Ensure competition_id in config "
+            "matches your Zindi challenge_id or set ZINDI_CHALLENGE_INDEX."
+        )
+    try:
+        user.select_a_challenge(fixed_index=int(fallback_idx))
+    except ValueError as exc:
+        raise RuntimeError("ZINDI_CHALLENGE_INDEX must be an integer") from exc
 
 
 def _submit_to_fake(

@@ -95,7 +95,11 @@ async def run_validation_phase(
         state.last_submission_date = today
 
     validation = await _run_validation_agent(
-        state, store, project_dir, platform, latest,
+        state,
+        store,
+        project_dir,
+        platform,
+        latest,
         oof_score=oof_score,
         quality_score=quality_score,
         submission_file=submission_file,
@@ -121,9 +125,7 @@ async def run_validation_phase(
             f"hybrid={hybrid_quality_score}/100"
         )
 
-    primary_score = (
-        hybrid_quality_score if state.target_metric is None else oof_score
-    )
+    primary_score = hybrid_quality_score if state.target_metric is None else oof_score
     best_primary = (
         state.best_quality_score
         if state.target_metric is None
@@ -148,7 +150,8 @@ async def run_validation_phase(
         )
 
     _record_improvement(
-        state, store,
+        state,
+        store,
         deterministic_improvement=deterministic_improvement,
         primary_score=primary_score,
         best_primary=best_primary,
@@ -158,19 +161,31 @@ async def run_validation_phase(
     if (
         deterministic_improvement
         and submission_file
+        and validation.get("submit", True)
         and (
-            platform == "none"
-            or state.submission_count < state.max_submissions_per_day
+            platform == "none" or state.submission_count < state.max_submissions_per_day
         )
         and auto_submit
     ):
         _handle_submission(
-            state, store, platform, submission_file,
+            state,
+            store,
+            platform,
+            submission_file,
             primary_score=primary_score,
             oof_score=oof_score,
             submit=submit,
             score_submission_artifact=score_submission_artifact,
             update_best_submission_score=update_best_submission_score,
+        )
+    elif (
+        deterministic_improvement
+        and submission_file
+        and not validation.get("submit", True)
+    ):
+        logger.info(
+            "Validation agent requested no submission (submit=false) "
+            "despite improvement; respecting agent decision"
         )
 
     try:
@@ -400,9 +415,7 @@ def _check_plateau_and_set_phase(
 ) -> None:
     _plateau_key = "quality_score" if state.target_metric is None else "oof_score"
     _scored = [
-        e[_plateau_key]
-        for e in state.experiments
-        if e.get(_plateau_key) is not None
+        e[_plateau_key] for e in state.experiments if e.get(_plateau_key) is not None
     ]
     _plateau_threshold = 3.0 if state.target_metric is None else 0.001
     deterministic_stop = False
@@ -435,8 +448,6 @@ def _check_plateau_and_set_phase(
             _why.append("no plateau")
         if not no_next_directions:
             _why.append(f"next_directions={validation.get('next_directions')}")
-        logger.info(
-            f"Agent requested stop=True but continuing — {', '.join(_why)}."
-        )
+        logger.info(f"Agent requested stop=True but continuing — {', '.join(_why)}.")
 
     state.phase = "done" if should_stop else "planning"

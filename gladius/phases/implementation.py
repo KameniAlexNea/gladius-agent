@@ -8,11 +8,35 @@ import time
 from collections.abc import Callable
 from datetime import datetime as _dt
 from datetime import timezone as _tz
+from pathlib import Path
 
 from gladius.db.store import StateStore
 from gladius.state import CompetitionState
 
 logger = logging.getLogger(__name__)
+
+
+def _reset_iteration_experiment_state(project_dir: str, iteration: int) -> None:
+    """Archive prior EXPERIMENT_STATE.json and initialize a fresh file for this iteration."""
+    claude_dir = Path(project_dir) / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    state_path = claude_dir / "EXPERIMENT_STATE.json"
+
+    if state_path.exists():
+        archive_base = (
+            claude_dir / f"EXPERIMENT_STATE.iter-{max(iteration - 1, 0):02d}.json"
+        )
+        archive_path = archive_base
+        suffix = 1
+        while archive_path.exists():
+            archive_path = claude_dir / (
+                f"EXPERIMENT_STATE.iter-{max(iteration - 1, 0):02d}.{suffix}.json"
+            )
+            suffix += 1
+        state_path.replace(archive_path)
+        logger.info("Archived prior experiment state to %s", archive_path)
+
+    state_path.write_text("{}\n", encoding="utf-8")
 
 
 async def run_implementation_phase(
@@ -43,9 +67,15 @@ async def run_implementation_phase(
         state.current_plan.get("plans", []) if state.current_plan else []
     )
 
+    _reset_iteration_experiment_state(project_dir, state.iteration)
+
     if n_parallel > 1 and len(alt_plans) > 1:
         result = await _run_parallel(
-            state, store, project_dir, alt_plans, n_parallel,
+            state,
+            store,
+            project_dir,
+            alt_plans,
+            n_parallel,
             run_implementer=run_implementer,
             consume_agent_calls=consume_agent_calls,
         )
@@ -53,7 +83,9 @@ async def run_implementation_phase(
             return True  # all failed — phase already reset to planning
     else:
         result = await _run_sequential(
-            state, store, project_dir,
+            state,
+            store,
+            project_dir,
             run_implementer=run_implementer,
             consume_agent_call=consume_agent_call,
         )
@@ -242,9 +274,7 @@ async def _run_sequential(
         started_at=_started_impl,
         duration_ms=int((time.perf_counter() - _t0_impl) * 1000),
         is_error=result.get("status") != "success",
-        notes=(
-            result.get("status") if result.get("status") != "success" else None
-        ),
+        notes=(result.get("status") if result.get("status") != "success" else None),
     )
 
     if result["status"] != "success":

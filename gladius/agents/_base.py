@@ -276,6 +276,9 @@ async def run_agent(
 _PLAN_MODE_DENIED_TOOLS = frozenset(
     {"Write", "Edit", "MultiEdit", "Bash", "Task", "computer"}
 )
+_PLAN_MODE_ALLOWED_TOOLS = frozenset(
+    {"Read", "Glob", "Grep", "WebSearch", "Skill", "TodoWrite", "ExitPlanMode"}
+)
 
 
 async def _approve_exit_plan_mode(tool_name: str, input_data: dict, context: object):
@@ -291,6 +294,13 @@ async def _approve_exit_plan_mode(tool_name: str, input_data: dict, context: obj
         return PermissionResultDeny(
             message=(
                 f"Tool '{tool_name}' is not permitted in planning mode. "
+                "Use only Read, Glob, Grep, WebSearch, Skill, TodoWrite, or ExitPlanMode."
+            )
+        )
+    if tool_name not in _PLAN_MODE_ALLOWED_TOOLS:
+        return PermissionResultDeny(
+            message=(
+                f"Tool '{tool_name}' is not allowed in planning mode. "
                 "Use only Read, Glob, Grep, WebSearch, Skill, TodoWrite, or ExitPlanMode."
             )
         )

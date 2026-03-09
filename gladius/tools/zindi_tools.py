@@ -4,7 +4,8 @@ Zindi platform tools exposed as an MCP server for Claude agents.
 Credentials are read from environment variables:
     ZINDI_USERNAME  (or USER_NAME as fallback)
     ZINDI_PASSWORD  (or PASSWORD as fallback)
-    ZINDI_CHALLENGE_INDEX  — 0-based index of the challenge to select (default 0)
+    ZINDI_CHALLENGE_ID     — immutable Zindi challenge slug/id (preferred)
+    ZINDI_CHALLENGE_INDEX  — 0-based fallback index when challenge_id is not set
 
 Usage:
     from gladius.tools.zindi_tools import zindi_server
@@ -36,6 +37,11 @@ def _get_user():
             "Set ZINDI_USERNAME and ZINDI_PASSWORD environment variables."
         )
     user = Zindian(username=username, fixed_password=password)
+    challenge_id = os.getenv("ZINDI_CHALLENGE_ID")
+    if challenge_id:
+        user.select_a_challenge(challenge_id=challenge_id)
+        return user
+
     challenge_index = int(os.getenv("ZINDI_CHALLENGE_INDEX", "0"))
     user.select_a_challenge(fixed_index=challenge_index)
     return user

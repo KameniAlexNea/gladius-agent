@@ -124,6 +124,7 @@ def build_validation_prompt(
     submission_count: int,
     max_submissions_per_day: int,
     quota_instruction: str,
+    project_dir: str,
 ) -> str:
     if target_metric:
         direction_word = "higher" if metric_direction == "maximize" else "lower"
@@ -132,7 +133,9 @@ def build_validation_prompt(
         )
         new_oof_str = f"{oof_score:.6f}" if oof_score is not None else "n/a"
         submission_check_instruction = (
-            f"Use Read to open {submission_path} and check the header + first data row (CSV format)."
+            f"Use Read to open {submission_path} and check the header + first data row (CSV format). "
+            "Use CLAUDE.md to find the sample template path and respect exact filename casing "
+            "(e.g., SampleSubmission.csv vs sample_submission.csv)."
             if submission_path
             else "No submission file — set format_ok=False."
         )
@@ -141,6 +144,8 @@ New experiment:
   Solution      : {solution_path}
   OOF score     : {new_oof_str}
   Submission CSV: {submission_path or "(none produced)"}
+  Project root   : {project_dir}
+  Experiment state path: {project_dir}/.claude/EXPERIMENT_STATE.json
 
 Context:
   Metric              : {target_metric} ({metric_direction})
@@ -167,6 +172,8 @@ New experiment:
   Solution      : {solution_path}
   Implementer's self-score: {quality_score}/100  ← treat this as a ceiling, not a floor
   Deliverable   : {submission_path or "(none produced)"}
+    Project root   : {project_dir}
+    Experiment state path: {project_dir}/.claude/EXPERIMENT_STATE.json
 
 Context:
   Task type     : open-ended (no numeric metric)
