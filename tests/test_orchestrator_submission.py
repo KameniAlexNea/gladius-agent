@@ -119,7 +119,7 @@ def test_submission_counter_not_incremented_on_failed_submit(monkeypatch, tmp_pa
     monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
     monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
     monkeypatch.setattr(
-        orchestrator, "_submit", lambda **kwargs: (False, "submission_failed")
+        orchestrator, "submit", lambda **kwargs: (False, "submission_failed")
     )
 
     state = asyncio.run(
@@ -196,7 +196,7 @@ def test_submission_counter_incremented_on_successful_submit(monkeypatch, tmp_pa
     monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
     monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
     monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
-    monkeypatch.setattr(orchestrator, "_submit", lambda **kwargs: (True, None))
+    monkeypatch.setattr(orchestrator, "submit", lambda **kwargs: (True, None))
 
     state = asyncio.run(
         orchestrator.run_competition(
@@ -307,7 +307,7 @@ def test_open_task_uses_hybrid_quality_for_best_score(monkeypatch, tmp_path):
     monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
     monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
     monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
-    monkeypatch.setattr(orchestrator, "_submit", lambda **kwargs: (True, None))
+    monkeypatch.setattr(orchestrator, "submit", lambda **kwargs: (True, None))
 
     state = asyncio.run(
         orchestrator.run_competition(
@@ -383,10 +383,10 @@ def test_submission_score_updates_lb_tracking(monkeypatch, tmp_path):
     monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
     monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
     monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
-    monkeypatch.setattr(orchestrator, "_submit", lambda **kwargs: (True, None))
+    monkeypatch.setattr(orchestrator, "submit", lambda **kwargs: (True, None))
     monkeypatch.setattr(
         orchestrator,
-        "_score_submission_artifact",
+        "score_submission_artifact",
         lambda **kwargs: 0.8312,
     )
 
