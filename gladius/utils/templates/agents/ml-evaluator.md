@@ -4,7 +4,7 @@ description: >-
   Computes the final OOF score from existing pipeline artifacts. Read-only after
   code runs. Extracts the metric value from saved arrays or run logs and writes it
   to EXPERIMENT_STATE.json. This is a deterministic extraction task.
-tools: Read, Bash, Glob, Grep
+tools: Read, Write, Bash, Glob, Grep
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 15
 permissionMode: acceptEdits

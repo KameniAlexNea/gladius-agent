@@ -134,7 +134,7 @@ _ML_SCAFFOLDER_DEF = AgentDefinition(
         "On failure write:\n"
         '{"scaffolder": {"status": "error", "message": "<what failed>"}}'
     ),
-    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+    tools=["Read", "Write", "Bash", "Glob"],
     model=_model,
 )
 
@@ -169,7 +169,7 @@ _ML_DEVELOPER_DEF = AgentDefinition(
         "On failure after 3 fix attempts write:\n"
         '{"developer": {"status": "error", "message": "<last error>"}}'
     ),
-    tools=["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"],
+    tools=["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "TodoWrite"],
     model=_model,
 )
 
@@ -200,7 +200,7 @@ _ML_SCIENTIST_DEF = AgentDefinition(
         '{"scientist": {"status": "fixed", "issues_addressed": ["..."], '
         '"files_modified": ["..."], "message": "..."}}'
     ),
-    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite"],
     model=_model,
 )
 
@@ -257,7 +257,7 @@ _CODE_REVIEWER_DEF = AgentDefinition(
         '"warnings": ["..."], "message": "..."}}\n\n'
         "critical_issues MUST be [] if there are none — never omit the key."
     ),
-    tools=["Read", "Glob", "Grep", "Bash"],
+    tools=["Read", "Glob", "Grep"],
     model=_model,
 )
 

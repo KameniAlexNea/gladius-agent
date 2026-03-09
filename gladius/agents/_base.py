@@ -73,14 +73,23 @@ def _get_runtime_model() -> str:
     return model
 
 
+# Subagents that benefit from a cheaper/faster model for deterministic tasks.
+_SMALL_MODEL_AGENTS = frozenset({"ml-scaffolder", "ml-evaluator"})
+
+
 def _build_runtime_agents(model: str) -> dict[str, AgentDefinition]:
-    """Stamp the live model name into every entry in the registry."""
+    """Stamp the live model name into every entry in the registry.
+
+    ml-scaffolder and ml-evaluator use GLADIUS_SMALL_MODEL when set,
+    falling back to the main model so the env var is always respected.
+    """
+    small_model = os.environ.get("GLADIUS_SMALL_MODEL") or model
     return {
         k: AgentDefinition(
             description=v.description,
             prompt=v.prompt,
             tools=v.tools,
-            model=model,
+            model=small_model if k in _SMALL_MODEL_AGENTS else model,
         )
         for k, v in _SUBAGENT_DEFINITIONS.items()
     }

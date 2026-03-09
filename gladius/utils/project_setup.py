@@ -315,9 +315,7 @@ def setup_project_dir(
         _copy_skill(root, "feature-engineering")
         _copy_skill(root, "hpo")
         _copy_skill(root, "ensembling")
-        _copy_skill(root, "code-review")
-    else:
-        _copy_skill(root, "code-review")
+    _copy_skill(root, "code-review")
 
     _copy_skill(root, "git-workflow")
 
