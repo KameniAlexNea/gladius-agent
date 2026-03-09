@@ -12,6 +12,7 @@ permissionMode: bypassPermissions
 skills:
   - ml-pipeline
   - feature-engineering
+  - adversarial-validation
   - polars
   - hpo
   - ensembling

@@ -172,7 +172,8 @@ Standard files to expect:
         skills_section = """\
 ## Available Skills
 
-Invoke skills with the `Skill` tool — the output is returned inline, do NOT use TaskOutput.
+> **Planner only:** use the `Skill` tool to read a skill inline (`Skill({"name": "..."})`).
+> Implementer subagents have skills pre-injected via their frontmatter — do NOT call `Skill`.
 
 | Skill name | When to invoke |
 | --- | --- |
@@ -219,7 +220,8 @@ Invoke skills with the `Skill` tool — the output is returned inline, do NOT us
         skills_section = """\
 ## Available Skills
 
-Invoke skills with the `Skill` tool — the output is returned inline, do NOT use TaskOutput.
+> **Planner only:** use the `Skill` tool to read a skill inline (`Skill({"name": "..."})`).
+> Implementer subagents have skills pre-injected via their frontmatter — do NOT call `Skill`.
 
 | Skill name | When to invoke |
 | --- | --- |

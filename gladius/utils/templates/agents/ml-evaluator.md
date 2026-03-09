@@ -7,7 +7,7 @@ description: >-
 tools: Read, Write, Bash, Glob, Grep
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 15
-permissionMode: acceptEdits
+permissionMode: bypassPermissions
 skills:
   - ml-pipeline
 ---
