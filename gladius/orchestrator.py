@@ -38,6 +38,7 @@ logger = logging.getLogger("gladius.orchestrator")
 
 # ── Score helpers ─────────────────────────────────────────────────────────────
 
+
 def _compute_hybrid_quality_score(
     *,
     implementer_quality_score: float | None,
@@ -78,12 +79,15 @@ def _is_better(
 
 def _halt_with_reason(state: CompetitionState, *, phase: str, reason: str) -> None:
     state.last_stop_reason = reason
-    state.error_log.append({"phase": phase, "iteration": state.iteration, "error": reason})
+    state.error_log.append(
+        {"phase": phase, "iteration": state.iteration, "error": reason}
+    )
     state.phase = "done"
     logger.warning(f"Guardrail stop [{phase}]: {reason}")
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
+
 
 async def run_competition(
     competition_dir: str,
@@ -140,7 +144,9 @@ async def run_competition(
         )
     else:
         _best_str = (
-            f"{state.best_oof_score:.6f}" if state.best_oof_score is not None else "none"
+            f"{state.best_oof_score:.6f}"
+            if state.best_oof_score is not None
+            else "none"
         )
         logger.info(
             f"Resuming from iteration {state.iteration}, phase={state.phase}, "
@@ -155,17 +161,29 @@ async def run_competition(
         # Recalibrate best scores if experiments exist but bests were never persisted.
         if state.experiments:
             if target_metric and state.best_oof_score is None:
-                scored = [e["oof_score"] for e in state.experiments if e.get("oof_score") is not None]
+                scored = [
+                    e["oof_score"]
+                    for e in state.experiments
+                    if e.get("oof_score") is not None
+                ]
                 if scored:
                     state.best_oof_score = (
                         max(scored) if metric_direction != "minimize" else min(scored)
                     )
-                    logger.info(f"Recalibrated best_oof_score from experiments: {state.best_oof_score:.6f}")
+                    logger.info(
+                        f"Recalibrated best_oof_score from experiments: {state.best_oof_score:.6f}"
+                    )
             elif not target_metric and state.best_quality_score is None:
-                scored = [e["quality_score"] for e in state.experiments if e.get("quality_score") is not None]
+                scored = [
+                    e["quality_score"]
+                    for e in state.experiments
+                    if e.get("quality_score") is not None
+                ]
                 if scored:
                     state.best_quality_score = max(scored)
-                    logger.info(f"Recalibrated best_quality_score from experiments: {state.best_quality_score}/100")
+                    logger.info(
+                        f"Recalibrated best_quality_score from experiments: {state.best_quality_score}/100"
+                    )
 
         if state.phase == "done" and state.iteration < state.max_iterations:
             logger.info(
@@ -255,7 +273,11 @@ async def run_competition(
                 _t0 = time.perf_counter()
                 _started_at = _dt.now(_tz.utc).isoformat()
                 plan, session_id = await run_planner(
-                    state, data_dir, project_dir, platform=platform, n_parallel=n_parallel,
+                    state,
+                    data_dir,
+                    project_dir,
+                    platform=platform,
+                    n_parallel=n_parallel,
                 )
                 store.record_agent_run(
                     iteration=state.iteration,
@@ -306,7 +328,9 @@ async def run_competition(
                 )
                 if n_parallel > 1 and len(alt_plans) > 1:
                     plans_to_run = alt_plans[:n_parallel]
-                    if not _consume_agent_calls("parallel implementers", len(plans_to_run)):
+                    if not _consume_agent_calls(
+                        "parallel implementers", len(plans_to_run)
+                    ):
                         continue
                     logger.info(f"Running {len(plans_to_run)} parallel implementers")
                     _t0_impl = time.perf_counter()
@@ -320,22 +344,38 @@ async def run_competition(
                     for i, r in enumerate(results):
                         if isinstance(r, Exception):
                             logger.warning(f"Parallel implementer {i} raised: {r}")
-                            state.failed_runs.append({
-                                "iteration": state.iteration,
-                                "status": "error",
-                                "error": str(r),
-                                "approach": plans_to_run[i].get("approach_summary", ""),
-                            })
+                            state.failed_runs.append(
+                                {
+                                    "iteration": state.iteration,
+                                    "status": "error",
+                                    "error": str(r),
+                                    "approach": plans_to_run[i].get(
+                                        "approach_summary", ""
+                                    ),
+                                }
+                            )
                         elif isinstance(r, dict) and r.get("status") == "success":
                             successful.append(r)
                         else:
-                            err = r.get("error_message", "") if isinstance(r, dict) else str(r)
-                            state.failed_runs.append({
-                                "iteration": state.iteration,
-                                "status": r.get("status", "error") if isinstance(r, dict) else "error",
-                                "error": err,
-                                "approach": plans_to_run[i].get("approach_summary", ""),
-                            })
+                            err = (
+                                r.get("error_message", "")
+                                if isinstance(r, dict)
+                                else str(r)
+                            )
+                            state.failed_runs.append(
+                                {
+                                    "iteration": state.iteration,
+                                    "status": (
+                                        r.get("status", "error")
+                                        if isinstance(r, dict)
+                                        else "error"
+                                    ),
+                                    "error": err,
+                                    "approach": plans_to_run[i].get(
+                                        "approach_summary", ""
+                                    ),
+                                }
+                            )
                     if not successful:
                         logger.warning("All parallel implementers failed")
                         state.consecutive_errors += 1
@@ -350,12 +390,18 @@ async def run_competition(
                         store.save(state)
                         continue
                     if state.target_metric is None:
-                        result = max(successful, key=lambda r: r.get("quality_score", 0) or 0)
+                        result = max(
+                            successful, key=lambda r: r.get("quality_score", 0) or 0
+                        )
                     else:
                         direction = state.metric_direction
                         result = max(
                             successful,
-                            key=lambda r: r["oof_score"] if direction == "maximize" else -r["oof_score"],
+                            key=lambda r: (
+                                r["oof_score"]
+                                if direction == "maximize"
+                                else -r["oof_score"]
+                            ),
                         )
                     _best_score_str = (
                         f"quality {result.get('quality_score', 0)}/100"
@@ -376,33 +422,45 @@ async def run_competition(
                             notes=f"parallel {i_s + 1}/{len(successful)}",
                         )
                         if r is not result:
-                            state.experiments.append({
-                                "iteration": state.iteration,
-                                "oof_score": r.get("oof_score"),
-                                "quality_score": r.get("quality_score"),
-                                "solution_files": r.get("solution_files", []),
-                                "submission_file": r.get("submission_file", ""),
-                                "notes": r.get("notes", ""),
-                                "approach": "",
-                            })
-                            store.record_code_snapshots(state.iteration, r.get("solution_files", []), project_dir)
-                    state.experiments.append({
-                        "iteration": state.iteration,
-                        "oof_score": result.get("oof_score"),
-                        "quality_score": result.get("quality_score"),
-                        "solution_files": result.get("solution_files", []),
-                        "submission_file": result.get("submission_file", ""),
-                        "notes": result.get("notes", ""),
-                        "approach": "",
-                    })
-                    store.record_code_snapshots(state.iteration, result.get("solution_files", []), project_dir)
+                            state.experiments.append(
+                                {
+                                    "iteration": state.iteration,
+                                    "oof_score": r.get("oof_score"),
+                                    "quality_score": r.get("quality_score"),
+                                    "solution_files": r.get("solution_files", []),
+                                    "submission_file": r.get("submission_file", ""),
+                                    "notes": r.get("notes", ""),
+                                    "approach": "",
+                                }
+                            )
+                            store.record_code_snapshots(
+                                state.iteration,
+                                r.get("solution_files", []),
+                                project_dir,
+                            )
+                    state.experiments.append(
+                        {
+                            "iteration": state.iteration,
+                            "oof_score": result.get("oof_score"),
+                            "quality_score": result.get("quality_score"),
+                            "solution_files": result.get("solution_files", []),
+                            "submission_file": result.get("submission_file", ""),
+                            "notes": result.get("notes", ""),
+                            "approach": "",
+                        }
+                    )
+                    store.record_code_snapshots(
+                        state.iteration, result.get("solution_files", []), project_dir
+                    )
                 else:
                     # ── Sequential single implementer ─────────────────────
                     if not _consume_agent_call("implementer"):
                         continue
                     _t0_impl = time.perf_counter()
                     _started_impl = _dt.now(_tz.utc).isoformat()
-                    result = await run_implementer(state.current_plan, state, project_dir)
+                    result = await run_implementer(
+                        state.current_plan, state, project_dir
+                    )
                     store.record_agent_run(
                         iteration=state.iteration,
                         phase="implementing",
@@ -410,21 +468,28 @@ async def run_competition(
                         started_at=_started_impl,
                         duration_ms=int((time.perf_counter() - _t0_impl) * 1000),
                         is_error=result.get("status") != "success",
-                        notes=result.get("status") if result.get("status") != "success" else None,
+                        notes=(
+                            result.get("status")
+                            if result.get("status") != "success"
+                            else None
+                        ),
                     )
                     if result["status"] != "success":
                         logger.warning(
                             f"Implementer {result['status']}: {result.get('error_message', '')}"
                         )
-                        state.failed_runs.append({
-                            "iteration": state.iteration,
-                            "status": result["status"],
-                            "error": result.get("error_message", ""),
-                            "approach": (
-                                state.current_plan.get("approach_summary", "")
-                                if state.current_plan else ""
-                            ),
-                        })
+                        state.failed_runs.append(
+                            {
+                                "iteration": state.iteration,
+                                "status": result["status"],
+                                "error": result.get("error_message", ""),
+                                "approach": (
+                                    state.current_plan.get("approach_summary", "")
+                                    if state.current_plan
+                                    else ""
+                                ),
+                            }
+                        )
                         state.consecutive_errors += 1
                         state.iteration += 1
                         state.phase = "planning"
@@ -436,19 +501,24 @@ async def run_competition(
                         )
                         store.save(state)
                         continue
-                    state.experiments.append({
-                        "iteration": state.iteration,
-                        "oof_score": result.get("oof_score"),
-                        "quality_score": result.get("quality_score"),
-                        "solution_files": result.get("solution_files", []),
-                        "submission_file": result.get("submission_file", ""),
-                        "notes": result.get("notes", ""),
-                        "approach": (
-                            state.current_plan.get("approach_summary", "")
-                            if state.current_plan else ""
-                        ),
-                    })
-                    store.record_code_snapshots(state.iteration, result.get("solution_files", []), project_dir)
+                    state.experiments.append(
+                        {
+                            "iteration": state.iteration,
+                            "oof_score": result.get("oof_score"),
+                            "quality_score": result.get("quality_score"),
+                            "solution_files": result.get("solution_files", []),
+                            "submission_file": result.get("submission_file", ""),
+                            "notes": result.get("notes", ""),
+                            "approach": (
+                                state.current_plan.get("approach_summary", "")
+                                if state.current_plan
+                                else ""
+                            ),
+                        }
+                    )
+                    store.record_code_snapshots(
+                        state.iteration, result.get("solution_files", []), project_dir
+                    )
 
                 # ── Common post-implementation logging ────────────────────────
                 if state.target_metric:
@@ -489,6 +559,7 @@ async def run_competition(
                 submission_file = latest["submission_file"]
 
                 from datetime import date as _date
+
                 today = _date.today().isoformat()
                 if state.last_submission_date != today:
                     if state.submission_count > 0:
@@ -568,11 +639,17 @@ async def run_competition(
                         f"hybrid={hybrid_quality_score}/100"
                     )
 
-                primary_score = hybrid_quality_score if state.target_metric is None else oof_score
-                best_primary = (
-                    state.best_quality_score if state.target_metric is None else state.best_oof_score
+                primary_score = (
+                    hybrid_quality_score if state.target_metric is None else oof_score
                 )
-                deterministic_improvement = _is_better(primary_score, best_primary, state.metric_direction)
+                best_primary = (
+                    state.best_quality_score
+                    if state.target_metric is None
+                    else state.best_oof_score
+                )
+                deterministic_improvement = _is_better(
+                    primary_score, best_primary, state.metric_direction
+                )
 
                 if validation.get("is_improvement") != deterministic_improvement:
                     _score_label = (
@@ -625,7 +702,10 @@ async def run_competition(
                 if (
                     deterministic_improvement
                     and submission_file
-                    and (platform == "none" or state.submission_count < state.max_submissions_per_day)
+                    and (
+                        platform == "none"
+                        or state.submission_count < state.max_submissions_per_day
+                    )
                     and auto_submit
                 ):
                     logger.info(f"Submitting [{platform}]: {submission_file}")
@@ -644,15 +724,22 @@ async def run_competition(
                         state.best_submission_path = submission_file
                         if platform != "none":
                             state.submission_count += 1
-                        scored_lb = score_submission_artifact(platform=platform, submission_path=submission_file)
+                        scored_lb = score_submission_artifact(
+                            platform=platform, submission_path=submission_file
+                        )
                         if scored_lb is not None:
                             from datetime import datetime as _datetime
-                            state.lb_scores.append({
-                                "score": scored_lb,
-                                "timestamp": _datetime.now().isoformat(),
-                                "public_lb": True,
-                            })
-                            update_best_submission_score(state=state, new_score=scored_lb)
+
+                            state.lb_scores.append(
+                                {
+                                    "score": scored_lb,
+                                    "timestamp": _datetime.now().isoformat(),
+                                    "public_lb": True,
+                                }
+                            )
+                            update_best_submission_score(
+                                state=state, new_score=scored_lb
+                            )
                             logger.info(
                                 f"Recorded leaderboard score: {scored_lb:.6f} "
                                 f"(best={state.best_submission_score:.6f})"
@@ -663,15 +750,21 @@ async def run_competition(
                             event="submitted",
                             detail=(
                                 f"file={submission_file} platform={platform}"
-                                + (f" lb={scored_lb:.6f}" if scored_lb is not None else "")
+                                + (
+                                    f" lb={scored_lb:.6f}"
+                                    if scored_lb is not None
+                                    else ""
+                                )
                             ),
                         )
                     else:
-                        state.error_log.append({
-                            "phase": "submission",
-                            "iteration": state.iteration,
-                            "error": f"submit_failed:{submit_error_type or 'unknown'}",
-                        })
+                        state.error_log.append(
+                            {
+                                "phase": "submission",
+                                "iteration": state.iteration,
+                                "error": f"submit_failed:{submit_error_type or 'unknown'}",
+                            }
+                        )
                         store.record_event(
                             iteration=state.iteration,
                             phase="validation",
@@ -709,8 +802,14 @@ async def run_competition(
                 state.iteration += 1
 
                 # ── Deterministic stop check ──────────────────────────────────
-                _plateau_key = "quality_score" if state.target_metric is None else "oof_score"
-                _scored = [e[_plateau_key] for e in state.experiments if e.get(_plateau_key) is not None]
+                _plateau_key = (
+                    "quality_score" if state.target_metric is None else "oof_score"
+                )
+                _scored = [
+                    e[_plateau_key]
+                    for e in state.experiments
+                    if e.get(_plateau_key) is not None
+                ]
                 _plateau_threshold = 3.0 if state.target_metric is None else 0.001
                 deterministic_stop = False
                 if len(_scored) >= 3:
@@ -726,7 +825,9 @@ async def run_competition(
                 no_next_directions = not bool(validation.get("next_directions"))
                 should_stop = deterministic_stop and agent_stop and no_next_directions
                 if should_stop:
-                    logger.info("Stopping: plateau detected + agent stop=True + no next directions.")
+                    logger.info(
+                        "Stopping: plateau detected + agent stop=True + no next directions."
+                    )
                     store.record_event(
                         iteration=state.iteration,
                         phase="validation",
@@ -738,17 +839,25 @@ async def run_competition(
                     if not deterministic_stop:
                         _why.append("no plateau")
                     if not no_next_directions:
-                        _why.append(f"next_directions={validation.get('next_directions')}")
-                    logger.info(f"Agent requested stop=True but continuing — {', '.join(_why)}.")
+                        _why.append(
+                            f"next_directions={validation.get('next_directions')}"
+                        )
+                    logger.info(
+                        f"Agent requested stop=True but continuing — {', '.join(_why)}."
+                    )
                 state.phase = "done" if should_stop else "planning"
 
         except Exception as exc:
-            logger.error(f"Unhandled error in phase={state.phase}: {exc}", exc_info=True)
-            state.error_log.append({
-                "phase": state.phase,
-                "iteration": state.iteration,
-                "error": str(exc),
-            })
+            logger.error(
+                f"Unhandled error in phase={state.phase}: {exc}", exc_info=True
+            )
+            state.error_log.append(
+                {
+                    "phase": state.phase,
+                    "iteration": state.iteration,
+                    "error": str(exc),
+                }
+            )
             state.consecutive_errors += 1
             store.record_event(
                 iteration=state.iteration,

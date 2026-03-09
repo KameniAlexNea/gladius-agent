@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 # ── gladius status ────────────────────────────────────────────────────────────
 
+
 def print_status(competition_dir: str) -> None:
     """Print a human-readable trace summary from the DB to stdout."""
     gladius_dir = Path(competition_dir) / ".gladius"
@@ -52,21 +53,24 @@ def print_status(competition_dir: str) -> None:
         best_q = curr["best_quality_score"]
         print("  Task type    : open-ended (quality score)")
         print(f"  Best quality : {f'{best_q}/100' if best_q is not None else 'none'}")
-    print(f"  Submissions  : {curr['submission_count']}/{comp['max_submissions_per_day']} today")
+    print(
+        f"  Submissions  : {curr['submission_count']}/{comp['max_submissions_per_day']} today"
+    )
     if curr["last_stop_reason"]:
         print(f"  Stop reason  : {curr['last_stop_reason']}")
 
     # ── experiments ──────────────────────────────────────────────────────────
     exps = conn.execute("SELECT * FROM experiments ORDER BY id").fetchall()
     if exps:
-        print(f"\n  {'─'*66}")
+        print(f"\n  {'─' * 66}")
         print(f"  EXPERIMENTS ({len(exps)} total)")
-        print(f"  {'─'*66}")
+        print(f"  {'─' * 66}")
         score_col = "quality_score" if not metric else "oof_score"
         for e in exps:
             score = e[score_col]
             score_str = (
-                f"{score:.6f}" if (metric and score is not None)
+                f"{score:.6f}"
+                if (metric and score is not None)
                 else (f"{score}/100" if (not metric and score is not None) else "n/a")
             )
             files = e["solution_files"] or ""
@@ -76,9 +80,9 @@ def print_status(competition_dir: str) -> None:
     try:
         plans = conn.execute("SELECT * FROM plans ORDER BY iteration").fetchall()
         if plans:
-            print(f"\n  {'─'*66}")
+            print(f"\n  {'─' * 66}")
             print(f"  PLANS ({len(plans)} total)")
-            print(f"  {'─'*66}")
+            print(f"  {'─' * 66}")
             for pl in plans:
                 summary = (pl["approach_summary"] or "")[:65]
                 print(f"  iter {pl['iteration']:02d}  {summary}")
@@ -91,16 +95,13 @@ def print_status(competition_dir: str) -> None:
             "SELECT * FROM event_log ORDER BY id DESC LIMIT 40"
         ).fetchall()
         if events:
-            print(f"\n  {'─'*66}")
+            print(f"\n  {'─' * 66}")
             print("  RECENT EVENTS (newest first)")
-            print(f"  {'─'*66}")
+            print(f"  {'─' * 66}")
             for ev in events:
                 ts = (ev["ts"] or "")[:19]
                 detail = (ev["detail"] or "")[:55]
-                print(
-                    f"  {ts}  iter={ev['iteration']:02d}  "
-                    f"{ev['event']:<20} {detail}"
-                )
+                print(f"  {ts}  iter={ev['iteration']:02d}  {ev['event']:<20} {detail}")
     except sqlite3.OperationalError:
         pass  # old DB without event_log table
 
@@ -110,9 +111,9 @@ def print_status(competition_dir: str) -> None:
             "SELECT * FROM agent_runs ORDER BY id DESC LIMIT 20"
         ).fetchall()
         if runs:
-            print(f"\n  {'─'*66}")
+            print(f"\n  {'─' * 66}")
             print("  RECENT AGENT RUNS (newest first)")
-            print(f"  {'─'*66}")
+            print(f"  {'─' * 66}")
             for r in runs:
                 dur = f"{r['duration_ms'] / 1000:.1f}s" if r["duration_ms"] else "?"
                 err = " ERROR" if r["is_error"] else ""
@@ -125,21 +126,22 @@ def print_status(competition_dir: str) -> None:
         pass
 
     # ── errors ───────────────────────────────────────────────────────────────
-    errs = conn.execute(
-        "SELECT * FROM error_log ORDER BY id DESC LIMIT 10"
-    ).fetchall()
+    errs = conn.execute("SELECT * FROM error_log ORDER BY id DESC LIMIT 10").fetchall()
     if errs:
-        print(f"\n  {'─'*66}")
+        print(f"\n  {'─' * 66}")
         print(f"  ERRORS / GUARDRAILS (last {min(len(errs), 10)})")
-        print(f"  {'─'*66}")
+        print(f"  {'─' * 66}")
         for e in errs:
-            print(f"  iter={e['iteration']}  phase={e['phase']}: {(e['error'] or '')[:80]}")
+            print(
+                f"  iter={e['iteration']}  phase={e['phase']}: {(e['error'] or '')[:80]}"
+            )
 
     print("=" * 70 + "\n")
     conn.close()
 
 
 # ── Argument parser ───────────────────────────────────────────────────────────
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -225,6 +227,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+
 
 async def _amain() -> None:
     from gladius.orchestrator import run_competition

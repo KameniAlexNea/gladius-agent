@@ -55,7 +55,9 @@ def test_setup_subagents_idempotent(tmp_path):
     state = _state(tmp_path)
     setup_project_dir(state, str(tmp_path), platform="fake")
 
-    agents_dir = tmp_path / ".clone" / "agents" if False else tmp_path / ".claude" / "agents"
+    agents_dir = (
+        tmp_path / ".clone" / "agents" if False else tmp_path / ".claude" / "agents"
+    )
     # Corrupt one subagent file to verify it is preserved on re-run.
     sentinel = "# CUSTOM_SENTINEL\n"
     target = agents_dir / "ml-developer.md"
@@ -101,7 +103,8 @@ def test_subagent_files_contain_experiment_state_reference(tmp_path):
     missing = [
         name
         for name in _SUBAGENT_NAMES
-        if "EXPERIMENT_STATE" not in (agents_dir / f"{name}.md").read_text(encoding="utf-8")
+        if "EXPERIMENT_STATE"
+        not in (agents_dir / f"{name}.md").read_text(encoding="utf-8")
     ]
     assert not missing, f"Missing EXPERIMENT_STATE.json reference in: {missing}"
 
@@ -115,7 +118,9 @@ def test_subagent_small_model_default_is_inherit(tmp_path, monkeypatch):
     agents_dir = tmp_path / ".claude" / "agents"
     for name in ("ml-scaffolder", "ml-evaluator"):
         content = (agents_dir / f"{name}.md").read_text(encoding="utf-8")
-        assert "model: inherit" in content, f"{name}.md should default to model: inherit"
+        assert "model: inherit" in content, (
+            f"{name}.md should default to model: inherit"
+        )
         assert "haiku" not in content, f"{name}.md must not contain hardcoded 'haiku'"
 
 

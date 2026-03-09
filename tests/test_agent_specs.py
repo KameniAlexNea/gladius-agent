@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from gladius.agents._base import _SUBAGENT_DEFINITIONS
 from gladius.agents.specs.implementer_spec import (
@@ -88,7 +88,9 @@ def test_implementer_system_prompt_describes_routing_graph():
         "ml-scientist",
         "submission-builder",
     ):
-        assert subagent in IMPLEMENTER_SYSTEM_PROMPT, f"{subagent!r} missing from prompt"
+        assert subagent in IMPLEMENTER_SYSTEM_PROMPT, (
+            f"{subagent!r} missing from prompt"
+        )
     for keyword in ("SCAFFOLD", "DEVELOP", "EVALUATE", "REVIEW", "SUBMIT"):
         assert keyword in IMPLEMENTER_SYSTEM_PROMPT, f"{keyword!r} missing from routing"
 
@@ -106,7 +108,9 @@ def test_implementer_agent_def_uses_agent_tool_not_bash():
     assert "submission-builder" in tool_str
     # These must NOT appear — coordinator should not run code directly.
     for forbidden in ("Bash", "Edit", "Grep", "Skill"):
-        assert forbidden not in tool_str, f"{forbidden!r} must not be in coordinator tools"
+        assert forbidden not in tool_str, (
+            f"{forbidden!r} must not be in coordinator tools"
+        )
 
 
 def test_run_implementer_uses_bypassPermissions_no_workarounds(tmp_path):
@@ -135,9 +139,10 @@ def test_run_implementer_uses_bypassPermissions_no_workarounds(tmp_path):
         f"run_implementer must not use disallowed_tools. Got: {captured.get('disallowed_tools')}"
     )
     # Must NOT override permission_mode away from the default bypassPermissions.
-    assert captured.get("permission_mode") in (None, "bypassPermissions"), (
-        f"Expected bypassPermissions (or unset), got {captured.get('permission_mode')!r}"
-    )
+    assert captured.get("permission_mode") in (
+        None,
+        "bypassPermissions",
+    ), f"Expected bypassPermissions (or unset), got {captured.get('permission_mode')!r}"
     # Must NOT use a can_use_tool callback — that approach is fragile.
     assert captured.get("can_use_tool") is None, (
         "run_implementer must not use a can_use_tool workaround"

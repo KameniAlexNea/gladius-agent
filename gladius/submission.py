@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 # ── Per-platform submit functions ─────────────────────────────────────────────
 
+
 def _submit_to_kaggle(
     competition_id: str, submission_path: str, message: str
 ) -> tuple[bool, str | None]:
@@ -85,6 +86,7 @@ def _submit_to_fake(
 
 
 # ── Public dispatch ───────────────────────────────────────────────────────────
+
 
 def submit(
     platform: str, competition_id: str, submission_path: str, message: str

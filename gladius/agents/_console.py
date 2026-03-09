@@ -92,7 +92,9 @@ def _log_message(agent_name: str, message: Any) -> None:
     elif isinstance(message, AssistantMessage):
         # Emit errors before content blocks so they're never missed.
         if message.error:
-            print(_c(_RED, f"  ⚠ [{agent_name}] AssistantMessage error: {message.error}"))
+            print(
+                _c(_RED, f"  ⚠ [{agent_name}] AssistantMessage error: {message.error}")
+            )
         sub_tag = _c(_DIM + _GREY, " ➣subagent") if message.parent_tool_use_id else ""
 
         for block in message.content:

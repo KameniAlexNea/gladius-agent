@@ -33,7 +33,9 @@ from claude_agent_sdk.types import (
 )
 from llm_output_parser import parse_json as _parse_json
 
-from gladius.agents._agent_defs import SUBAGENT_DEFINITIONS as _SUBAGENT_DEFINITIONS  # re-exported for callers
+from gladius.agents._agent_defs import (
+    SUBAGENT_DEFINITIONS as _SUBAGENT_DEFINITIONS,
+)  # re-exported for callers
 from gladius.agents._console import _BLUE, _BOLD, _RED, _c, _log_message
 
 logger = logging.getLogger(__name__)
@@ -133,7 +135,11 @@ async def run_agent(
     _runtime_model = _get_runtime_model()
     options = ClaudeAgentOptions(
         # Claude Code's built-in system prompt as the base; role instructions appended.
-        system_prompt={"type": "preset", "preset": "claude_code", "append": system_prompt},
+        system_prompt={
+            "type": "preset",
+            "preset": "claude_code",
+            "append": system_prompt,
+        },
         allowed_tools=allowed_tools,
         permission_mode=permission_mode,
         output_format={"type": "json_schema", "schema": output_schema},
@@ -267,7 +273,9 @@ async def run_agent(
 # ── run_planning_agent ────────────────────────────────────────────────────────
 
 # Tools the planner must never call — deny them even if the local model tries.
-_PLAN_MODE_DENIED_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "Bash", "Task", "computer"})
+_PLAN_MODE_DENIED_TOOLS = frozenset(
+    {"Write", "Edit", "MultiEdit", "Bash", "Task", "computer"}
+)
 
 
 async def _approve_exit_plan_mode(tool_name: str, input_data: dict, context: object):
@@ -319,7 +327,11 @@ async def run_planning_agent(
 
     _runtime_model = _get_runtime_model()
     options = ClaudeAgentOptions(
-        system_prompt={"type": "preset", "preset": "claude_code", "append": system_prompt},
+        system_prompt={
+            "type": "preset",
+            "preset": "claude_code",
+            "append": system_prompt,
+        },
         allowed_tools=allowed_tools,
         permission_mode="plan",
         can_use_tool=_approve_exit_plan_mode,
@@ -360,11 +372,17 @@ async def run_planning_agent(
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         # Primary: model called ExitPlanMode.
-                        if isinstance(block, ToolUseBlock) and block.name == "ExitPlanMode":
+                        if (
+                            isinstance(block, ToolUseBlock)
+                            and block.name == "ExitPlanMode"
+                        ):
                             captured_plan = block.input.get("plan", "")
                         # Fallback: models that don't support ExitPlanMode (Ollama/Qwen)
                         # produce the plan as a final text block.
-                        elif isinstance(block, TextBlock) and len(block.text.strip()) > 100:
+                        elif (
+                            isinstance(block, TextBlock)
+                            and len(block.text.strip()) > 100
+                        ):
                             last_text_block = block.text.strip()
                 if isinstance(message, ResultMessage):
                     result_msg = message
@@ -432,4 +450,3 @@ async def run_planning_agent(
             logger.warning(f"RuntimeError on attempt {attempt + 1}: {e}, retrying")
 
     raise RuntimeError("run_planning_agent: max retries exceeded")
-
