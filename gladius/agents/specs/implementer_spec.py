@@ -139,12 +139,12 @@ Planner's approach:
 Steps to execute:
 {steps_text}
 
-Execute the plan completely:
-- Write all required code
-- Run it
-- Fix any errors that come up
-- Measure and report the {target_metric or "quality"} score
-
-You decide file names, structure, libraries — there are no constraints.
+Coordinate the subagents to execute this plan completely:
+- Spawn ml-scaffolder to set up the project (skip if src/ already exists).
+- Spawn ml-developer with the full plan text to write and run the pipeline.
+- Spawn ml-evaluator to extract the {target_metric or "quality"} score.
+- Spawn code-reviewer; if CRITICAL logical issues are found, spawn ml-scientist then loop back.
+- Spawn submission-builder to produce the final artifact.
+Read .claude/EXPERIMENT_STATE.json after each phase to decide the next step.
 Report the final {target_metric or "quality"} score in oof_score.
 """

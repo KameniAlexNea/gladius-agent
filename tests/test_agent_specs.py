@@ -1,3 +1,6 @@
+import asyncio
+from unittest.mock import AsyncMock, patch
+
 from gladius.agents._base import _SUBAGENT_DEFINITIONS
 from gladius.agents.specs.implementer_spec import (
     IMPLEMENTER_OUTPUT_SCHEMA,
@@ -104,3 +107,38 @@ def test_implementer_agent_def_uses_agent_tool_not_bash():
     # These must NOT appear — coordinator should not run code directly.
     for forbidden in ("Bash", "Edit", "Grep", "Skill"):
         assert forbidden not in tool_str, f"{forbidden!r} must not be in coordinator tools"
+
+
+def test_run_implementer_uses_bypassPermissions_no_workarounds(tmp_path):
+    """The coordinator must use bypassPermissions (the default) with no
+    disallowed_tools or can_use_tool workarounds — subagents get their tool
+    access from their own AgentDefinition inside _SUBAGENT_DEFINITIONS."""
+    captured = {}
+
+    async def fake_run_agent(**kwargs):
+        captured.update(kwargs)
+        return {"status": "success", "oof_score": 0.9, "quality_score": 80}, ""
+
+    from gladius.agents import implementer as impl_module
+
+    with patch.object(impl_module, "run_agent", side_effect=fake_run_agent):
+        asyncio.run(
+            impl_module.run_implementer(
+                plan={"approach_summary": "test", "plan_text": "step 1"},
+                state=type("S", (), {"target_metric": "f1"})(),
+                project_dir=str(tmp_path),
+            )
+        )
+
+    # Must NOT use disallowed_tools — it propagates to subagents.
+    assert not captured.get("disallowed_tools"), (
+        f"run_implementer must not use disallowed_tools. Got: {captured.get('disallowed_tools')}"
+    )
+    # Must NOT override permission_mode away from the default bypassPermissions.
+    assert captured.get("permission_mode") in (None, "bypassPermissions"), (
+        f"Expected bypassPermissions (or unset), got {captured.get('permission_mode')!r}"
+    )
+    # Must NOT use a can_use_tool callback — that approach is fragile.
+    assert captured.get("can_use_tool") is None, (
+        "run_implementer must not use a can_use_tool workaround"
+    )

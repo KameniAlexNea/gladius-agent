@@ -33,7 +33,7 @@ from claude_agent_sdk.types import (
 )
 from llm_output_parser import parse_json as _parse_json
 
-from gladius.agents._agent_defs import _SUBAGENT_DEFINITIONS  # re-exported for callers
+from gladius.agents._agent_defs import SUBAGENT_DEFINITIONS as _SUBAGENT_DEFINITIONS  # re-exported for callers
 from gladius.agents._console import _BLUE, _BOLD, _RED, _c, _log_message
 
 logger = logging.getLogger(__name__)
@@ -106,6 +106,7 @@ async def run_agent(
     max_turns: int | None = None,
     max_retries: int = 3,
     verbose: bool = True,
+    permission_mode: str = "bypassPermissions",
     **option_kwargs: Any,
 ) -> tuple[dict[str, Any], str]:
     """
@@ -125,7 +126,7 @@ async def run_agent(
         # Claude Code's built-in system prompt as the base; role instructions appended.
         system_prompt={"type": "preset", "preset": "claude_code", "append": system_prompt},
         allowed_tools=allowed_tools,
-        permission_mode="bypassPermissions",
+        permission_mode=permission_mode,
         output_format={"type": "json_schema", "schema": output_schema},
         cwd=cwd,
         resume=resume,
