@@ -187,6 +187,28 @@ class StateStore:
                 saved_at        TEXT DEFAULT (datetime('now')),
                 UNIQUE(iteration, file_path)
             );
+
+            -- Full plan text produced by the planner each iteration.
+            CREATE TABLE IF NOT EXISTS plans (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                iteration       INTEGER NOT NULL,
+                approach_summary TEXT,
+                plan_text       TEXT NOT NULL,
+                session_id      TEXT,
+                saved_at        TEXT DEFAULT (datetime('now')),
+                UNIQUE(iteration)                   -- one plan per iteration
+            );
+
+            -- Chronological event stream: every phase transition + key decisions.
+            -- Provides a human-readable audit trail without parsing agent logs.
+            CREATE TABLE IF NOT EXISTS event_log (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts              TEXT DEFAULT (datetime('now')),
+                iteration       INTEGER NOT NULL,
+                phase           TEXT NOT NULL,      -- planning|implementing|validation|done|error
+                event           TEXT NOT NULL,      -- short machine-readable tag
+                detail          TEXT                -- human-readable explanation
+            );
         """
         )
         self.conn.commit()
@@ -473,6 +495,53 @@ class StateStore:
                     )
             except Exception:
                 pass  # best-effort
+
+    # ── Plan recording ────────────────────────────────────────────────────────
+
+    def record_plan(
+        self,
+        *,
+        iteration: int,
+        approach_summary: str,
+        plan_text: str,
+        session_id: str | None = None,
+    ) -> None:
+        """Insert or replace the plan for this iteration (one plan per iteration)."""
+        try:
+            with self.conn:
+                self.conn.execute(
+                    """
+                    INSERT OR REPLACE INTO plans
+                        (iteration, approach_summary, plan_text, session_id)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (iteration, approach_summary, plan_text, session_id),
+                )
+        except Exception:
+            pass  # best-effort
+
+    # ── Event log ─────────────────────────────────────────────────────────────
+
+    def record_event(
+        self,
+        *,
+        iteration: int,
+        phase: str,
+        event: str,
+        detail: str | None = None,
+    ) -> None:
+        """Append one event row (best-effort, never raises)."""
+        try:
+            with self.conn:
+                self.conn.execute(
+                    """
+                    INSERT INTO event_log (iteration, phase, event, detail)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (iteration, phase, event, detail),
+                )
+        except Exception:
+            pass
 
     # ── Load ──────────────────────────────────────────────────────────────────
 
