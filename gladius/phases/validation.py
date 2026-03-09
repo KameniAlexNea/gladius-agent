@@ -12,7 +12,7 @@ from datetime import timezone as _tz
 from gladius.db.store import StateStore
 from gladius.state import CompetitionState
 
-logger = logging.getLogger("gladius.orchestrator")
+logger = logging.getLogger(__name__)
 
 
 # ── Score helpers (used only in this phase) ───────────────────────────────────

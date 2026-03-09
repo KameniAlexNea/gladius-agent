@@ -12,7 +12,7 @@ from pathlib import Path
 from gladius.db.store import StateStore
 from gladius.state import CompetitionState
 
-logger = logging.getLogger("gladius.orchestrator")
+logger = logging.getLogger(__name__)
 
 
 async def run_planning_phase(

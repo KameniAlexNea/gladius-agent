@@ -33,7 +33,7 @@ from gladius.submission import (
 from gladius.utils.competition_config import load_competition_config
 from gladius.utils.project_setup import setup_project_dir, write_claude_md
 
-logger = logging.getLogger("gladius.orchestrator")
+logger = logging.getLogger(__name__)
 
 
 def _halt_with_reason(state: CompetitionState, *, phase: str, reason: str) -> None:
