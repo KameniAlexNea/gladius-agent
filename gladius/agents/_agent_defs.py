@@ -251,13 +251,15 @@ _CODE_REVIEWER_DEF = AgentDefinition(
         "- WARNING: execution or style issue that doesn't affect score validity\n\n"
         "Steps:\n"
         "1. Read all src/*.py and scripts/train.py\n"
-        "2. List all issues with their severity\n\n"
+        "2. Use Bash (wc -l, head, python -c) to VERIFY submission row counts and\n"
+        "   column names against the sample submission — never guess from previews.\n"
+        "3. List all issues with their severity\n\n"
         "On completion write to .claude/EXPERIMENT_STATE.json:\n"
         '{"reviewer": {"status": "complete", "critical_issues": ["<issue>", ...], '
         '"warnings": ["..."], "message": "..."}}\n\n'
         "critical_issues MUST be [] if there are none — never omit the key."
     ),
-    tools=["Read", "Glob", "Grep"],
+    tools=["Read", "Glob", "Grep", "Bash"],
     model=_model,
 )
 

@@ -4,7 +4,7 @@ description: >-
   Reviews ML pipeline code for data leakage, metric bugs, CV contamination, and
   submission format errors. Strictly read-only — never modifies code files.
   Always invoke before reporting results. Use proactively after ml-developer finishes.
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, Bash
 model: inherit
 maxTurns: 20
 permissionMode: plan

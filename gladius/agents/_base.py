@@ -221,6 +221,19 @@ async def run_agent(
             raise  # Fatal — Claude Code CLI not installed
 
         except ProcessError as e:
+            # If the agent already produced valid structured output before the
+            # CLI process exited abnormally (e.g. during subagent cleanup or
+            # post-StructuredOutput teardown), return the captured result
+            # instead of retrying — the run succeeded logically.
+            if result_msg is not None and result_msg.structured_output is not None:
+                logger.warning(
+                    f"[{agent_name}] ProcessError after StructuredOutput captured"
+                    " — returning result (CLI exited abnormally during cleanup)."
+                )
+                return (
+                    result_msg.structured_output,
+                    result_msg.session_id or early_session_id or "",
+                )
             stderr = e.stderr or ""
             if "rate limit" in stderr.lower() and attempt < max_retries - 1:
                 wait = 60 * (2**attempt)
@@ -363,12 +376,21 @@ async def run_planning_agent(
                     f"Planning agent returned error result: {result_msg.result}"
                 )
             if not captured_plan:
-                if last_text_block:
+                if last_text_block and "<system-reminder>" not in last_text_block:
                     logger.warning(
                         f"[{agent_name}] ExitPlanMode not called — using last text "
                         "block as plan (model may not support planning mode)."
                     )
                     captured_plan = last_text_block
+                elif last_text_block:
+                    # Claude Code injected a <system-reminder> instead of a real plan.
+                    # The resumed session acknowledged context without re-planning.
+                    # Raise immediately — retrying the same session would produce the
+                    # same injection; the caller should retry with resume=None.
+                    raise RuntimeError(
+                        "Planning agent produced only a system-reminder "
+                        "(resumed session did not re-plan — retry without resume)."
+                    )
                 else:
                     raise RuntimeError(
                         "Planning agent did not emit ExitPlanMode and produced no "
@@ -402,7 +424,10 @@ async def run_planning_agent(
             logger.warning(f"MessageParseError on attempt {attempt + 1}: {e}, retrying")
 
         except RuntimeError as e:
-            if attempt == max_retries - 1:
+            # system-reminder errors won't improve on retry (same resumed session
+            # would produce the same injection). Raise immediately so the caller
+            # (planner.py) can retry with resume=None instead.
+            if "system-reminder" in str(e) or attempt == max_retries - 1:
                 raise
             logger.warning(f"RuntimeError on attempt {attempt + 1}: {e}, retrying")
 
