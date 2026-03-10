@@ -7,17 +7,23 @@ import logging
 from typing import Any
 
 from claude_agent_sdk import (
+    ClaudeAgentOptions,
     CLIJSONDecodeError,
     CLINotFoundError,
-    ClaudeAgentOptions,
     ProcessError,
     ResultMessage,
     query,
 )
 from claude_agent_sdk._errors import MessageParseError
-from claude_agent_sdk.types import AssistantMessage, SystemMessage, TextBlock, ToolUseBlock
+from claude_agent_sdk.types import (
+    AssistantMessage,
+    SystemMessage,
+    TextBlock,
+    ToolUseBlock,
+)
 from llm_output_parser import parse_json as _parse_json
 
+from gladius.agents._agent_defs import SUBAGENT_DEFINITIONS
 from gladius.agents._console import _BLUE, _BOLD, _c, _log_message
 from gladius.agents.runtime.helpers import (
     build_runtime_agents,
@@ -82,6 +88,7 @@ async def run_agent(
             last_assistant_msg: AssistantMessage | None = None
             forbidden_tool_error: str | None = None
             early_session_id: str | None = None
+            delegated_tool_policies: dict[str, list[str]] = {}
 
             if verbose:
                 resume_str = f"  resume={resume[:8]}…" if resume else ""
@@ -99,10 +106,32 @@ async def run_agent(
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, ToolUseBlock):
-                            if not is_tool_allowed(block.name, allowed_tools):
+                            if block.name == "Task":
+                                subagent_type = str(
+                                    block.input.get("subagent_type", "")
+                                )
+                                if (
+                                    subagent_type
+                                    and subagent_type in SUBAGENT_DEFINITIONS
+                                ):
+                                    delegated_tool_policies[block.id] = list(
+                                        SUBAGENT_DEFINITIONS[subagent_type].tools
+                                    )
+
+                            effective_allowed_tools = allowed_tools
+                            policy_label = f"allowed_tools={allowed_tools}"
+                            if message.parent_tool_use_id:
+                                delegated = delegated_tool_policies.get(
+                                    message.parent_tool_use_id
+                                )
+                                if delegated:
+                                    effective_allowed_tools = delegated
+                                    policy_label = f"subagent_allowed_tools={effective_allowed_tools}"
+
+                            if not is_tool_allowed(block.name, effective_allowed_tools):
                                 forbidden_tool_error = (
                                     f"[{agent_name}] attempted forbidden tool '{block.name}'. "
-                                    f"allowed_tools={allowed_tools}"
+                                    f"{policy_label}"
                                 )
                             elif block.name == "Bash":
                                 cmd = str(block.input.get("command", ""))
@@ -149,7 +178,9 @@ async def run_agent(
                 )
 
             if structured is None:
-                raise RuntimeError("Agent returned no structured_output (schema not satisfied?)")
+                raise RuntimeError(
+                    "Agent returned no structured_output (schema not satisfied?)"
+                )
 
             return structured, result_msg.session_id or early_session_id or ""
 

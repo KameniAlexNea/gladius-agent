@@ -9,9 +9,7 @@ from pathlib import Path
 
 from claude_agent_sdk import AgentDefinition
 
-from gladius.agents._agent_defs import (
-    SUBAGENT_DEFINITIONS as _SUBAGENT_DEFINITIONS,
-)
+from gladius.agents._agent_defs import SUBAGENT_DEFINITIONS as _SUBAGENT_DEFINITIONS
 from gladius.agents._console import _RED, _c
 
 
@@ -98,7 +96,7 @@ def is_bash_command_scoped_to_cwd(command: str, cwd: str) -> bool:
         return True
 
     for match in re.finditer(r"(?:^|[;&|]\s*)cd\s+([^;&|\s]+)", command):
-        target = match.group(1).strip().strip('"\'')
+        target = match.group(1).strip().strip("\"'")
         if target and not is_path_within_cwd(target, cwd):
             return False
 

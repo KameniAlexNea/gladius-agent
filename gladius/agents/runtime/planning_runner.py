@@ -6,9 +6,9 @@ import asyncio
 import logging
 
 from claude_agent_sdk import (
+    ClaudeAgentOptions,
     CLIJSONDecodeError,
     CLINotFoundError,
-    ClaudeAgentOptions,
     ProcessError,
     ResultMessage,
     query,
@@ -18,7 +18,6 @@ from claude_agent_sdk.types import (
     AssistantMessage,
     PermissionResultAllow,
     SystemMessage,
-    TextBlock,
     ToolUseBlock,
 )
 
@@ -35,6 +34,26 @@ from gladius.agents.runtime.helpers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_plan_text_from_mapping(data: dict) -> str | None:
+    """Return first non-empty plan-like payload from common keys."""
+    for key in ("plan", "content", "result", "text"):
+        value = data.get(key)
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                return text
+    return None
+
+
+def _extract_plan_from_write_block(block: ToolUseBlock) -> str | None:
+    if block.name != "Write":
+        return None
+    file_path = str(block.input.get("file_path", ""))
+    if "/.claude/plans/" not in file_path:
+        return None
+    return _extract_plan_text_from_mapping(block.input)
 
 
 async def approve_exit_plan_mode(tool_name: str, input_data: dict, context: object):
@@ -106,7 +125,7 @@ async def run_planning_agent(
             result_msg: ResultMessage | None = None
             early_session_id: str | None = None
             captured_plan: str | None = None
-            last_text_block: str = ""
+            last_written_plan: str | None = None
             forbidden_tool_error: str | None = None
 
             if verbose:
@@ -129,7 +148,12 @@ async def run_planning_agent(
                     if isinstance(message, AssistantMessage):
                         for block in message.content:
                             if isinstance(block, ToolUseBlock):
-                                if not is_tool_allowed(block.name, planning_allowed_tools):
+                                write_plan = _extract_plan_from_write_block(block)
+                                if write_plan:
+                                    last_written_plan = write_plan
+                                if not is_tool_allowed(
+                                    block.name, planning_allowed_tools
+                                ):
                                     forbidden_tool_error = (
                                         f"[{agent_name}] attempted forbidden tool '{block.name}' in plan mode. "
                                         f"allowed_tools={planning_allowed_tools}"
@@ -142,26 +166,24 @@ async def run_planning_agent(
                                             f"cwd={cwd} command={cmd!r}"
                                         )
 
-                            if isinstance(block, ToolUseBlock) and block.name == "ExitPlanMode":
-                                captured_plan = str(
-                                    block.input.get("plan")
-                                    or block.input.get("content")
-                                    or block.input.get("text")
-                                    or ""
-                                ).strip()
-                            elif isinstance(block, TextBlock) and len(block.text.strip()) > 100:
-                                last_text_block = block.text.strip()
+                            if (
+                                isinstance(block, ToolUseBlock)
+                                and block.name == "ExitPlanMode"
+                            ):
+                                captured_plan = _extract_plan_text_from_mapping(
+                                    block.input
+                                )
                     if isinstance(message, ResultMessage):
                         result_msg = message
-                    if forbidden_tool_error:
-                        break
-            except Exception as stream_exc:
-                if forbidden_tool_error:
-                    raise RuntimeError(forbidden_tool_error) from stream_exc
+            except Exception:
                 raise
 
-            if forbidden_tool_error:
+            if forbidden_tool_error and result_msg is None:
                 raise RuntimeError(forbidden_tool_error)
+            if forbidden_tool_error and result_msg is not None:
+                logger.warning(
+                    f"[{agent_name}] forbidden tool attempt was blocked by policy; continuing with available output"
+                )
             if result_msg is None:
                 raise RuntimeError("No ResultMessage received from planning agent")
             if result_msg.is_error:
@@ -170,29 +192,30 @@ async def run_planning_agent(
                 )
 
             if not captured_plan:
-                if result_msg.result and isinstance(result_msg.result, str):
-                    candidate = result_msg.result.strip()
-                    if candidate and "<system-reminder>" not in candidate:
-                        logger.warning(
-                            f"[{agent_name}] ExitPlanMode payload missing — using ResultMessage.result as plan fallback."
-                        )
-                        captured_plan = candidate
-                if last_text_block and "<system-reminder>" not in last_text_block:
+                if last_written_plan:
                     logger.warning(
-                        f"[{agent_name}] ExitPlanMode not called — using last text "
-                        "block as plan (model may not support planning mode)."
+                        f"[{agent_name}] ExitPlanMode missing — using plan content from Write tool call."
                     )
-                    captured_plan = last_text_block
-                elif last_text_block:
-                    raise RuntimeError(
-                        "Planning agent produced only a system-reminder "
-                        "(resumed session did not re-plan — retry without resume)."
+                    captured_plan = last_written_plan
+
+            if not captured_plan:
+                candidate: str | None = None
+                if isinstance(result_msg.result, str):
+                    candidate = result_msg.result.strip() or None
+                elif isinstance(result_msg.result, dict):
+                    candidate = _extract_plan_text_from_mapping(result_msg.result)
+
+                if candidate and "<system-reminder>" not in candidate:
+                    logger.warning(
+                        f"[{agent_name}] ExitPlanMode payload missing — using ResultMessage.result as plan fallback."
                     )
-                else:
-                    raise RuntimeError(
-                        "Planning agent did not emit ExitPlanMode and produced no "
-                        "usable text output. The model may not support planning mode."
-                    )
+                    captured_plan = candidate
+
+            if not captured_plan:
+                raise RuntimeError(
+                    "Planning agent did not emit ExitPlanMode and produced no "
+                    "usable plan output."
+                )
 
             return captured_plan, result_msg.session_id or early_session_id or ""
 
@@ -221,11 +244,7 @@ async def run_planning_agent(
             logger.warning(f"MessageParseError on attempt {attempt + 1}: {e}, retrying")
 
         except RuntimeError as e:
-            if (
-                "system-reminder" in str(e)
-                or "attempted forbidden tool" in str(e)
-                or attempt == max_retries - 1
-            ):
+            if "system-reminder" in str(e) or attempt == max_retries - 1:
                 raise
             logger.warning(f"RuntimeError on attempt {attempt + 1}: {e}, retrying")
 
