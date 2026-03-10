@@ -17,6 +17,10 @@ def test_tool_forbidden_when_not_in_list():
     assert _is_tool_allowed("Bash", ["Read", "Grep"]) is False
 
 
+def test_structured_output_is_runtime_allowed():
+    assert _is_tool_allowed("StructuredOutput", ["Read", "Write"]) is True
+
+
 def test_bash_scope_allows_in_project_paths():
     cwd = "/tmp/project"
     assert _is_bash_command_scoped_to_cwd("ls src && head -n 5 data/train.csv", cwd)

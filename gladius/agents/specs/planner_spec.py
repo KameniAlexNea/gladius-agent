@@ -103,7 +103,7 @@ Do NOT spawn Task subagents.
 Do NOT inspect `.gladius/**`.
 Do NOT explore the repository root outside the competition project directory.
 Do NOT call `Write`, `Edit`, or `MultiEdit` under any circumstance.
-Skills: call Skill{"skill": "<name>"} to read and understand a skill's content.
+Skills: call Skill{"skill": "<name>"} to load and understand a skill's content.
   Do NOT call any mcp__* tool — those are only available to the implementer.
   Instead, write explicit "invoke skill X" steps in your plan for the implementer.
 Use ONLY Read, Glob, Grep, WebSearch, Skill, TodoWrite.

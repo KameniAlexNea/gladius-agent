@@ -67,6 +67,10 @@ def stderr_cb(line: str) -> None:
 
 def is_tool_allowed(tool_name: str, allowed_tools: list[str]) -> bool:
     """Return True when tool_name is allowed by runtime tool policy."""
+    # StructuredOutput is the terminal schema-emission channel used by
+    # output_format=json_schema. It is not listed in allowed_tools.
+    if tool_name == "StructuredOutput":
+        return True
     if tool_name in allowed_tools:
         return True
     # Claude SDK emits the Agent() delegation tool as Task in messages.

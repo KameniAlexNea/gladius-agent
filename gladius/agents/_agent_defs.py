@@ -60,7 +60,7 @@ STRICT RULES — you are in READ-ONLY planning mode:
 - You NEVER spawn subagents.
 - You NEVER write implementation code.
 - You NEVER call Write/Edit/MultiEdit.
-- Skills: use Skill{} to READ a skill and understand it. Do NOT call any MCP
+- Skills: use Skill{} to LOAD a skill and understand it. Do NOT call any MCP
   tool (mcp__*) — those only work for the implementer. Instead, include explicit
   'invoke skill X' steps in your plan for the implementer.
 - When done, call ExitPlanMode with only the markdown plan content.
@@ -146,6 +146,10 @@ Read CLAUDE.md first to understand:
 - target column and evaluation metric
 - Any already-existing src/ structure (skip creation if already reasonable)
 
+Skill usage:
+- Load the `ml-setup` skill before scaffolding so folder layout and contracts are consistent.
+- Use Skill{"skill": "ml-setup"} and only read the specific sections you need.
+
 Scaffold tasks:
 1. Create src/__init__.py, src/config.py (paths + constants), src/data.py
    (load_train/load_test helpers), src/features.py, src/models.py.
@@ -169,7 +173,7 @@ On completion write to .claude/EXPERIMENT_STATE.json:
 
 On failure write:
 {"scaffolder": {"status": "error", "message": "<what failed>"}}""",
-    tools=["Read", "Write", "Glob"],
+    tools=["Read", "Write", "Glob", "Skill"],
     model=_model,
 )
 
@@ -190,6 +194,8 @@ Read CLAUDE.md for competition context (metric, data_dir, target column).
 Read the full plan in your task prompt before writing any code.
 
 Development steps:
+0. If the plan references a skill, load that skill first (e.g., feature-engineering,
+   hpo, adversarial-validation, ensembling, submit-check).
 1. Implement the pipeline (features, model, CV strategy) exactly as the plan describes.
 2. Install any packages the pipeline needs: uv add <pkg> (never pip install).
 3. Run: uv run python scripts/train.py
@@ -211,7 +217,17 @@ On success write to .claude/EXPERIMENT_STATE.json:
 
 On failure after 3 fix attempts write:
 {"developer": {"status": "error", "message": "<last error>"}}""",
-    tools=["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "TodoWrite"],
+    tools=[
+        "Read",
+        "Write",
+        "Edit",
+        "MultiEdit",
+        "Bash",
+        "Glob",
+        "Grep",
+        "TodoWrite",
+        "Skill",
+    ],
     model=_model,
 )
 
@@ -237,15 +253,17 @@ Common bug categories to check:
 
 Steps:
 1. Read .claude/EXPERIMENT_STATE.json — find reviewer.critical_issues.
-2. Read the relevant source files to understand the bug precisely.
-3. Apply minimal targeted fixes; do NOT refactor unrelated code.
-4. Comment each fix with WHY it resolves the reviewer's concern.
+2. If relevant, load one targeted skill (e.g., adversarial-validation or
+   feature-engineering) to guide the fix.
+3. Read the relevant source files to understand the bug precisely.
+4. Apply minimal targeted fixes; do NOT refactor unrelated code.
+5. Comment each fix with WHY it resolves the reviewer's concern.
 
 Do NOT re-run training — leave that to ml-developer after your fixes.
 
 On completion write to .claude/EXPERIMENT_STATE.json:
 {"scientist": {"status": "fixed", "issues_addressed": ["..."], "files_modified": ["..."], "message": "..."}}""",
-    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite"],
+    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite", "Skill"],
     model=_model,
 )
 
@@ -303,15 +321,16 @@ Severity:
 
 Steps:
 1. Read all src/*.py and scripts/train.py.
-2. Use Bash (wc -l, head, python -c) to VERIFY submission row counts and
+2. Load the `code-review` skill before final verdict so checks are consistent.
+3. Use Bash (wc -l, head, python -c) to VERIFY submission row counts and
    column names against the sample submission — never guess from previews.
-3. List all issues with their severity.
+4. List all issues with their severity.
 
 On completion write to .claude/EXPERIMENT_STATE.json:
 {"reviewer": {"status": "complete", "critical_issues": ["<issue>", ...], "warnings": ["..."], "message": "..."}}
 
 critical_issues MUST be [] if there are none — never omit the key.""",
-    tools=["Read", "Glob", "Grep", "Bash"],
+    tools=["Read", "Glob", "Grep", "Bash", "Skill"],
     model=_model,
 )
 
@@ -340,6 +359,7 @@ Steps:
 3. Format predictions to exactly match the sample submission columns.
 4. Save to submissions/submission.csv (create the directory if needed).
 5. Verify: row count matches test set, and column names match sample submission exactly.
+6. Run submit-check skill validation on the final CSV before writing success state.
 
 Rules:
 - Never include any training rows in the submission.
@@ -351,7 +371,7 @@ On success write to .claude/EXPERIMENT_STATE.json:
 
 On failure write:
 {"submission": {"status": "error", "message": "<what went wrong>"}}""",
-    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill"],
     model=_model,
 )
 

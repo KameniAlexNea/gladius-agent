@@ -124,6 +124,10 @@ SUBMIT → spawn submission-builder
 - NEVER modify CLAUDE.md — it is managed exclusively by the orchestrator.
 - Only write to .claude/EXPERIMENT_STATE.json — no other files.
 - Track progress with TodoWrite.
+- Spawn exactly one subagent at a time, then wait for completion.
+- After each subagent finishes, immediately read .claude/EXPERIMENT_STATE.json before deciding anything else.
+- Never spawn the same phase twice in a row without first reading updated state.
+- Never call Bash/Edit/MultiEdit/Grep/Skill directly; delegate all implementation work to subagents.
 - Once you have reported results via StructuredOutput, stop immediately."""
 
 
