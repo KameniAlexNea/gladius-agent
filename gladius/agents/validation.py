@@ -119,6 +119,7 @@ async def run_validation_agent(
         submission_count=state.submission_count,
         max_submissions_per_day=state.max_submissions_per_day,
         quota_instruction=quota_instruction,
+        project_dir=project_dir,
     )
     result, _ = await run_agent(
         agent_name="validation",

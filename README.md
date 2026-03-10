@@ -18,10 +18,15 @@ orchestrator.py
   │         • outputs plan via ExitPlanMode
   │
   ├─ [iteration N] implementing
-  │    └─ implementer agent(s)    fresh session — focused on one plan
+  │    └─ implementer agent(s)    fresh session — coordinator, NOT a code writer
   │         • reads CLAUDE.md + plan
-  │         • writes code, runs it, debugs, iterates until done
-  │         • invokes skills (code-review, ml-pipeline, adversarial-validation…)
+  │         • routes via EXPERIMENT_STATE.json between phase-specialist subagents:
+  │             ml-scaffolder  → bootstrap src/ project layout (once)
+  │             ml-developer   → write-run-fix loop (handles execution errors)
+  │             ml-evaluator   → extract OOF score from artifacts
+  │             code-reviewer  → read-only logical review (leakage, metric bugs)
+  │             ml-scientist   → fix logical ML bugs (spawned on CRITICAL review)
+  │             submission-builder → generate test predictions + format CSV
   │         • outputs: {status, oof_score, solution_files, submission_file, notes}
   │         └─ (--parallel N): up to N run concurrently via asyncio.gather
   │
@@ -39,36 +44,60 @@ orchestrator.py
 | Agent | Session | Tools | Max turns |
 |---|---|---|---|
 | Planner | **Resumed** — persistent across iterations | Read, Glob, Grep, WebSearch, TodoWrite | 40 |
-| Implementer | **Fresh** each iteration | Read, Write, Edit, Bash, Glob, Grep + Skill | 80 |
+| Implementer | **Fresh** each iteration — **coordinator** | Agent(), Read, Write, Glob, TodoWrite | 30 |
 | Validation | Stateless | Read, Grep + platform MCP tool | 25 |
 | Summarizer | Stateless | Read, Grep | 15 |
 
 The **planner** runs in `permissionMode: plan` with a `can_use_tool` callback that blocks `Write`, `Edit`, `Bash`, and `Task` — it is strictly read-only and exits only via `ExitPlanMode`.
 
-The **implementer** runs with `bypassPermissions` so it can write files, run scripts, and install packages without any confirmation prompts.
+The **implementer** is a thin coordinator. It does not write code or run commands. Instead it spawns phase-specialist subagents via `Agent()` and reads `.claude/EXPERIMENT_STATE.json` after each one to decide routing. It runs with `bypassPermissions`.
+
+### Implementer subagents
+
+Subagents are `.claude/agents/*.md` files. The implementer can spawn only the six listed below — no unbounded delegation.
+
+| Subagent | Model | Max turns | Preloaded skills | Purpose |
+|---|---|---|---|---|
+| `ml-scaffolder` | `GLADIUS_SMALL_MODEL` | 15 | ml-setup | Bootstrap `src/` package layout — runs once |
+| `ml-developer` | inherit | 80 | ml-pipeline, feature-engineering, polars, hpo, ensembling | Write-run-fix loop; handles execution errors only |
+| `ml-evaluator` | `GLADIUS_SMALL_MODEL` | 15 | ml-pipeline | Extract OOF score from `artifacts/oof_predictions.npy` |
+| `code-reviewer` | inherit | 20 | code-review | Read-only logical review (leakage, metric, CV contamination) |
+| `ml-scientist` | inherit | 40 | ml-pipeline, feature-engineering, code-review | Fix logical ML bugs — spawned only on CRITICAL review issues |
+| `submission-builder` | inherit | 20 | submit-check | Generate test predictions, format + validate submission CSV |
+
+`GLADIUS_SMALL_MODEL` defaults to `inherit` (same model as the coordinator) when unset. Set it to a faster/cheaper model (e.g. `claude-haiku-4-5`) in your `.env` to reduce cost on deterministic tasks.
+
+**Routing** (directed graph with back-edges):
+```
+SCAFFOLD → DEVELOP → EVALUATE → REVIEW → SUBMIT
+                ↑                   │
+           execution error          │ CRITICAL logical bug
+                                    ↓
+                               ml-scientist → DEVELOP → EVALUATE → REVIEW
+```
 
 ### Skills
 
-The implementer invokes skills with `Skill({"name": "..."})`. Skills are markdown files in `.claude/skills/<name>/SKILL.md` — Claude Code reads them and returns the content inline.
+Subagents have skills injected at spawn time via the `skills:` frontmatter field — no `Skill({...})` turn required.
 
-| Skill | When to invoke |
+| Skill | Used by |
 |---|---|
-| `ml-project-structure` | **First** — set up `src/` package layout before writing any code |
-| `ml-pipeline` | CV patterns, baselines, metric formulas |
-| `adversarial-validation` | Detect train/test distribution shift |
-| `feature-engineering` | Feature recipes, SHAP importance, pruning |
-| `hpo` | Optuna Bayesian search |
-| `ensembling` | OOF blending, hill-climbing model selection |
-| `research` | WebSearch for SOTA techniques on ArXiv + Kaggle |
-| `polars` | Fast DataFrame ops (Arrow backend, lazy eval) |
-| `transformers` | HuggingFace Transformers for NLP/vision |
-| `pytorch-lightning` | Structured DL training loops |
-| `timesfm` | Google TimesFM zero-shot time-series forecasting |
-| `code-review` | **Required** before reporting results — catches leakage & metric bugs |
-| `submit-check` | Validate submission CSV format before upload |
-| `jupyter-mcp` | Start Jupyter + MCP server for notebook work |
-| `git-workflow` | Commit after each working solution |
-| `uv-venv` | Create venv, install packages, run scripts |
+| `ml-setup` | ml-scaffolder — canonical `src/` package layout |
+| `ml-pipeline` | ml-developer, ml-evaluator, ml-scientist — CV patterns, baselines, metric formulas |
+| `adversarial-validation` | ml-developer — detect train/test distribution shift |
+| `feature-engineering` | ml-developer, ml-scientist — feature recipes, SHAP importance, pruning |
+| `hpo` | ml-developer — Optuna Bayesian search |
+| `ensembling` | ml-developer — OOF blending, hill-climbing model selection |
+| `polars` | ml-developer — fast DataFrame ops (Arrow backend, lazy eval) |
+| `code-review` | code-reviewer, ml-scientist — leakage, metric correctness, CV contamination |
+| `submit-check` | submission-builder — validate submission CSV format before upload |
+| `research` | (available on demand) WebSearch for SOTA techniques on ArXiv + Kaggle |
+| `transformers` | (available on demand) HuggingFace Transformers for NLP/vision |
+| `pytorch-lightning` | (available on demand) structured DL training loops |
+| `timesfm` | (available on demand) Google TimesFM zero-shot time-series forecasting |
+| `jupyter-mcp` | (available on demand) start Jupyter + MCP server for notebook work |
+| `git-workflow` | commit after each working solution |
+| `uv-venv` | create venv, install packages, run scripts |
 
 ### State
 
@@ -92,7 +121,14 @@ Each competition directory gets a bootstrapped `.claude/` layout on first run (i
 .claude/
   agents/
     planner.md               — permissionMode: plan, tools: Read Glob Grep WebSearch TodoWrite
-    implementer.md           — permissionMode: bypassPermissions, tools: Read Write Edit Bash Glob Grep
+    implementer.md           — coordinator: permissionMode: bypassPermissions, tools: Agent() Read Write Glob TodoWrite
+    ml-scaffolder.md         — subagent: bootstraps src/ layout, model: haiku
+    ml-developer.md          — subagent: write-run-fix loop, model: inherit, maxTurns: 80
+    ml-evaluator.md          — subagent: extract OOF score, model: haiku
+    code-reviewer.md         — subagent: read-only review, permissionMode: plan
+    ml-scientist.md          — subagent: fix logical ML bugs, model: inherit
+    submission-builder.md    — subagent: generate + validate submission CSV
+  EXPERIMENT_STATE.json      — artifact handshake: subagents write structured JSON; coordinator reads to route
   skills/
     ml-project-structure/    — canonical src/ package layout
     ml-pipeline/             — CV patterns, baselines, metric formulas
@@ -171,6 +207,10 @@ Create a `.env` file in your competition directory (read automatically by `pytho
 # Required — set to your model:
 GLADIUS_MODEL=claude-sonnet-4-5   # or an Ollama model: qwen3.5:35b
 
+# Optional — cheaper model for deterministic subagents (ml-scaffolder, ml-evaluator):
+# Defaults to 'inherit' (same model as the coordinator) when unset.
+GLADIUS_SMALL_MODEL=claude-haiku-4-5
+
 # Anthropic API (not needed for local Ollama models):
 ANTHROPIC_API_KEY="sk-ant-..."
 
@@ -182,7 +222,10 @@ KAGGLE_KEY="..."
 ZINDI_USERNAME="..."
 ZINDI_PASSWORD="..."
 
-# Optional — 0-based index of the Zindi challenge to select:
+# Preferred — immutable challenge_id/slug (from competition README config):
+ZINDI_CHALLENGE_ID="financial-well-being-sme"
+
+# Optional fallback — 0-based index of the Zindi challenge to select:
 ZINDI_CHALLENGE_INDEX=0
 ```
 
@@ -253,18 +296,20 @@ gladius/
   agents/
     _base.py               — run_agent() / run_planning_agent(): retry, streaming console
     planner.py             — Explores data, produces ordered plan via ExitPlanMode
-    implementer.py         — Writes code, executes, reports OOF score
+    implementer.py         — Coordinator: spawns subagents, reports OOF score
     validation.py          — Compares OOF, queries platform quota, recommends submit/hold
     summarizer.py          — Rewrites MEMORY.md with cumulative learnings
+    specs/
+      implementer_spec.py  — Coordinator system prompt + output schema
   tools/
     fake_platform_tools.py — Offline scoring MCP server (AUC-ROC vs answer key)
     kaggle_tools.py        — Kaggle API MCP server (subprocess stdio)
     zindi_tools.py         — Zindi submission MCP server (subprocess stdio)
   utils/
     competition_config.py  — Reads YAML frontmatter from competition README.md
-    project_setup.py       — Bootstraps .claude/ layout, copies skills, hooks, CLAUDE.md
+    project_setup.py       — Bootstraps .claude/ layout, copies skills + subagents, hooks, CLAUDE.md
     templates/
-      agents/              — planner.md, implementer.md
+      agents/              — planner.md, implementer.md, + 6 subagent templates
       skills/              — one .md per skill (18 skills total)
       hooks/               — after_edit.sh, validate_bash.sh
       memory/              — MEMORY.md starter template
@@ -295,7 +340,7 @@ gladius --competition-dir examples/fake_competition --iterations 1 --no-resume
 
 ## Design principles
 
-1. **Agents are complete autonomous workers** — not thin LLM wrappers. The implementer reads, writes, runs, and debugs until the experiment completes. Tell it the goal; let it figure out the steps.
+1. **Agents are complete autonomous workers** — not thin LLM wrappers. The implementer's subagents (ml-developer, ml-scientist, etc.) each own a single phase and work to completion before returning control. Tell the coordinator the goal; let the subagents figure out the steps.
 
 2. **Orchestrator owns all routing and state mutation** — agents output structured JSON; the orchestrator acts on it. Agents never mutate `best_oof_score` directly. Improvement is always re-verified deterministically in Python, regardless of what the validation agent says.
 
@@ -303,12 +348,16 @@ gladius --competition-dir examples/fake_competition --iterations 1 --no-resume
 
 4. **Strict planning mode** — the planner runs in `permissionMode: plan` with a `can_use_tool` callback that actively denies `Bash`, `Write`, `Edit`, and `Task`. Planning is purely read-only; the only output channel is `ExitPlanMode`.
 
-5. **Skills over prompts** — domain knowledge lives in `.claude/skills/` markdown files, not in system prompts. The implementer invokes them on demand with `Skill({"name": "..."})`. New knowledge can be added or updated without touching agent code.
+5. **Coordinator + subagents, not one monolith** — the implementer is a coordinator (30 turns, no Bash/Edit). It routes between six focused subagents via `Agent()`. Each subagent gets only the tools and skills it needs. Context contamination between phases is impossible.
 
-6. **Template-driven bootstrap** — all `.claude/` content is generated from `gladius/utils/templates/` at runtime. No hardcoded markdown strings in Python.
+6. **Artifact handshake, not free-text routing** — after every subagent completes, the coordinator reads `.claude/EXPERIMENT_STATE.json` (structured JSON written by the subagent) to decide the next phase. No parsing of conversation text.
 
-7. **Resilient validation** — if the validation agent crashes (e.g. platform API down), a deterministic fallback fires and the summarizer still runs. `best_oof_score` is recalibrated from experiment history on resume if it was never persisted.
+7. **Skills preloaded in frontmatter** — domain knowledge is declared in the `skills:` field of each subagent's `.md` frontmatter. Claude Code injects the full skill content at spawn time. No `Skill({...})` turn required; no per-turn latency cost.
 
-8. **Structured output via `output_format`** — every agent specifies a `json_schema`. The SDK guarantees the output conforms before returning. No `json.loads()` + exception handling in the orchestrator.
+8. **Template-driven bootstrap** — all `.claude/` content is generated from `gladius/utils/templates/` at runtime. Subagent templates (`_write_subagents()`) are copied once and preserved — teams can customise them without their changes being overwritten.
 
-9. **CLAUDE.md as shared live context** — instead of injecting full state into every prompt, the orchestrator writes `CLAUDE.md` once per iteration. Every agent reads it at session start via Claude Code's native project-context loading. Memory path is absolute to prevent reading the wrong global file.
+9. **Resilient validation** — if the validation agent crashes (e.g. platform API down), a deterministic fallback fires and the summarizer still runs. `best_oof_score` is recalibrated from experiment history on resume if it was never persisted.
+
+10. **Structured output via `output_format`** — every agent specifies a `json_schema`. The SDK guarantees the output conforms before returning. No `json.loads()` + exception handling in the orchestrator.
+
+11. **CLAUDE.md as shared live context** — instead of injecting full state into every prompt, the orchestrator writes `CLAUDE.md` once per iteration. Every agent reads it at session start via Claude Code's native project-context loading. Memory path is absolute to prevent reading the wrong global file.

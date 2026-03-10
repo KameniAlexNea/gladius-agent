@@ -131,6 +131,7 @@ async def run_planner(
             "WebSearch",
             "Skill",
             "TodoWrite",
+            "ExitPlanMode",
         ],
         cwd=project_dir,
         mcp_servers=mcp_servers,

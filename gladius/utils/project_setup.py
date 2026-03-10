@@ -172,7 +172,8 @@ Standard files to expect:
         skills_section = """\
 ## Available Skills
 
-Invoke skills with the `Skill` tool — the output is returned inline, do NOT use TaskOutput.
+> **Planner only:** use the `Skill` tool to read a skill inline (`Skill({"name": "..."})`).
+> Implementer subagents have skills pre-injected via their frontmatter — do NOT call `Skill`.
 
 | Skill name | When to invoke |
 | --- | --- |
@@ -219,7 +220,8 @@ Invoke skills with the `Skill` tool — the output is returned inline, do NOT us
         skills_section = """\
 ## Available Skills
 
-Invoke skills with the `Skill` tool — the output is returned inline, do NOT use TaskOutput.
+> **Planner only:** use the `Skill` tool to read a skill inline (`Skill({"name": "..."})`).
+> Implementer subagents have skills pre-injected via their frontmatter — do NOT call `Skill`.
 
 | Skill name | When to invoke |
 | --- | --- |
@@ -302,6 +304,7 @@ def setup_project_dir(
 
     _write_agent(root, "planner")
     _write_agent(root, "implementer")
+    _write_subagents(root)
 
     # Copy all 170+ upstream scientific skills first (idempotent).
     _copy_all_scientific_skills(root)
@@ -314,9 +317,7 @@ def setup_project_dir(
         _copy_skill(root, "feature-engineering")
         _copy_skill(root, "hpo")
         _copy_skill(root, "ensembling")
-        _copy_skill(root, "code-review")
-    else:
-        _copy_skill(root, "code-review")
+    _copy_skill(root, "code-review")
 
     _copy_skill(root, "git-workflow")
 
@@ -341,6 +342,32 @@ def _write_agent(root: Path, name: str) -> None:
         os.environ.get("GLADIUS_MODEL", "GLADIUS_MODEL_NOT_SET"),
     )
     path.write_text(content, encoding="utf-8")
+
+
+def _write_subagents(root: Path) -> None:
+    """Copy supplementary subagent templates into .claude/agents/ (idempotent).
+
+    Handles all *.md files in templates/agents/ except planner and implementer,
+    which are managed by _write_agent() with {{GLADIUS_MODEL}} substitution.
+    New files are only written once — existing files are preserved so teams can
+    customise them without being overwritten on every run.
+
+    {{GLADIUS_SMALL_MODEL}} is substituted at copy time. Defaults to "inherit"
+    (uses whatever model the parent session is running) when the env var is unset.
+    """
+    agents_dir = root / ".claude" / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    small_model = os.environ.get("GLADIUS_SMALL_MODEL", "inherit")
+    managed = {"planner", "implementer"}
+    for src in sorted((_TEMPLATES / "agents").glob("*.md")):
+        if src.stem in managed:
+            continue
+        dest = agents_dir / src.name
+        if not dest.exists():
+            content = src.read_text(encoding="utf-8").replace(
+                "{{GLADIUS_SMALL_MODEL}}", small_model
+            )
+            dest.write_text(content, encoding="utf-8")
 
 
 def _copy_all_scientific_skills(root: Path) -> None:

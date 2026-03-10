@@ -31,10 +31,24 @@ Project dir : {project_dir}
 
 Your job:
 - Read CLAUDE.md and your memory (.claude/agent-memory/planner/MEMORY.md).
-- Explore the data directory and any existing solution files at your discretion.
+- Explore the data directory and existing competition code under the current project only.
 - Decide the highest-impact next thing to try.
-- Output a concrete, ordered plan the implementer can follow without further guidance.
+- Output a concise, ordered STRATEGY plan for this iteration.
+- Plan at experiment level (what to try and why), not implementation level (how to code it line-by-line).
+- Use the current iteration from CLAUDE.md to set ambition:
+   - Early iterations: baseline + fast validation steps.
+   - Mid iterations: targeted improvements and controlled ablations.
+   - Late iterations: high-confidence refinements, ensemble/robustness checks, submission quality.
 - Call ExitPlanMode with your plan — do NOT write any files.
+- When calling ExitPlanMode, provide only the markdown plan text.
+- Do NOT include `allowedPrompts` or any tool-approval payload fields.
+
+Directory policy (strict):
+- MUST read `CLAUDE.md` first.
+- MAY read `.claude/agent-memory/planner/MEMORY.md`.
+- MAY read `.claude/skills/<skill>/SKILL.md` only when a specific skill is directly relevant.
+- MUST NOT read `.gladius/**` for planning decisions.
+- MUST NOT crawl all of `.claude/skills/**`; only open specific skill docs you intend to reference.
 
 Be specific. The implementer will execute your plan blindly.{parallel_instruction}
 """
@@ -74,21 +88,27 @@ Choose one of:
 
 ## Plan quality requirements
 
-- Every step must be executable without further guidance — no "investigate X" steps.
-- Include exact library names, function calls, and metric variable names.
-- Explicitly say which CV strategy to use (StratifiedKFold / GroupKFold / KFold).
-- Specify the exact metric function to call for OOF scoring.
-- Specify which skill files to invoke and when.
+- Keep plans concise: 5-9 steps, each 1-2 sentences max.
+- Focus on decisions, hypotheses, and experiment sequence.
+- Include expected outcome/acceptance signal per step (e.g., OOF uplift, leakage check passes).
+- Do NOT provide code snippets, full file templates, or function-level implementation details.
+- Do NOT rewrite entire scripts in the plan.
+- Mention relevant skills to invoke, but do not inline the skill content.
+- Explicitly reference the current iteration context from CLAUDE.md when prioritizing scope.
 
 STRICT RULES — you are in READ-ONLY planning mode:
 Do NOT run Bash commands.
 Do NOT write or edit ANY files — not MEMORY.md, not plan files, not anything.
 Do NOT spawn Task subagents.
+Do NOT inspect `.gladius/**`.
+Do NOT explore the repository root outside the competition project directory.
+Do NOT call `Write`, `Edit`, or `MultiEdit` under any circumstance.
 Skills: call Skill{"skill": "<name>"} to read and understand a skill's content.
   Do NOT call any mcp__* tool — those are only available to the implementer.
   Instead, write explicit "invoke skill X" steps in your plan for the implementer.
 Use ONLY Read, Glob, Grep, WebSearch, Skill, TodoWrite.
-Call ExitPlanMode when your plan is ready — that is the ONLY output channel."""
+Call ExitPlanMode when your plan is ready — that is the ONLY output channel.
+ExitPlanMode payload must include only the plan content, with no allowedPrompts/tool schema fields."""
 
 
 def build_planner_alternative_prompt(existing_summaries: list[str]) -> str:

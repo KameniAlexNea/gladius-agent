@@ -209,12 +209,6 @@ state/experiments
 
 # claude exec
 *.out
-examples/*/CLAUDE.md
-examples/*/.mcp.json
-examples/*/.claude
-examples/*/.gladius
-examples/*/scripts
-examples/*/catboost_info
-examples/*/*.py
 examples/app_competition
 examples/data_dog
+examples/fake_competition

@@ -1,11 +1,11 @@
 """
-Implementer — executes the planner's plan end-to-end.
+Implementer — ML experiment coordinator.
 
-Writes code, runs it, handles errors, and reports results.
+Orchestrates specialized subagents (ml-scaffolder, ml-developer, ml-scientist,
+ml-evaluator, code-reviewer, submission-builder) via the Agent() tool.
+Routes between phases by reading EXPERIMENT_STATE.json after each subagent completes.
 
 Fresh session every iteration (not resumed) — it works from the plan alone.
-No naming conventions. No forced output format. Claude decides everything
-about file structure, libraries, and how to measure the metric.
 """
 
 from typing import TYPE_CHECKING
@@ -30,29 +30,22 @@ async def run_implementer(
     project_dir: str,
 ) -> dict:
     """
-    Execute the plan. Return result dict matching OUTPUT_SCHEMA.
+    Run the coordinator. Returns a result dict matching OUTPUT_SCHEMA.
     """
-    from gladius.utils.jupyter_mcp import build_jupyter_mcp_config
-
     prompt = build_implementer_prompt(plan=plan, target_metric=state.target_metric)
     result, _ = await run_agent(
         agent_name="implementer",
         prompt=prompt,
         system_prompt=IMPLEMENTER_SYSTEM_PROMPT,
         allowed_tools=[
+            "Agent(ml-scaffolder,ml-developer,ml-scientist,ml-evaluator,code-reviewer,submission-builder)",
             "Read",
             "Write",
-            "Edit",
-            "Bash",
             "Glob",
-            "Grep",
             "TodoWrite",
-            "Skill",
-            "mcp__jupyter__*",
         ],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
-        mcp_servers=build_jupyter_mcp_config(),
-        max_turns=80,
+        max_turns=30,
     )
     return result

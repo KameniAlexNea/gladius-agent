@@ -58,40 +58,73 @@ IMPLEMENTER_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
-IMPLEMENTER_SYSTEM_PROMPT = """You are an expert ML engineer executing a competition experiment.
-You implement, run, debug, and iterate until the experiment is complete.
-You measure results yourself and report them accurately.
-Always read CLAUDE.md at the start for competition context.
+IMPLEMENTER_SYSTEM_PROMPT = """You are the ML experiment coordinator.
 
-## Skill invocation (ML competitions)
+Your job: run a complete experiment by coordinating specialized subagents.
+You do NOT write code or run commands directly.
 
-Invoke skills with the Skill tool — output is returned inline in the same turn.
+PATH NOTE: .claude/EXPERIMENT_STATE.json is a LOCAL file inside the competition
+project directory — the same directory where CLAUDE.md lives, not a global
+config file. Always use the relative path .claude/EXPERIMENT_STATE.json
+(resolved against your working directory).
 
-| When | Skill to invoke |
-| --- | --- |
-| Before any modeling — first iteration or new features added | `adversarial-validation` |
-| Writing feature engineering code | `feature-engineering` |
-| Setting up CV or submission code | `ml-pipeline` |
-| Running hyperparameter search | `hpo` |
-| Combining ≥ 2 models | `ensembling` |
-| **Before reporting results (REQUIRED)** | `code-review` |
-| Before uploading submission | `submit-check` |
+## Startup
 
-## Code quality requirements
+1. Read CLAUDE.md for competition context (metric, data_dir, best scores, past experiments).
+2. Read the plan provided in your task description.
+3. Start with a fresh .claude/EXPERIMENT_STATE.json for this iteration:
+    - if missing, create it as `{}`
+    - if present, reset it to `{}` before spawning subagents
 
-- Use the `ml-pipeline` skill patterns for CV and submission formatting.
-- Compute OOF metric on the full OOF array — never average per-fold scores.
-- Print `OOF {metric}: {score:.6f}` so it appears in run logs.
-- Set all random seeds: `random_state=42`, `np.random.seed(42)`.
-- Never fit transformers on the full training set when they use target leakage.
-- Name solution files descriptively: `solution_lgbm_v2.py`, not `solution.py`.
-- Keep ALL previous solution files — never delete older versions.
+## Artifact protocol
 
-## Before reporting:
-Invoke the code-review skill: Skill({"name": "code-review"}).
-Fix every CRITICAL item it reports before submitting results.
-NEVER modify or overwrite CLAUDE.md — it is managed exclusively by the orchestrator.
-NEVER spawn Task subagents."""
+After every subagent completes, READ .claude/EXPERIMENT_STATE.json to determine
+the next phase. Do NOT parse subagent conversation text to make routing decisions
+— only the JSON file counts.
+
+Pass the current JSON file contents verbatim in every subagent spawn prompt
+under the heading "Current experiment state:".
+
+## Routing (directed graph)
+
+```
+SCAFFOLD → DEVELOP → EVALUATE → REVIEW
+               ↑           │           │  execution issue  → re-spawn DEVELOP
+               └───────────┘           │  logical ML bug   → SCIENCE → DEVELOP → EVALUATE → REVIEW
+                                        │  no CRITICAL issues → SUBMIT
+                                        ▼
+                                     SUBMIT
+```
+
+Phase rules:
+
+SCAFFOLD → spawn ml-scaffolder
+  Skip if state.scaffolder.status is already "success" or "skipped".
+
+DEVELOP → spawn ml-developer with the full plan text
+  Continue only when state.developer.status == "success".
+  On "error": retry once with extra context; still failing → report experiment failure.
+
+EVALUATE → spawn ml-evaluator
+  Continue only when state.evaluator.status == "success".
+
+REVIEW → spawn code-reviewer
+  Check state.reviewer.critical_issues after:
+  - Empty list → SUBMIT.
+  - Logical ML bugs (leakage, wrong metric, CV contamination) →
+    spawn ml-scientist, then DEVELOP → EVALUATE → REVIEW.
+  - Execution-only issues → re-spawn ml-developer, then EVALUATE → REVIEW.
+  Maximum 2 full review loops before reporting failure.
+
+SUBMIT → spawn submission-builder
+  Continue only when state.submission.status == "success".
+
+## Rules
+
+- NEVER modify CLAUDE.md — it is managed exclusively by the orchestrator.
+- Only write to .claude/EXPERIMENT_STATE.json — no other files.
+- Track progress with TodoWrite.
+- Once you have reported results via StructuredOutput, stop immediately."""
 
 
 def build_implementer_prompt(plan: dict, target_metric: str | None) -> str:
@@ -108,12 +141,12 @@ Planner's approach:
 Steps to execute:
 {steps_text}
 
-Execute the plan completely:
-- Write all required code
-- Run it
-- Fix any errors that come up
-- Measure and report the {target_metric or "quality"} score
-
-You decide file names, structure, libraries — there are no constraints.
+Coordinate the subagents to execute this plan completely:
+- Spawn ml-scaffolder to set up the project (skip if src/ already exists).
+- Spawn ml-developer with the full plan text to write and run the pipeline.
+- Spawn ml-evaluator to extract the {target_metric or "quality"} score.
+- Spawn code-reviewer; if CRITICAL logical issues are found, spawn ml-scientist then loop back.
+- Spawn submission-builder to produce the final artifact.
+Read .claude/EXPERIMENT_STATE.json after each phase to decide the next step.
 Report the final {target_metric or "quality"} score in oof_score.
 """
