@@ -142,7 +142,9 @@ def _log_tool_use(agent_name: str, sub_tag: str, block: ToolUseBlock) -> None:
             print(f"       {icon}  {_c(_DIM, str(text)[:100])}")
 
     elif block.name == "ExitPlanMode":
-        plan_preview = block.input.get("plan", "").strip().splitlines()[0][:120]
+        plan_text = str(block.input.get("plan", "")).strip()
+        lines = plan_text.splitlines()
+        plan_preview = (lines[0] if lines else "(empty plan)")[:120]
         print(
             _c(_BOLD + _GREEN, f"  📝 [{agent_name}]{sub_tag} ExitPlanMode")
             + _c(_DIM, f"  {plan_preview}")

@@ -11,6 +11,8 @@ Both stream all SDK messages to the console in real-time and return
 import asyncio
 import logging
 import os
+import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +113,45 @@ def _is_tool_allowed(tool_name: str, allowed_tools: list[str]) -> bool:
     return False
 
 
+def _is_path_within_cwd(path_token: str, cwd: str) -> bool:
+    """Return True when path_token resolves inside cwd."""
+    try:
+        base = Path(cwd).resolve()
+        token = Path(path_token)
+        resolved = token.resolve() if token.is_absolute() else (base / token).resolve()
+        resolved.relative_to(base)
+        return True
+    except Exception:
+        return False
+
+
+def _is_bash_command_scoped_to_cwd(command: str, cwd: str) -> bool:
+    """Best-effort guard: reject Bash commands that reference paths outside cwd."""
+    try:
+        tokens = shlex.split(command)
+    except Exception:
+        # If parsing fails, keep existing behavior and let runtime/tooling handle it.
+        return True
+
+    # Block explicit `cd` escapes, including compound shell commands.
+    for match in re.finditer(r"(?:^|[;&|]\s*)cd\s+([^;&|\s]+)", command):
+        target = match.group(1).strip().strip("\"'")
+        if target and not _is_path_within_cwd(target, cwd):
+            return False
+
+    # Block absolute paths and relative traversals that resolve outside cwd.
+    for tok in tokens:
+        if tok.startswith("/"):
+            if not _is_path_within_cwd(tok, cwd):
+                return False
+            continue
+        if tok.startswith("../") or tok == "..":
+            if not _is_path_within_cwd(tok, cwd):
+                return False
+
+    return True
+
+
 # ── run_agent ─────────────────────────────────────────────────────────────────
 
 
@@ -170,6 +211,7 @@ async def run_agent(
         try:
             result_msg: ResultMessage | None = None
             last_assistant_msg: AssistantMessage | None = None
+            forbidden_tool_error: str | None = None
             # Capture session_id from SystemMessage(subtype="init") early — it
             # arrives before any tool calls and serves as a fallback if the run
             # crashes before ResultMessage (rate-limit kill, OOM, network drop).
@@ -190,16 +232,27 @@ async def run_agent(
                     early_session_id = message.data.get("session_id")
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
-                        if isinstance(block, ToolUseBlock) and not _is_tool_allowed(
-                            block.name, allowed_tools
-                        ):
-                            raise RuntimeError(
-                                f"[{agent_name}] attempted forbidden tool '{block.name}'. "
-                                f"allowed_tools={allowed_tools}"
-                            )
+                        if isinstance(block, ToolUseBlock):
+                            if not _is_tool_allowed(block.name, allowed_tools):
+                                # Record and fail after stream completion; raising
+                                # mid-stream can surface AnyIO cancel-scope errors.
+                                forbidden_tool_error = (
+                                    f"[{agent_name}] attempted forbidden tool '{block.name}'. "
+                                    f"allowed_tools={allowed_tools}"
+                                )
+                            elif block.name == "Bash":
+                                cmd = str(block.input.get("command", ""))
+                                if not _is_bash_command_scoped_to_cwd(cmd, cwd):
+                                    forbidden_tool_error = (
+                                        f"[{agent_name}] attempted out-of-project Bash command. "
+                                        f"cwd={cwd} command={cmd!r}"
+                                    )
                     last_assistant_msg = message
                 if isinstance(message, ResultMessage):
                     result_msg = message
+
+            if forbidden_tool_error:
+                raise RuntimeError(forbidden_tool_error)
 
             if result_msg is None:
                 raise RuntimeError("No ResultMessage received from agent")
@@ -221,8 +274,10 @@ async def run_agent(
                             f"[{agent_name}] structured_output was None — "
                             "extracted JSON from assistant text (llm_output_parser fallback)"
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning(
+                            f"[{agent_name}] structured_output fallback parse failed: {exc}"
+                        )
 
             # Qwen-style: model calls StructuredOutput then keeps running until
             # max_turns, producing is_error=True.  Prefer the captured output.
@@ -281,6 +336,8 @@ async def run_agent(
             logger.warning(f"MessageParseError on attempt {attempt + 1}: {e}, retrying")
 
         except RuntimeError as e:
+            if "attempted forbidden tool" in str(e):
+                raise
             if attempt == max_retries - 1:
                 raise
             logger.warning(f"RuntimeError on attempt {attempt + 1}: {e}, retrying")
@@ -353,6 +410,10 @@ async def run_planning_agent(
         max_turns=max_turns,
     )
 
+    # ExitPlanMode is the canonical way to finish plan mode. Keep it always
+    # permitted even if the caller forgets to include it explicitly.
+    planning_allowed_tools = list(dict.fromkeys([*allowed_tools, "ExitPlanMode"]))
+
     _runtime_model = _get_runtime_model()
     options = ClaudeAgentOptions(
         system_prompt={
@@ -360,7 +421,7 @@ async def run_planning_agent(
             "preset": "claude_code",
             "append": system_prompt,
         },
-        allowed_tools=allowed_tools,
+        allowed_tools=planning_allowed_tools,
         permission_mode="plan",
         can_use_tool=_approve_exit_plan_mode,
         cwd=cwd,
@@ -379,12 +440,13 @@ async def run_planning_agent(
             early_session_id: str | None = None
             captured_plan: str | None = None
             last_text_block: str = ""
+            forbidden_tool_error: str | None = None
 
             if verbose:
                 resume_str = f"  resume={resume[:8]}…" if resume else ""
                 print(
                     _c(_BOLD + _BLUE, f"\n▶ [{agent_name}] (plan mode)")
-                    + f"  tools={allowed_tools}"
+                    + f"  tools={planning_allowed_tools}"
                     + resume_str
                 )
 
@@ -399,19 +461,30 @@ async def run_planning_agent(
                     early_session_id = message.data.get("session_id")
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
-                        if isinstance(block, ToolUseBlock) and not _is_tool_allowed(
-                            block.name, allowed_tools
-                        ):
-                            raise RuntimeError(
-                                f"[{agent_name}] attempted forbidden tool '{block.name}' in plan mode. "
-                                f"allowed_tools={allowed_tools}"
-                            )
+                        if isinstance(block, ToolUseBlock):
+                            if not _is_tool_allowed(block.name, planning_allowed_tools):
+                                forbidden_tool_error = (
+                                    f"[{agent_name}] attempted forbidden tool '{block.name}' in plan mode. "
+                                    f"allowed_tools={planning_allowed_tools}"
+                                )
+                            elif block.name == "Bash":
+                                cmd = str(block.input.get("command", ""))
+                                if not _is_bash_command_scoped_to_cwd(cmd, cwd):
+                                    forbidden_tool_error = (
+                                        f"[{agent_name}] attempted out-of-project Bash command in plan mode. "
+                                        f"cwd={cwd} command={cmd!r}"
+                                    )
                         # Primary: model called ExitPlanMode.
                         if (
                             isinstance(block, ToolUseBlock)
                             and block.name == "ExitPlanMode"
                         ):
-                            captured_plan = block.input.get("plan", "")
+                            captured_plan = str(
+                                block.input.get("plan")
+                                or block.input.get("content")
+                                or block.input.get("text")
+                                or ""
+                            ).strip()
                         # Fallback: models that don't support ExitPlanMode (Ollama/Qwen)
                         # produce the plan as a final text block.
                         elif (
@@ -422,6 +495,9 @@ async def run_planning_agent(
                 if isinstance(message, ResultMessage):
                     result_msg = message
 
+            if forbidden_tool_error:
+                raise RuntimeError(forbidden_tool_error)
+
             if result_msg is None:
                 raise RuntimeError("No ResultMessage received from planning agent")
             if result_msg.is_error:
@@ -429,6 +505,15 @@ async def run_planning_agent(
                     f"Planning agent returned error result: {result_msg.result}"
                 )
             if not captured_plan:
+                if result_msg.result and isinstance(result_msg.result, str):
+                    # Some runtimes surface the final plan text in ResultMessage
+                    # instead of the ExitPlanMode tool input payload.
+                    _candidate = result_msg.result.strip()
+                    if _candidate and "<system-reminder>" not in _candidate:
+                        logger.warning(
+                            f"[{agent_name}] ExitPlanMode payload missing — using ResultMessage.result as plan fallback."
+                        )
+                        captured_plan = _candidate
                 if last_text_block and "<system-reminder>" not in last_text_block:
                     logger.warning(
                         f"[{agent_name}] ExitPlanMode not called — using last text "
@@ -480,7 +565,11 @@ async def run_planning_agent(
             # system-reminder errors won't improve on retry (same resumed session
             # would produce the same injection). Raise immediately so the caller
             # (planner.py) can retry with resume=None instead.
-            if "system-reminder" in str(e) or attempt == max_retries - 1:
+            if (
+                "system-reminder" in str(e)
+                or "attempted forbidden tool" in str(e)
+                or attempt == max_retries - 1
+            ):
                 raise
             logger.warning(f"RuntimeError on attempt {attempt + 1}: {e}, retrying")
 
