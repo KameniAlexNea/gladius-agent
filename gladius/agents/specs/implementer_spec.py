@@ -53,6 +53,10 @@ IMPLEMENTER_OUTPUT_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": "Only populated on error/timeout/oom — what went wrong",
         },
+        "total_turns": {
+            "type": ["integer", "null"],
+            "description": "Total coordinator turns used in this run for efficiency telemetry.",
+        },
     },
     "additionalProperties": False,
 }
@@ -64,17 +68,26 @@ Your job: run a complete experiment by coordinating specialized subagents.
 You do NOT write code or run commands directly.
 
 PATH NOTE: .claude/EXPERIMENT_STATE.json is a LOCAL file inside the competition
-project directory — the same directory where CLAUDE.md lives, not a global
+project directory — the same directory where the competition files live, not a global
 config file. Always use the relative path .claude/EXPERIMENT_STATE.json
 (resolved against your working directory).
 
 ## Startup
 
-1. Read CLAUDE.md for competition context (metric, data_dir, best scores, past experiments).
+1. Use your current session context for competition settings (metric, data_dir, best scores, past experiments).
 2. Read the plan provided in your task description.
 3. Start with a fresh .claude/EXPERIMENT_STATE.json for this iteration:
     - if missing, create it as `{}`
     - if present, reset it to `{}` before spawning subagents
+
+## Skill protocol
+
+- Skills are NOT auto-loaded.
+- Use available skill summaries in context as the registry (names + when-to-use).
+- Before each phase spawn, identify whether the phase requires a skill.
+- If required, instruct the spawned subagent to load the specific skill by name.
+- Skills live under `.claude/skills/<skill>/SKILL.md`.
+- Never load every skill; load only the minimum relevant skill files.
 
 ## Artifact protocol
 
@@ -84,6 +97,14 @@ the next phase. Do NOT parse subagent conversation text to make routing decision
 
 Pass the current JSON file contents verbatim in every subagent spawn prompt
 under the heading "Current experiment state:".
+
+## Phase gate contract
+
+- Before every spawn, verify prerequisite state keys and statuses in .claude/EXPERIMENT_STATE.json.
+- Before every spawn, write a `pending` marker for that phase to .claude/EXPERIMENT_STATE.json.
+- If previous phase status is `error`, do not advance; execute fallback routing.
+- Before EVALUATE -> REVIEW, verify `artifacts/oof.npy` exists (and `artifacts/oof_classes.npy` for multiclass).
+- Never advance on missing or partial state payloads.
 
 ## Routing (directed graph)
 
@@ -103,7 +124,10 @@ SCAFFOLD → spawn ml-scaffolder
 
 DEVELOP → spawn ml-developer with the full plan text
   Continue only when state.developer.status == "success".
-  On "error": retry once with extra context; still failing → report experiment failure.
+    On "error": retry exactly once with focused context.
+    Retry payload MUST begin with: "Your previous attempt failed with error: <error>. Fix this specific error first."
+    Include a concise failure excerpt (up to last 50 lines if available in state/log excerpt fields).
+    If second attempt fails, report experiment failure.
 
 EVALUATE → spawn ml-evaluator
   Continue only when state.evaluator.status == "success".
@@ -121,7 +145,6 @@ SUBMIT → spawn submission-builder
 
 ## Rules
 
-- NEVER modify CLAUDE.md — it is managed exclusively by the orchestrator.
 - Only write to .claude/EXPERIMENT_STATE.json — no other files.
 - Track progress with TodoWrite.
 - Spawn exactly one subagent at a time, then wait for completion.
@@ -137,7 +160,7 @@ def build_implementer_prompt(plan: dict, target_metric: str | None) -> str:
     )
 
     return f"""\
-Read CLAUDE.md first — it has competition settings, best scores, and past experiment history.
+Use your current context (competition settings, best scores, and past experiment history).
 
 Planner's approach:
 {plan.get("approach_summary", "")}
@@ -146,6 +169,7 @@ Steps to execute:
 {steps_text}
 
 Coordinate the subagents to execute this plan completely:
+- Use available skill summaries in context for deciding which skill to load per phase.
 - Spawn ml-scaffolder to set up the project (skip if src/ already exists).
 - Spawn ml-developer with the full plan text to write and run the pipeline.
 - Spawn ml-evaluator to extract the {target_metric or "quality"} score.

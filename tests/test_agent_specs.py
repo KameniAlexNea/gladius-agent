@@ -7,7 +7,10 @@ from gladius.agents.specs.implementer_spec import (
     IMPLEMENTER_SYSTEM_PROMPT,
     build_implementer_prompt,
 )
-from gladius.agents.specs.planner_spec import build_planner_prompt
+from gladius.agents.specs.planner_spec import (
+    PLANNER_SYSTEM_PROMPT,
+    build_planner_prompt,
+)
 from gladius.agents.specs.validation_spec import build_validation_prompt
 
 
@@ -24,6 +27,17 @@ def test_build_planner_prompt_includes_parallel_instruction_without_leading_blan
     assert "## Approach 2" in prompt
 
 
+def test_planner_prompts_define_lazy_skill_loading_protocol():
+    prompt = build_planner_prompt(
+        iteration=1,
+        max_iterations=3,
+        project_dir="/tmp/project",
+        n_parallel=1,
+    )
+    assert "Skills are NOT auto-loaded" in prompt
+    assert 'Skill{"skill": "<name>"}' in PLANNER_SYSTEM_PROMPT
+
+
 def test_build_implementer_prompt_includes_plan_and_metric():
     prompt = build_implementer_prompt(
         plan={
@@ -36,6 +50,11 @@ def test_build_implementer_prompt_includes_plan_and_metric():
     assert "Try catboost baseline" in prompt
     assert "1. Load data" in prompt
     assert "auc_roc" in prompt
+
+
+def test_implementer_system_prompt_mentions_skill_registry_protocol():
+    assert "Skills are NOT auto-loaded" in IMPLEMENTER_SYSTEM_PROMPT
+    assert "skill summaries in context" in IMPLEMENTER_SYSTEM_PROMPT
 
 
 def test_validation_prompt_metric_mode_contains_submission_checks():

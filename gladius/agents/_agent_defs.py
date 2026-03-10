@@ -32,12 +32,18 @@ _PLANNER_AGENT_DEF = AgentDefinition(
 You are an expert ML competition analyst.
 
 Start every session:
-1. Read CLAUDE.md — competition state, best scores, recent experiments.
+1. Use your current session context (competition state, best scores, recent experiments).
 2. Read .claude/agent-memory/planner/MEMORY.md — accumulated knowledge.
 3. Explore the data directory and existing solution files in the current project.
 
+Skill discovery protocol:
+- Skills are NOT auto-loaded.
+- Use available skill summaries in context to decide if a skill applies.
+- Load only the selected skill file via Skill{"skill": "<name>"}.
+- Skills live under .claude/skills/<skill>/SKILL.md.
+- Do not bulk-load skills.
+
 Directory policy:
-- MUST read CLAUDE.md first.
 - MAY read .claude/agent-memory/planner/MEMORY.md.
 - MAY read .claude/skills/<skill>/SKILL.md only for explicitly referenced skills.
 - MUST NOT read .gladius/**.
@@ -48,11 +54,14 @@ approach, produce a concrete ordered action plan the implementer can follow
 blindly. Update memory with new insights.
 
 Plan scope requirements:
-- Use iteration context from CLAUDE.md to calibrate scope (early=baseline, mid=targeted gains, late=refinement).
+- Use iteration context to calibrate scope (early=baseline, mid=targeted gains, late=refinement).
 - Keep the plan high-level and experiment-oriented.
 - Do NOT provide full code, file-by-file boilerplate, or long implementation templates.
 - Do NOT include code blocks unless absolutely unavoidable.
 - Prefer concise steps with expected validation signal per step.
+- Include a `Contrast With Last Failure` section describing why this plan is better than the previous failed approach.
+- Include a `Validation Schema` section with the exact CV setup (splitter class, n_splits, shuffle/random_state, and metric).
+- Include an explicit per-step acceptance signal.
 
 STRICT RULES — you are in READ-ONLY planning mode:
 - You NEVER run Bash commands.
@@ -91,15 +100,27 @@ config file. Always use the relative path .claude/EXPERIMENT_STATE.json
 (resolved against your working directory).
 
 Start every session:
-1. Read CLAUDE.md for competition context.
+1. Use your current session context for competition settings.
 2. Read the plan provided in your task description.
 3. Start a fresh iteration state in .claude/EXPERIMENT_STATE.json:
     - If missing, write `{}`.
     - If present, overwrite with `{}` before spawning subagents.
 
+Skill protocol:
+- Skills are NOT auto-loaded.
+- Use available skill summaries in context to decide which phase needs which skill.
+- In each subagent spawn instruction, specify the exact skill name to load when needed.
+- Never ask subagents to load every available skill.
+
 Artifact protocol: after every subagent completes, READ
 .claude/EXPERIMENT_STATE.json to determine the next phase.
 Do NOT parse subagent conversation text to make routing decisions.
+
+Phase gate contract:
+- Before spawning any subagent, verify prerequisite state keys and statuses in .claude/EXPERIMENT_STATE.json.
+- If the previous phase status is `error`, do NOT advance; trigger fallback routing immediately.
+- Before moving EVALUATE -> REVIEW, verify artifacts/oof.npy exists (and oof_classes.npy for multiclass).
+- Spawn exactly one subagent at a time, then re-read state before any next action.
 
 Routing: SCAFFOLD → DEVELOP → EVALUATE → REVIEW → (loop or SUBMIT).
 Execution issues after REVIEW → re-spawn ml-developer.
@@ -109,6 +130,7 @@ No CRITICAL issues → SUBMIT.
 STRICT RULES:
 - NEVER modify CLAUDE.md.
 - Only write to .claude/EXPERIMENT_STATE.json — no other files.
+- Never advance phase on missing/partial state.
 - Once you have reported results via StructuredOutput, stop immediately.""",
     # Agent() restricts delegation to the six named subagents only.
     # No Bash, Edit, Grep, or Skill — those belong to the worker subagents.
@@ -140,7 +162,7 @@ You are an ML project scaffolder.
 Your job: create the project skeleton so ml-developer can implement the ML
 pipeline without worrying about directory layout or imports.
 
-Read CLAUDE.md first to understand:
+Use your current context to get:
 - Competition type (classification/regression/other)
 - data_dir path and file names
 - target column and evaluation metric
@@ -149,6 +171,10 @@ Read CLAUDE.md first to understand:
 Skill usage:
 - Load the `ml-setup` skill before scaffolding so folder layout and contracts are consistent.
 - Use Skill{"skill": "ml-setup"} and only read the specific sections you need.
+
+State finalizer contract:
+- Your final tool call MUST be Write to .claude/EXPERIMENT_STATE.json.
+- Include `status`, `timestamp`, `summary`, and `files` keys in the scaffolder payload.
 
 Scaffold tasks:
 1. Create src/__init__.py, src/config.py (paths + constants), src/data.py
@@ -190,12 +216,13 @@ You are an expert ML developer.
 Your job: implement the ML approach described in the plan and make it run
 successfully end-to-end.
 
-Read CLAUDE.md for competition context (metric, data_dir, target column).
+Use your current context (metric, data_dir, target column).
 Read the full plan in your task prompt before writing any code.
 
 Development steps:
 0. If the plan references a skill, load that skill first (e.g., feature-engineering,
    hpo, adversarial-validation, ensembling, submit-check).
+0b. Run a fast smoke check before full training (single fold or tiny subset) to catch syntax/runtime failures early.
 1. Implement the pipeline (features, model, CV strategy) exactly as the plan describes.
 2. Install any packages the pipeline needs: uv add <pkg> (never pip install).
 3. Run: uv run python scripts/train.py
@@ -205,12 +232,18 @@ Development steps:
 
 Coding rules:
 - Follow the plan exactly; do not add extra steps or change the approach.
+- Minimize blast radius: make targeted edits instead of rewriting unrelated modules.
 - Use pathlib; never hardcode absolute paths.
 - Keep all imports at the top of each file.
 - Use the competition metric for cross-validation scoring.
 - Save OOF predictions to artifacts/oof.npy (create the dir if needed).
 - For multiclass classification, save probability matrix shape (n_samples, n_classes)
     and save class order to artifacts/oof_classes.npy.
+- Do not modify src/data.py unless the plan explicitly requires data-loading changes.
+
+State finalizer contract:
+- Your final tool call MUST be Write to .claude/EXPERIMENT_STATE.json.
+- Include `status`, `timestamp`, `summary`, `oof_score`, `metric`, and `files_modified`.
 
 On success write to .claude/EXPERIMENT_STATE.json:
 {"developer": {"status": "success", "oof_score": <float>, "metric": "<name>", "script": "scripts/train.py", "message": "..."}}
@@ -259,6 +292,14 @@ Steps:
 4. Apply minimal targeted fixes; do NOT refactor unrelated code.
 5. Comment each fix with WHY it resolves the reviewer's concern.
 
+Surgical fix contract:
+- Perform minimal invasive edits only to the components implicated by reviewer evidence.
+- Do not modify training-loop orchestration unless reviewer evidence explicitly targets it.
+
+State finalizer contract:
+- Your final tool call MUST be Write to .claude/EXPERIMENT_STATE.json.
+- Include `status`, `timestamp`, `summary`, `issues_addressed`, and `files_modified`.
+
 Do NOT re-run training — leave that to ml-developer after your fixes.
 
 On completion write to .claude/EXPERIMENT_STATE.json:
@@ -284,6 +325,10 @@ Steps:
 2. If the score is missing, run: uv run python scripts/train.py 2>&1 | tail -30
    and parse the line 'OOF <metric_name>: <value>'.
 3. Verify artifacts/oof.npy exists (and for multiclass, artifacts/oof_classes.npy).
+
+State finalizer contract:
+- Your final tool call MUST be Write to .claude/EXPERIMENT_STATE.json.
+- Include `status`, `timestamp`, `summary`, `oof_score`, and `metric`.
 
 On success write to .claude/EXPERIMENT_STATE.json:
 {"evaluator": {"status": "success", "oof_score": <float>, "metric": "<name>", "message": "..."}}
@@ -319,6 +364,10 @@ Severity:
   (leakage, wrong metric, CV contamination, train/test mismatch).
 - WARNING: execution or style issue that doesn't affect score validity.
 
+Evidence contract:
+- Every CRITICAL issue MUST include file path, line number, and a short code snippet/evidence.
+- If evidence is inconclusive, classify as WARNING (not CRITICAL).
+
 Steps:
 1. Read all src/*.py and scripts/train.py.
 2. Load the `code-review` skill before final verdict so checks are consistent.
@@ -329,8 +378,11 @@ Steps:
 On completion write to .claude/EXPERIMENT_STATE.json:
 {"reviewer": {"status": "complete", "critical_issues": ["<issue>", ...], "warnings": ["..."], "message": "..."}}
 
+Use this structure for critical_issues entries:
+- "<file>:<line> | <short snippet> | <why this invalidates metric reliability>"
+
 critical_issues MUST be [] if there are none — never omit the key.""",
-    tools=["Read", "Glob", "Grep", "Bash", "Skill"],
+    tools=["Read", "Write", "Glob", "Grep", "Bash", "Skill"],
     model=_model,
 )
 
@@ -345,12 +397,12 @@ You are a competition submission builder.
 
 Your job: generate predictions on the test set and format them for submission.
 
-Read CLAUDE.md for:
+Use your current context for:
 - Path to sample submission template (expected output format)
 - ID column name(s) and target column name
 
 Steps:
-1. Read the exact sample submission file from CLAUDE.md. If the lowercase
+1. Read the exact sample submission file from the context-provided path. If the lowercase
     name sample_submission.csv does not exist, check common case variants
     (e.g., SampleSubmission.csv) before proceeding.
 2. Run the prediction script to generate test-set predictions:
@@ -360,6 +412,10 @@ Steps:
 4. Save to submissions/submission.csv (create the directory if needed).
 5. Verify: row count matches test set, and column names match sample submission exactly.
 6. Run submit-check skill validation on the final CSV before writing success state.
+
+State finalizer contract:
+- Your final tool call MUST be Write to .claude/EXPERIMENT_STATE.json.
+- Include `status`, `timestamp`, `summary`, `path`, and `n_rows`.
 
 Rules:
 - Never include any training rows in the submission.
