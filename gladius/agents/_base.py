@@ -101,6 +101,16 @@ def _stderr_cb(line: str) -> None:
     print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
 
 
+def _is_tool_allowed(tool_name: str, allowed_tools: list[str]) -> bool:
+    """Return True when tool_name is allowed by runtime tool policy."""
+    if tool_name in allowed_tools:
+        return True
+    # Claude SDK emits the Agent() delegation tool as Task in messages.
+    if tool_name == "Task" and any(t.startswith("Agent(") for t in allowed_tools):
+        return True
+    return False
+
+
 # ── run_agent ─────────────────────────────────────────────────────────────────
 
 
@@ -179,6 +189,14 @@ async def run_agent(
                 if isinstance(message, SystemMessage) and message.subtype == "init":
                     early_session_id = message.data.get("session_id")
                 if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, ToolUseBlock) and not _is_tool_allowed(
+                            block.name, allowed_tools
+                        ):
+                            raise RuntimeError(
+                                f"[{agent_name}] attempted forbidden tool '{block.name}'. "
+                                f"allowed_tools={allowed_tools}"
+                            )
                     last_assistant_msg = message
                 if isinstance(message, ResultMessage):
                     result_msg = message
@@ -381,6 +399,13 @@ async def run_planning_agent(
                     early_session_id = message.data.get("session_id")
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
+                        if isinstance(block, ToolUseBlock) and not _is_tool_allowed(
+                            block.name, allowed_tools
+                        ):
+                            raise RuntimeError(
+                                f"[{agent_name}] attempted forbidden tool '{block.name}' in plan mode. "
+                                f"allowed_tools={allowed_tools}"
+                            )
                         # Primary: model called ExitPlanMode.
                         if (
                             isinstance(block, ToolUseBlock)

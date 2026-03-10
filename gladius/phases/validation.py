@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import csv
 import logging
 import time
 from collections.abc import Callable
 from datetime import date as _date
 from datetime import datetime as _dt
 from datetime import timezone as _tz
+from pathlib import Path
 
 from gladius.db.store import StateStore
 from gladius.state import CompetitionState
@@ -54,6 +56,67 @@ def _is_better(
     if direction == "maximize":
         return new_score > best_score + threshold
     return new_score < best_score - threshold
+
+
+def _resolve_submission_path(project_dir: str, submission_file: str) -> Path:
+    """Resolve submission path as absolute, preserving absolute paths as-is."""
+    p = Path(submission_file)
+    if p.is_absolute():
+        return p
+    return Path(project_dir) / p
+
+
+def _resolve_sample_submission_path(data_dir: str) -> Path | None:
+    """Find sample submission in common filename variants."""
+    data_path = Path(data_dir)
+    candidates = [
+        data_path / "sample_submission.csv",
+        data_path / "SampleSubmission.csv",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _deterministic_format_check(
+    *,
+    project_dir: str,
+    data_dir: str,
+    submission_file: str,
+) -> tuple[bool, str]:
+    """Validate submission format locally (exists, header, sample row count)."""
+    submission_path = _resolve_submission_path(project_dir, submission_file)
+    if not submission_path.exists():
+        return False, f"submission file missing: {submission_path}"
+
+    sample_path = _resolve_sample_submission_path(data_dir)
+    if sample_path is None:
+        return False, f"sample submission not found in data_dir: {data_dir}"
+
+    with submission_path.open("r", encoding="utf-8", newline="") as f_sub:
+        sub_reader = csv.reader(f_sub)
+        sub_header = next(sub_reader, None)
+        sub_rows = sum(1 for _ in sub_reader)
+
+    with sample_path.open("r", encoding="utf-8", newline="") as f_sample:
+        sample_reader = csv.reader(f_sample)
+        sample_header = next(sample_reader, None)
+        sample_rows = sum(1 for _ in sample_reader)
+
+    if sub_header != sample_header:
+        return (
+            False,
+            f"header mismatch: submission={sub_header} sample={sample_header}",
+        )
+
+    if sub_rows != sample_rows:
+        return (
+            False,
+            f"row-count mismatch: submission={sub_rows} sample={sample_rows}",
+        )
+
+    return True, "deterministic format check passed"
 
 
 # ── Phase entry-point ─────────────────────────────────────────────────────────
@@ -109,6 +172,26 @@ async def run_validation_phase(
     if validation is None:
         return True  # budget fired inside agent call
 
+    format_ok, format_note = _deterministic_format_check(
+        project_dir=project_dir,
+        data_dir=state.data_dir,
+        submission_file=submission_file,
+    )
+    if not format_ok:
+        logger.warning("Deterministic format check failed: %s", format_note)
+        validation["format_ok"] = False
+        validation["submit"] = False
+        reasoning = str(validation.get("reasoning") or "")
+        validation["reasoning"] = (
+            reasoning + " | " if reasoning else ""
+        ) + f"deterministic_format_check: {format_note}"
+    elif validation.get("format_ok") is False:
+        logger.info(
+            "Validation agent marked format_ok=false, but deterministic check passed"
+        )
+    else:
+        validation["format_ok"] = True
+
     # ── Hybrid quality scoring for open-ended tasks ───────────────────────────
     validator_quality_score = validation.get("quality_score")
     if state.target_metric is None:
@@ -161,6 +244,7 @@ async def run_validation_phase(
     if (
         deterministic_improvement
         and submission_file
+        and validation.get("format_ok", True)
         and validation.get("submit", True)
         and (
             platform == "none" or state.submission_count < state.max_submissions_per_day
@@ -181,11 +265,20 @@ async def run_validation_phase(
     elif (
         deterministic_improvement
         and submission_file
+        and validation.get("format_ok", True)
         and not validation.get("submit", True)
     ):
         logger.info(
             "Validation agent requested no submission (submit=false) "
             "despite improvement; respecting agent decision"
+        )
+    elif (
+        deterministic_improvement
+        and submission_file
+        and not validation.get("format_ok", True)
+    ):
+        logger.warning(
+            "Validation marked format_ok=false; submission blocked until format is fixed"
         )
 
     try:
@@ -216,6 +309,16 @@ async def run_validation_phase(
 
     state.consecutive_errors = 0
     state.iteration += 1
+    store.record_event(
+        iteration=state.iteration - 1,
+        phase="validation",
+        event="iteration_complete",
+        detail=(
+            f"best={state.best_oof_score:.6f}"
+            if state.target_metric
+            else f"best_quality={state.best_quality_score}/100"
+        ),
+    )
 
     _check_plateau_and_set_phase(state, store, validation)
     return False

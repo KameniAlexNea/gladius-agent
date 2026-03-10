@@ -7,6 +7,10 @@ import os
 import subprocess
 
 from gladius.state import CompetitionState
+from gladius.tools.zindi_common import (
+    create_zindi_user_from_env,
+    select_zindi_challenge,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,18 +47,7 @@ def _submit_to_zindi(
     competition_id: str, submission_path: str, message: str
 ) -> tuple[bool, str | None]:
     try:
-        from zindi.user import Zindian
-    except ImportError:
-        logger.error("zindi package not installed")
-        return False, "dependency_missing"
-
-    username = os.getenv("ZINDI_USERNAME") or os.getenv("USER_NAME")
-    password = os.getenv("ZINDI_PASSWORD") or os.getenv("PASSWORD")
-    if not username or not password:
-        logger.error("Missing ZINDI_USERNAME / ZINDI_PASSWORD")
-        return False, "auth_missing"
-    try:
-        user = Zindian(username=username, fixed_password=password)
+        user = create_zindi_user_from_env()
         _select_zindi_challenge(user=user, competition_id=competition_id)
         if user.remaining_subimissions <= 0:
             logger.warning("Zindi: no remaining submissions today")
@@ -70,28 +63,13 @@ def _submit_to_zindi(
 
 
 def _select_zindi_challenge(*, user, competition_id: str) -> None:
-    """Select Zindi challenge by immutable challenge_id, fallback to index env."""
-    if competition_id:
-        try:
-            user.select_a_challenge(challenge_id=competition_id)
-            return
-        except Exception as exc:
-            logger.warning(
-                "Could not select Zindi challenge by challenge_id='%s': %s",
-                competition_id,
-                exc,
-            )
-
-    fallback_idx = os.getenv("ZINDI_CHALLENGE_INDEX")
-    if fallback_idx is None:
-        raise RuntimeError(
-            "Could not resolve Zindi challenge. Ensure competition_id in config "
-            "matches your Zindi challenge_id or set ZINDI_CHALLENGE_INDEX."
-        )
-    try:
-        user.select_a_challenge(fixed_index=int(fallback_idx))
-    except ValueError as exc:
-        raise RuntimeError("ZINDI_CHALLENGE_INDEX must be an integer") from exc
+    """Select challenge by competition_id, then env challenge id, then env index."""
+    select_zindi_challenge(
+        user=user,
+        competition_id=competition_id,
+        env_challenge_id=os.getenv("ZINDI_CHALLENGE_ID"),
+        env_challenge_index=os.getenv("ZINDI_CHALLENGE_INDEX"),
+    )
 
 
 def _submit_to_fake(

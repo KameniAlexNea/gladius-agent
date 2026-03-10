@@ -143,6 +143,13 @@ def test_submission_counter_incremented_on_successful_submit(monkeypatch, tmp_pa
     data_dir = competition_dir / "data"
     data_dir.mkdir(parents=True)
 
+    (data_dir / "SampleSubmission.csv").write_text(
+        "ID,Target\n1,Low\n2,High\n", encoding="utf-8"
+    )
+    (competition_dir / "submission.csv").write_text(
+        "ID,Target\n1,Low\n2,High\n", encoding="utf-8"
+    )
+
     (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
 
     monkeypatch.setattr(
@@ -295,6 +302,95 @@ def test_submit_false_blocks_submission_even_when_improved(monkeypatch, tmp_path
     assert state.best_submission_path is None
 
 
+def test_deterministic_format_check_blocks_submit(monkeypatch, tmp_path):
+    monkeypatch.setenv("GLADIUS_MODEL", "test-model")
+
+    competition_dir = tmp_path / "competition"
+    data_dir = competition_dir / "data"
+    data_dir.mkdir(parents=True)
+    (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
+    (data_dir / "SampleSubmission.csv").write_text(
+        "ID,Target\n1,Low\n2,High\n", encoding="utf-8"
+    )
+    # Wrong row count (1 row instead of 2) should trigger deterministic block.
+    (competition_dir / "bad_submission.csv").write_text(
+        "ID,Target\n1,Low\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(
+        orchestrator,
+        "load_competition_config",
+        lambda _: {
+            "competition_id": "comp-1",
+            "platform": "fake",
+            "data_dir": str(data_dir.resolve()),
+            "metric": "auc_roc",
+            "direction": "maximize",
+        },
+    )
+
+    async def fake_planner(*args, **kwargs):
+        return (
+            {
+                "approach_summary": "baseline",
+                "plan_text": "do baseline",
+                "plan": [{"step": 1, "description": "run"}],
+                "plans": [],
+            },
+            "planner-session",
+        )
+
+    async def fake_implementer(*args, **kwargs):
+        return {
+            "status": "success",
+            "oof_score": 0.81,
+            "quality_score": 80,
+            "solution_files": ["solution.py"],
+            "submission_file": "bad_submission.csv",
+            "notes": "ok",
+        }
+
+    async def fake_validation(*args, **kwargs):
+        return {
+            "oof_score": 0.81,
+            "quality_score": None,
+            "is_improvement": True,
+            "submit": True,
+            "format_ok": True,
+            "stop": False,
+            "reasoning": "looks good",
+            "next_directions": ["improve"],
+        }
+
+    async def fake_summarizer(*args, **kwargs):
+        return "summary"
+
+    calls = []
+
+    def fake_submit(**kwargs):
+        calls.append(kwargs)
+        return True, None
+
+    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
+    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
+    monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
+    monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
+    monkeypatch.setattr(orchestrator, "submit", fake_submit)
+
+    state = asyncio.run(
+        orchestrator.run_competition(
+            competition_dir=str(competition_dir),
+            max_iterations=1,
+            resume_from_db=False,
+            auto_submit=True,
+            n_parallel=1,
+        )
+    )
+
+    assert calls == []
+    assert state.submission_count == 0
+
+
 def test_preflight_requires_gladius_model(monkeypatch, tmp_path):
     monkeypatch.delenv("GLADIUS_MODEL", raising=False)
 
@@ -413,6 +509,12 @@ def test_submission_score_updates_lb_tracking(monkeypatch, tmp_path):
     competition_dir = tmp_path / "competition"
     data_dir = competition_dir / "data"
     data_dir.mkdir(parents=True)
+    (data_dir / "SampleSubmission.csv").write_text(
+        "ID,Target\n1,Low\n2,High\n", encoding="utf-8"
+    )
+    (competition_dir / "submission.csv").write_text(
+        "ID,Target\n1,Low\n2,High\n", encoding="utf-8"
+    )
     (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
 
     monkeypatch.setattr(

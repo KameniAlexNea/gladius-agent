@@ -21,29 +21,21 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from gladius.tools._response import err as _err
 from gladius.tools._response import ok as _ok
+from gladius.tools.zindi_common import (
+    create_zindi_user_from_env,
+    select_zindi_challenge,
+)
 
 
 def _get_user():
     """Authenticate and return a connected Zindian instance."""
-    from zindi.user import (
-        Zindian,
-    )  # lazy import — only available when zindi is installed
-
-    username = os.getenv("ZINDI_USERNAME") or os.getenv("USER_NAME")
-    password = os.getenv("ZINDI_PASSWORD") or os.getenv("PASSWORD")
-    if not username or not password:
-        raise RuntimeError(
-            "Zindi credentials not found. "
-            "Set ZINDI_USERNAME and ZINDI_PASSWORD environment variables."
-        )
-    user = Zindian(username=username, fixed_password=password)
-    challenge_id = os.getenv("ZINDI_CHALLENGE_ID")
-    if challenge_id:
-        user.select_a_challenge(challenge_id=challenge_id)
-        return user
-
-    challenge_index = int(os.getenv("ZINDI_CHALLENGE_INDEX", "0"))
-    user.select_a_challenge(fixed_index=challenge_index)
+    user = create_zindi_user_from_env()
+    select_zindi_challenge(
+        user=user,
+        competition_id=None,
+        env_challenge_id=os.getenv("ZINDI_CHALLENGE_ID"),
+        env_challenge_index=os.getenv("ZINDI_CHALLENGE_INDEX", "0"),
+    )
     return user
 
 
