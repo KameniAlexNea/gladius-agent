@@ -174,6 +174,17 @@ Standard files to expect:
 > **Planner only:** use the `Skill` tool to read a skill inline (`Skill({"name": "..."})`).
 > Implementer subagents have skills pre-injected via their frontmatter — do NOT call `Skill`.
 
+### Discover skills on demand
+
+Use the `skills-on-demand` MCP server to find the right skill for any task:
+
+```
+mcp__skills-on-demand__search_skills({"query": "...", "top_k": 5})
+mcp__skills-on-demand__list_skills({})
+```
+
+### Core ML skills
+
 | Skill name | When to invoke |
 | --- | --- |
 | `ml-setup` | **Invoke first** — project layout (`src/`) + CV patterns, baselines, metric formulas |
@@ -189,7 +200,7 @@ Standard files to expect:
 
 > 170+ additional scientific & ML library skills are also available (polars, transformers,
 > pytorch-lightning, timesfm, shap, scikit-learn, pymc, research-lookup, perplexity-search,
-> parallel-web, and many more). Run `ls .claude/skills/` to see the full list.
+> parallel-web, and many more). Search with `mcp__skills-on-demand__search_skills` or run `ls .claude/skills/`.
 """
     else:
         best_quality = (
@@ -221,6 +232,15 @@ Standard files to expect:
 
 > **Planner only:** use the `Skill` tool to read a skill inline (`Skill({"name": "..."})`).
 > Implementer subagents have skills pre-injected via their frontmatter — do NOT call `Skill`.
+
+### Discover skills on demand
+
+Use the `skills-on-demand` MCP server to find the right skill for any task:
+
+```
+mcp__skills-on-demand__search_skills({"query": "...", "top_k": 5})
+mcp__skills-on-demand__list_skills({})
+```
 
 | Skill name | When to invoke |
 | --- | --- |
@@ -477,7 +497,17 @@ def _write_mcp_json(root: Path, platform: str = "none") -> None:
     path = root / ".mcp.json"
     import sys
 
-    mcp_config: dict = {"mcpServers": {}}
+    skills_dir = str(root / ".claude" / "skills")
+    mcp_config: dict = {
+        "mcpServers": {
+            "skills-on-demand": {
+                "type": "stdio",
+                "command": sys.executable,
+                "args": ["-m", "skills_on_demand.server"],
+                "env": {"SKILLS_DIR": skills_dir},
+            }
+        }
+    }
 
     if platform not in ("none", ""):
         server_module = {
