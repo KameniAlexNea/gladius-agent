@@ -12,7 +12,8 @@ CREATE_TABLES = """
         target_metric       TEXT,           -- NULL for open-ended tasks
         metric_direction    TEXT,           -- NULL for open-ended tasks
         max_iterations      INTEGER NOT NULL,
-        max_submissions_per_day INTEGER NOT NULL
+        max_submissions_per_day INTEGER NOT NULL,
+        submission_threshold REAL            -- minimum OOF before submitting; NULL = no gate
     );
 
     CREATE TABLE IF NOT EXISTS current_state (
@@ -25,8 +26,6 @@ CREATE_TABLES = """
         best_submission_path TEXT,
         submission_count    INTEGER NOT NULL,
         consecutive_errors  INTEGER NOT NULL,
-        planner_session_id  TEXT,
-        current_plan        TEXT,       -- JSON: nested plan dict
         last_submission_date TEXT,
         last_stop_reason    TEXT
     );
@@ -144,6 +143,7 @@ MIGRATION_COLUMNS: list[tuple[str, str, str]] = [
     ("state_history", "best_quality_score", "REAL"),
     ("current_state", "last_stop_reason", "TEXT"),
     ("state_history", "stop_reason", "TEXT"),
+    ("competition", "submission_threshold", "REAL"),
 ]
 
 # ---------------------------------------------------------------------------

@@ -41,17 +41,11 @@ class CompetitionState:
     max_submissions_per_day: int = 5
     last_submission_date: Optional[str] = None  # ISO date (YYYY-MM-DD)
 
-    # Current plan from planner agent — stored as JSON in DB
-    current_plan: Optional[dict] = None
-
     # Experiment registry — each entry: {iteration, oof_score, submission_file, notes, approach, solution_files}
     experiments: list = field(default_factory=list)
 
     # Failed run summaries — each entry: {iteration, status, error, approach}
     failed_runs: list = field(default_factory=list)
-
-    # Session ID for the planner (resumed every iteration)
-    planner_session_id: Optional[str] = None
 
     # Error tracking
     consecutive_errors: int = 0

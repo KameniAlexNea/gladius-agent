@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -37,9 +36,9 @@ class StateStore:
     """
     SQLite-backed persistence for CompetitionState.
 
-    Schema (fully normalised — no JSON blobs except current_plan):
-      competition    — static settings, one row
-      current_state  — mutable scalars + current_plan, one row (upserted)
+    Schema (fully normalised — no JSON blobs):
+      competition    — static settings + submission_threshold, one row
+      current_state  — mutable scalars, one row (upserted)
       experiments    — one row per experiment
       failed_runs    — one row per failed run
       error_log      — one row per error
@@ -92,6 +91,7 @@ class StateStore:
                     state.metric_direction,
                     state.max_iterations,
                     state.max_submissions_per_day,
+                    state.submission_threshold,
                 ),
             )
 
@@ -106,8 +106,6 @@ class StateStore:
                     state.best_submission_path,
                     state.submission_count,
                     state.consecutive_errors,
-                    state.planner_session_id,
-                    json.dumps(state.current_plan) if state.current_plan else None,
                     state.last_submission_date,
                     state.last_stop_reason,
                 ),
@@ -356,6 +354,7 @@ class StateStore:
             metric_direction=comp["metric_direction"],
             max_iterations=comp["max_iterations"],
             max_submissions_per_day=comp["max_submissions_per_day"],
+            submission_threshold=comp["submission_threshold"],
             iteration=curr["iteration"],
             phase=curr["phase"],
             best_oof_score=curr["best_oof_score"],
@@ -364,10 +363,6 @@ class StateStore:
             best_submission_path=curr["best_submission_path"],
             submission_count=curr["submission_count"],
             consecutive_errors=curr["consecutive_errors"],
-            planner_session_id=curr["planner_session_id"],
-            current_plan=(
-                json.loads(curr["current_plan"]) if curr["current_plan"] else None
-            ),
             last_submission_date=curr["last_submission_date"],
             last_stop_reason=curr["last_stop_reason"],
             experiments=experiments,

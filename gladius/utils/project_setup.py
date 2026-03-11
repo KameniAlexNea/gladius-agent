@@ -308,16 +308,42 @@ Your memory lives at:
 Read it at the start of every session. Write key findings, scores, and next steps
 at the end of each session. This is how you remember across runs.
 
+## Project Structure
+
+Organise all code under `src/` as importable modules:
+
+```
+src/
+├── data.py        # data loading, cleaning, feature engineering
+├── eda.py         # exploratory analysis and visualisations
+├── train.py       # model training + cross-validation (entry point)
+├── evaluate.py    # metrics, OOF scoring, error analysis
+└── submission.py  # build and validate the submission CSV
+```
+
+- One responsibility per module — no monolithic scripts.
+- `train.py` is the main entry point: it imports from `data`, calls CV, scores, and delegates submission building to `submission.py`.
+- Never import between modules in a cycle; keep `data` as a leaf dependency.
+
 ## Package Management
 
-> **This project uses `uv` — there is no `pip` in the venv.**
-> **Always install packages with:** `uv add <package>`
-> Never use `pip install`, `pip3 install`, or `python -m pip install`.
+If `uv` has not been initialised yet in this directory, run the full setup first:
 
 ```bash
-uv add optuna catboost lightgbm   # install packages
-uv run python solution.py         # run a script inside the venv
+uv init          # creates pyproject.toml (skip if already exists)
+uv venv          # creates .venv/
+source .venv/bin/activate   # activate the environment
 ```
+
+Then install packages and run code:
+
+```bash
+uv add lightgbm catboost optuna   # add dependencies (writes to pyproject.toml)
+uv run python src/train.py        # run inside the venv
+```
+
+> **Never use `pip install`, `pip3 install`, or `python -m pip install`.**
+> Always use `uv add` to install and `uv run python` to execute.
 """
     p.write_text(content, encoding="utf-8")
 

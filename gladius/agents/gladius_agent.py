@@ -90,9 +90,10 @@ Repeat until satisfied:
 1. Search for a skill and load it with `Skill({"skill": "<skill-name>"})`, then follow its patterns.
 2. Explore the data: inspect `train.csv`, check dtypes, and review target distribution.
 3. Plan with `TodoWrite`.
-4. Implement in `src/`:
+4. Implement in `src/` as separate modules (`data.py`, `eda.py`, `train.py`, `evaluate.py`, `submission.py`):
+   - If not initialised: `uv init && uv venv && source .venv/bin/activate`
    - `uv add <pkg>`; never use `pip install`
-   - `uv run python`
+   - `uv run python src/train.py`
    - Fix all errors until the pipeline runs cleanly.
 5. Print `OOF <metric>: <value>` in your training script.
    - Save predictions to `artifacts/oof.npy`.

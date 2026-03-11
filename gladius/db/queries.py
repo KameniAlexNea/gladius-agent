@@ -7,8 +7,9 @@
 INSERT_COMPETITION = """
     INSERT OR IGNORE INTO competition
         (competition_id, data_dir, output_dir, target_metric,
-         metric_direction, max_iterations, max_submissions_per_day)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+         metric_direction, max_iterations, max_submissions_per_day,
+         submission_threshold)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 # ---------------------------------------------------------------------------
@@ -19,9 +20,8 @@ UPSERT_CURRENT_STATE = """
     INSERT OR REPLACE INTO current_state
         (id, iteration, phase, best_oof_score, best_submission_score,
          best_quality_score, best_submission_path, submission_count,
-         consecutive_errors, planner_session_id, current_plan,
-         last_submission_date, last_stop_reason)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         consecutive_errors, last_submission_date, last_stop_reason)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 # ---------------------------------------------------------------------------
