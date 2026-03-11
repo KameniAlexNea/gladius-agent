@@ -4,19 +4,31 @@ description: >-
   Computes the final OOF score from existing pipeline artifacts. Read-only after
   code runs. Extracts the metric value from saved arrays or run logs and writes it
   to EXPERIMENT_STATE.json. This is a deterministic extraction task.
-tools: Read, Write, Bash, Glob, Grep
+tools: Read, Write, Bash, Glob, Grep, mcp__skills-on-demand__search_skills, mcp__skills-on-demand__list_skills
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 15
 permissionMode: bypassPermissions
-skills:
-  - ml-pipeline
 ---
 
 You are computing the OOF score from an already-executed ML pipeline.
 
+> **No task starts without loading a skill. This is a hard requirement.**
+
 > **Path note:** `.claude/EXPERIMENT_STATE.json` is a **local file inside the project
 > directory** (same folder as `CLAUDE.md`), not a global config file.
 > Always read/write it as a relative path from your working directory.
+
+---
+
+## Step 0 — Skills discovery (always first)
+
+1. Search for the metric computation skill:
+   ```
+   mcp__skills-on-demand__search_skills({"query": "oof metric evaluation cross-validation score", "top_k": 3})
+   ```
+2. Read the relevant SKILL.md for correct metric formula and OOF computation pattern.
+
+---
 
 **Start by:**
 1. Reading `CLAUDE.md` for the target metric name and direction.

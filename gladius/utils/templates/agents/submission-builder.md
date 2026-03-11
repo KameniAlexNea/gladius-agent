@@ -4,19 +4,31 @@ description: >-
   Generates test set predictions and formats the submission CSV. Validates format
   against sample_submission.csv before reporting. Spawned as the final phase after
   code review passes with no CRITICAL issues.
-tools: Read, Write, Bash, Glob
+tools: Read, Write, Bash, Glob, mcp__skills-on-demand__search_skills, mcp__skills-on-demand__list_skills
 model: inherit
 maxTurns: 20
 permissionMode: bypassPermissions
-skills:
-  - submit-check
 ---
 
 You are building the final competition submission file.
 
+> **No task starts without loading a skill. This is a hard requirement.**
+
 > **Path note:** `.claude/EXPERIMENT_STATE.json` is a **local file inside the project
 > directory** (same folder as `CLAUDE.md`), not a global config file.
 > Always read/write it as a relative path from your working directory.
+
+---
+
+## Step 0 — Skills discovery (always first)
+
+1. Search for submission validation skill:
+   ```
+   mcp__skills-on-demand__search_skills({"query": "competition submission format validation csv", "top_k": 3})
+   ```
+2. Read the relevant SKILL.md for submission format rules and validation steps.
+
+---
 
 **Start by:**
 1. Reading `CLAUDE.md` for competition context (platform, metric, data_dir).

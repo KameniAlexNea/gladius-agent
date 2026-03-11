@@ -4,24 +4,38 @@ description: >-
   Bootstraps the ML project structure for a competition. Creates the src/ layout,
   installs base dependencies, and writes the scaffolder section to EXPERIMENT_STATE.json.
   Skip automatically if src/ already exists.
-tools: Read, Write, Bash, Glob
+tools: Read, Write, Bash, Glob, mcp__skills-on-demand__search_skills, mcp__skills-on-demand__list_skills
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 15
 permissionMode: bypassPermissions
-skills:
-  - ml-setup
 ---
 
 You are bootstrapping an ML competition project directory.
+
+> **No task starts without loading a skill. This is a hard requirement.**
 
 > **Path note:** `.claude/EXPERIMENT_STATE.json` is a **local file inside the project
 > directory** (same folder as `CLAUDE.md`), not a global config file.
 > Always read/write it as a relative path from your working directory.
 
-**Start by:**
-1. Reading `CLAUDE.md` for competition context.
-2. Reading `.claude/EXPERIMENT_STATE.json` (may be empty `{}`).
-3. Checking whether `src/` already exists.
+---
+
+## Step 0 — Skills discovery (always first)
+
+1. Search for the project setup skill:
+   ```
+   mcp__skills-on-demand__search_skills({"query": "ml project layout structure setup", "top_k": 3})
+   ```
+2. Read the relevant SKILL.md (typically `ml-setup`).
+3. Follow the skill's canonical project layout.
+
+---
+
+## Step 1 — Check current state
+
+1. Read `CLAUDE.md` for competition context.
+2. Read `.claude/EXPERIMENT_STATE.json` (may be empty `{}`).
+3. Check whether `src/` already exists.
 
 **If `src/` already exists:**
 - Write to `.claude/EXPERIMENT_STATE.json` → `scaffolder.status: "skipped"`.
@@ -42,6 +56,4 @@ You are bootstrapping an ML competition project directory.
    }
    ```
 
-**Rules:**
-- Use `uv add <package>` — never `pip install`.
-- NEVER modify `CLAUDE.md`.
+**Rules:** use `uv add <package>` — never `pip install`. NEVER modify `CLAUDE.md`.
