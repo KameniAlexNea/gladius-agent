@@ -379,22 +379,7 @@ def setup_project_dir(
     root = Path(project_dir)
     is_ml = bool(state.target_metric)
 
-    # Copy all 170+ upstream scientific skills first (idempotent).
     _copy_all_scientific_skills(root)
-
-    if is_ml:
-        _copy_skill(root, "ml-setup")
-        _copy_skill(root, "submit-check")
-        _copy_skill(root, "jupyter-mcp")
-        _copy_skill(root, "adversarial-validation")
-        _copy_skill(root, "feature-engineering")
-        _copy_skill(root, "hpo")
-        _copy_skill(root, "ensembling")
-    _copy_skill(root, "code-review")
-
-    _copy_skill(root, "git-workflow")
-
-    _copy_skill(root, "uv-venv")
     _write_claude_settings(root, state)
     _write_mcp_json(root, platform=platform)
     _copy_hook(root, "after_edit.sh")
@@ -432,30 +417,6 @@ def _copy_all_scientific_skills(root: Path) -> None:
         if (dest / "SKILL.md").exists():
             continue
         shutil.copytree(skill_dir, dest, dirs_exist_ok=True)
-
-
-def _copy_skill(
-    root: Path, template_name: str, *, dest_name: str | None = None
-) -> None:
-    """Copy a skill template into the competition's .claude/skills/ tree (idempotent).
-
-    If the template is a directory (new multi-file format with SKILL.md + references/
-    + scripts/ subdirectories), the whole tree is copied.  Falls back to the legacy
-    single-file format (.md) for any skill not yet converted.
-    """
-    skill_name = dest_name or template_name
-    dest = root / ".claude" / "skills" / skill_name
-    if (dest / "SKILL.md").exists():
-        return
-    template_dir = _TEMPLATES / "skills" / template_name
-    if template_dir.is_dir():
-        shutil.copytree(template_dir, dest, dirs_exist_ok=True)
-    else:
-        dest.mkdir(parents=True, exist_ok=True)
-        (dest / "SKILL.md").write_text(
-            (_TEMPLATES / "skills" / f"{template_name}.md").read_text(encoding="utf-8"),
-            encoding="utf-8",
-        )
 
 
 def _copy_hook(root: Path, filename: str) -> None:
