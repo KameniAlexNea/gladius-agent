@@ -23,7 +23,7 @@ from claude_agent_sdk.types import (
 from llm_output_parser import parse_json as _parse_json
 from loguru import logger
 
-from gladius.agents._console import _BLUE, _BOLD, _c, _log_message
+from gladius.agents.runtime._console import _BLUE, _BOLD, _c, _log_message
 from gladius.agents.runtime.helpers import (
     get_runtime_model,
     is_bash_command_scoped_to_cwd,
