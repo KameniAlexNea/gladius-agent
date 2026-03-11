@@ -3,6 +3,7 @@ competition_id: financial-well-being-sme
 platform: zindi
 metric: f1-score
 direction: maximize
+submission_threshold: 0.895
 data_dir: dataorg-financial-health-prediction-challenge
 ---
 Can you predict the financial well-being of small businesses? (current best performance I got without you is 0.895390236 F1 Score on LB)

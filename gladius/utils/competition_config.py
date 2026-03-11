@@ -96,6 +96,18 @@ def load_competition_config(competition_dir: str) -> dict:
     cfg["metric"] = cfg.get("metric") or None
     cfg["direction"] = cfg.get("direction") or None
 
+    # submission_threshold is optional — minimum OOF score before agent may submit
+    raw_threshold = cfg.get("submission_threshold")
+    if raw_threshold is not None:
+        try:
+            cfg["submission_threshold"] = float(raw_threshold)
+        except (TypeError, ValueError):
+            raise CompetitionConfigError(
+                f"submission_threshold must be a number, got {raw_threshold!r}"
+            )
+    else:
+        cfg["submission_threshold"] = None
+
     # Resolve data_dir relative to competition_dir
     # data_dir_explicit = "data_dir" in cfg  # True only when user set it in frontmatter
     p = Path(cfg.get("data_dir") or "data")

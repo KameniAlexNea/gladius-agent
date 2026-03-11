@@ -138,6 +138,11 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
 
     # Performance section varies by task type
     if state.target_metric:
+        threshold_str = (
+            f"{state.submission_threshold:.6f}"
+            if getattr(state, "submission_threshold", None) is not None
+            else "not set (use WebSearch to check leaderboard before first submit)"
+        )
         perf_section = f"""\
 ## Current Best
 
@@ -146,6 +151,11 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
 | Best OOF ({state.target_metric}) | **{best_oof}** |
 | Best leaderboard | **{best_lb}** |
 | Submissions today | {state.submission_count} / {state.max_submissions_per_day} |
+| **Minimum submission threshold** | **{threshold_str}** |
+
+> **Do not build a submission unless your OOF score beats the minimum threshold.**
+> If the threshold is "not set", `WebSearch` the competition leaderboard to find
+> the current top/median score and set that as your personal bar.
 """
         metric_row = f"| Target metric | `{state.target_metric}` ({direction_str}) |"
         data_section = f"""\
@@ -163,10 +173,12 @@ Standard files to expect:
         submission_section = """\
 ## Submission Rules
 
-1. Load `sample_submission.csv` to get the exact submission format.
-2. Your submission must match its columns and row count exactly.
-3. Save as a CSV in the project directory.
-4. Report the path in `submission_file` in your output.
+1. **Gate:** Only build a submission once your OOF score beats the `Minimum submission threshold` shown above.
+   - If threshold is "not set", `WebSearch` the leaderboard first and use the current median score as your bar.
+2. Load `sample_submission.csv` to get the exact submission format.
+3. Your submission must match its columns and row count exactly.
+4. Save as a CSV in the project directory.
+5. Report the path in `submission_file` in your output.
 """
         skills_section = """\
 ## Available Skills

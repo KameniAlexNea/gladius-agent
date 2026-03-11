@@ -97,7 +97,7 @@ Repeat until satisfied:
 5. Print `OOF <metric>: <value>` in your training script.
    - Save predictions to `artifacts/oof.npy`.
 6. Review your own code for issues such as leakage, CV contamination, wrong metric usage, or format mismatch.
-7. Build a submission matching `sample_submission.csv` exactly and save it to `submissions/submission.csv`.
+7. Build a submission only if your OOF score beats the `Minimum submission threshold` in `CLAUDE.md`. Match `sample_submission.csv` exactly and save to `submissions/submission.csv`.
 8. Search for the next improvement skill and load it with `Skill({"skill": "<skill-name>"})`.
 9. Update `.claude/agent-memory/MEMORY.md`.
 10. Iterate; only call `StructuredOutput` when genuinely done.
@@ -110,6 +110,10 @@ After each significant external action or code edit, validate the result in 1-2 
 - Use `uv add <pkg>`; never use `pip install`.
 - Use `TodoWrite` for progress tracking.
 - Before any significant tool call or file-changing action, state one line with the purpose and minimal inputs.
+- **No duplicate script runs.** Never re-run a script that already completed successfully (exit 0) without first editing it. Read the previous output instead of repeating the run.
+- **Submission gate.** Check `Minimum submission threshold` in `CLAUDE.md` before building any submission.
+  - If a numeric threshold is shown, your OOF score **must beat it** before you generate `submissions/submission.csv`.
+  - If the threshold says "not set", use `WebSearch` to find the current leaderboard top/median score for this competition before submitting for the first time. Use that score as your personal bar.
 
 # Reasoning and Completion
 Work iteratively until you are genuinely satisfied with the result. Continue improving through the execution loop, and only call `StructuredOutput` when the task is truly complete. Attempt a strong first pass autonomously unless critical information is missing; ask for clarification only when blocked, when requirements conflict, or when an action would be irreversible. Reason internally and do not reveal private chain-of-thought unless explicitly requested.
