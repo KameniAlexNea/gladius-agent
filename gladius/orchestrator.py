@@ -3,6 +3,7 @@ Competition loop — single Gladius agent architecture.
 
 One agent per iteration. Gladius handles everything: explore, plan, implement,
 evaluate, review, submit. No phases, no sub-coordinators.
+State lives in memory; all observability comes from gladius.log.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from loguru import logger
 
 from gladius.agents.gladius_agent import run_gladius
 from gladius.preflight import run_preflight_or_raise
-from gladius.state import CompetitionState, StateStore
+from gladius.state import CompetitionState
 from gladius.submission import (
     score_submission_artifact,
     submit,
@@ -60,7 +61,6 @@ def _reset_experiment_state(project_dir: str, iteration: int) -> None:
 async def run_competition(
     competition_dir: str,
     max_iterations: int = 20,
-    resume_from_db: bool = True,
     auto_submit: bool = True,
     mode: str = "experimental",
     max_iteration_seconds: int | None = None,
@@ -87,39 +87,16 @@ async def run_competition(
         max_iterations=max_iterations,
     )
 
-    gladius_dir = Path(competition_dir) / ".gladius"
-    gladius_dir.mkdir(parents=True, exist_ok=True)
-    store = StateStore(str(gladius_dir / "state.db"))
-
-    state: CompetitionState | None = store.load() if resume_from_db else None
-    if state is None:
-        logger.info("Initialising new competition state")
-        state = CompetitionState(
-            competition_id=competition_id,
-            data_dir=str(Path(data_dir).resolve()),
-            output_dir=str(gladius_dir.resolve()),
-            target_metric=target_metric,
-            metric_direction=metric_direction,
-            max_iterations=max_iterations,
-            submission_threshold=cfg.get("submission_threshold"),
-        )
-    else:
-        _best = (
-            f"{state.best_oof_score:.6f}"
-            if state.best_oof_score is not None
-            else "none"
-        )
-        logger.info(
-            f"Resuming iteration={state.iteration} best={_best} "
-            f"experiments={len(state.experiments)}"
-        )
-        if state.max_iterations != max_iterations:
-            state.max_iterations = max_iterations
-
-        if state.phase == "done" and state.iteration < state.max_iterations:
-            logger.info("Resuming: resetting phase to running")
-            state.phase = "running"
-            state.consecutive_errors = 0
+    logger.info("Initialising new competition state")
+    state = CompetitionState(
+        competition_id=competition_id,
+        data_dir=str(Path(data_dir).resolve()),
+        output_dir=str((Path(competition_dir) / ".gladius").resolve()),
+        target_metric=target_metric,
+        metric_direction=metric_direction,
+        max_iterations=max_iterations,
+        submission_threshold=cfg.get("submission_threshold"),
+    )
 
     setup_project_dir(state, competition_dir, platform=platform)
 
@@ -151,19 +128,7 @@ async def run_competition(
         try:
             t0 = time.perf_counter()
             result = await run_gladius(state, competition_dir)
-            dur_ms = int((time.perf_counter() - t0) * 1000)
-
-            store.record_agent_run(
-                iteration=state.iteration,
-                phase="running",
-                agent_name="gladius",
-                started_at=None,
-                duration_ms=dur_ms,
-                is_error=result.get("status") != "success",
-                notes=(
-                    result.get("status") if result.get("status") != "success" else None
-                ),
-            )
+            dur_s = time.perf_counter() - t0
 
             if result["status"] != "success":
                 logger.warning(
@@ -177,16 +142,10 @@ async def run_competition(
                     }
                 )
                 state.consecutive_errors += 1
-                store.record_event(
-                    iteration=state.iteration,
-                    phase="running",
-                    event="run_failed",
-                    detail=f"status={result['status']}",
-                )
                 state.iteration += 1
-                store.save(state)
                 continue
 
+            logger.info(f"Gladius finished in {dur_s:.1f}s")
             state.consecutive_errors = 0
             oof_score = result.get("oof_score")
             quality_score = result.get("quality_score", 0) or 0
@@ -201,9 +160,6 @@ async def run_competition(
                     "submission_file": submission_file,
                     "notes": result.get("notes", ""),
                 }
-            )
-            store.record_code_snapshots(
-                state.iteration, result.get("solution_files", []), competition_dir
             )
 
             primary_score = quality_score if target_metric is None else oof_score
@@ -254,24 +210,9 @@ async def run_competition(
                     )
                     if lb_score is not None:
                         update_best_submission_score(state, lb_score, metric_direction)
-                    store.record_event(
-                        iteration=state.iteration,
-                        phase="running",
-                        event="submitted",
-                        detail=f"lb={lb_score}",
-                    )
+                        logger.info(f"LB score: {lb_score}")
                 except Exception as sub_exc:
                     logger.warning(f"Submission failed (non-fatal): {sub_exc}")
-
-            store.record_event(
-                iteration=state.iteration,
-                phase="running",
-                event="iteration_complete",
-                detail=(
-                    f"oof={f'{oof_score:.6f}' if oof_score is not None else 'n/a'} "
-                    f"quality={quality_score}/100"
-                ),
-            )
 
             # Runtime budget check
             if max_iteration_seconds is not None:
@@ -296,9 +237,7 @@ async def run_competition(
 
         finally:
             state.iteration += 1
-            store.save(state)
 
-    store.close()
     _final = (
         f"best_oof={f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}"
         if state.target_metric

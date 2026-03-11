@@ -116,6 +116,7 @@ After each significant external action or code edit, validate the result in 1-2 
 - Before any significant tool call or file-changing action, state one line with the purpose and minimal inputs.
 - **No duplicate script runs.** Never re-run a script that already completed successfully (exit 0) without first editing it. Read the previous output instead of repeating the run.
 - **Submission gate.** Check `Minimum submission threshold` in `CLAUDE.md` before building any submission.
+- **Long-running scripts.** Follow the `## Long-Running Scripts` section in `CLAUDE.md` — use `nohup` + PID tracking. Never use `TaskOutput` or `TaskStop`.
   - If a numeric threshold is shown, your OOF score **must beat it** before you generate `submissions/submission.csv`.
   - If the threshold says "not set", use `WebSearch` to find the current leaderboard top/median score for this competition before submitting for the first time. Use that score as your personal bar.
 

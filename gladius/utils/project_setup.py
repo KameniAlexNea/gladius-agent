@@ -344,6 +344,25 @@ uv run python src/train.py        # run inside the venv
 
 > **Never use `pip install`, `pip3 install`, or `python -m pip install`.**
 > Always use `uv add` to install and `uv run python` to execute.
+
+## Long-Running Scripts
+
+For training scripts that take more than a few seconds, use `nohup` and track the PID directly.
+**Never use background task IDs (`TaskOutput`, `TaskStop`).**
+
+```bash
+# Launch and capture PID
+nohup uv run python src/train.py > train.log 2>&1 & echo $!
+
+# Check if still running
+ps -p <PID> -o pid,stat,etime,cmd --no-headers 2>/dev/null || echo "done"
+
+# Read progress
+tail -n 50 train.log
+
+# Wait for completion
+while kill -0 <PID> 2>/dev/null; do sleep 30; done && echo "finished"
+```
 """
     p.write_text(content, encoding="utf-8")
 
