@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
-import logging
 import os
 import shutil
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 
 def _build_preflight_errors(

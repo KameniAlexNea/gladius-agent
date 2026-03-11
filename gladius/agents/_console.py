@@ -19,6 +19,7 @@ from claude_agent_sdk.types import (
     ToolUseBlock,
     UserMessage,
 )
+from loguru import logger
 
 # ── ANSI colour codes (degrade gracefully in non-TTY) ─────────────────────────
 
@@ -87,12 +88,12 @@ def _log_message(agent_name: str, message: Any) -> None:
     if isinstance(message, SystemMessage):
         if message.subtype == "init":
             sid = message.data.get("session_id", "?")
-            print(_c(_GREY, f"  🔑 [{agent_name}] session={sid[:16]}…"))
+            logger.debug(_c(_GREY, f"  🔑 [{agent_name}] session={sid[:16]}…"))
 
     elif isinstance(message, AssistantMessage):
         # Emit errors before content blocks so they're never missed.
         if message.error:
-            print(
+            logger.debug(
                 _c(_RED, f"  ⚠ [{agent_name}] AssistantMessage error: {message.error}")
             )
         sub_tag = _c(_DIM + _GREY, " ➣subagent") if message.parent_tool_use_id else ""
@@ -100,11 +101,13 @@ def _log_message(agent_name: str, message: Any) -> None:
         for block in message.content:
             if isinstance(block, TextBlock) and block.text.strip():
                 for line in textwrap.wrap(block.text.strip(), width=120):
-                    print(_c(_CYAN, f"  💬 [{agent_name}]{sub_tag} {line}"))
+                    logger.debug(_c(_CYAN, f"  💬 [{agent_name}]{sub_tag} {line}"))
 
             elif isinstance(block, ThinkingBlock) and block.thinking.strip():
                 snippet = block.thinking.strip()[:200].replace("\n", " ")
-                print(_c(_GREY, f"  🧠 [{agent_name}]{sub_tag} (thinking) {snippet} …"))
+                logger.debug(
+                    _c(_GREY, f"  🧠 [{agent_name}]{sub_tag} (thinking) {snippet} …")
+                )
 
             elif isinstance(block, ToolUseBlock):
                 _log_tool_use(agent_name, sub_tag, block)
@@ -118,7 +121,7 @@ def _log_message(agent_name: str, message: Any) -> None:
     elif isinstance(message, ResultMessage):
         cost = f"  cost=${message.total_cost_usd:.4f}" if message.total_cost_usd else ""
         status = _c(_RED, "ERROR") if message.is_error else _c(_GREEN, "OK")
-        print(
+        logger.debug(
             _c(_BOLD, f"  ━━ [{agent_name}] done")
             + f"  status={status}"
             + f"  turns={message.num_turns}"
@@ -132,20 +135,20 @@ def _log_tool_use(agent_name: str, sub_tag: str, block: ToolUseBlock) -> None:
     if block.name == "TodoWrite":
         todos = block.input.get("todos", [])
         n_done = sum(1 for t in todos if t.get("status") == "completed")
-        print(
+        logger.debug(
             _c(_BOLD + _YELLOW, f"  📋 [{agent_name}]{sub_tag} TodoWrite")
             + _c(_DIM, f"  {n_done}/{len(todos)} done")
         )
         for t in todos:
             icon = _TODO_ICON.get(t.get("status", "pending"), "⬜")
             text = t.get("activeForm") or t.get("content", "")
-            print(f"       {icon}  {_c(_DIM, str(text)[:100])}")
+            logger.debug(f"       {icon}  {_c(_DIM, str(text)[:100])}")
 
     elif block.name == "ExitPlanMode":
         plan_text = str(block.input.get("plan", "")).strip()
         lines = plan_text.splitlines()
         plan_preview = (lines[0] if lines else "(empty plan)")[:120]
-        print(
+        logger.debug(
             _c(_BOLD + _GREEN, f"  📝 [{agent_name}]{sub_tag} ExitPlanMode")
             + _c(_DIM, f"  {plan_preview}")
         )
@@ -154,14 +157,14 @@ def _log_tool_use(agent_name: str, sub_tag: str, block: ToolUseBlock) -> None:
         subagent_type = block.input.get("subagent_type", "?")
         description = block.input.get("description", "")
         snippet = block.input.get("prompt", "")[:80].replace("\n", " ")
-        print(
+        logger.debug(
             _c(_BOLD + _BLUE, f"  🤖 [{agent_name}]{sub_tag} Task → {subagent_type}")
             + _c(_DIM, f"  [{description}]  {snippet}…")
         )
 
     else:
         inp_str = _fmt_input(block.input)
-        print(
+        logger.debug(
             _c(_BOLD + _YELLOW, f"  🔧 [{agent_name}]{sub_tag} {block.name}")
             + _c(_DIM, f"  {inp_str}")
         )
@@ -173,4 +176,4 @@ def _log_tool_result(agent_name: str, block: ToolResultBlock) -> None:
     marker = _c(_RED, "  ✗") if block.is_error else _c(_GREEN, "  ✓")
     for i, line in enumerate(result_str.splitlines()):
         prefix = f"{marker} [{agent_name}] " if i == 0 else "      "
-        print(f"{prefix}{_c(_DIM, line)}")
+        logger.debug(f"{prefix}{_c(_DIM, line)}")

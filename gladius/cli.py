@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 import sqlite3
 from pathlib import Path
 
 from dotenv import load_dotenv
-
-logger = logging.getLogger(__name__)
-
+from loguru import logger
 
 # ── gladius status ────────────────────────────────────────────────────────────
 
@@ -21,7 +18,7 @@ def print_status(competition_dir: str) -> None:
     gladius_dir = Path(competition_dir) / ".gladius"
     db_path = gladius_dir / "state.db"
     if not db_path.exists():
-        print(f"No DB found at {db_path} — competition has not been started.")
+        logger.info(f"No DB found at {db_path} — competition has not been started.")
         return
 
     conn = sqlite3.connect(str(db_path))
@@ -30,14 +27,14 @@ def print_status(competition_dir: str) -> None:
     comp = conn.execute("SELECT * FROM competition LIMIT 1").fetchone()
     curr = conn.execute("SELECT * FROM current_state WHERE id = 1").fetchone()
     if not comp or not curr:
-        print("DB exists but contains no state yet.")
+        logger.info("DB exists but contains no state yet.")
         conn.close()
         return
 
-    print("\n" + "=" * 70)
-    print(f"  GLADIUS STATUS — {comp['competition_id']}")
-    print("=" * 70)
-    print(
+    logger.info("\n" + "=" * 70)
+    logger.info(f"  GLADIUS STATUS — {comp['competition_id']}")
+    logger.info("=" * 70)
+    logger.info(
         f"  Phase        : {curr['phase']}  "
         f"(iter {curr['iteration']}/{comp['max_iterations']})"
     )
@@ -46,25 +43,29 @@ def print_status(competition_dir: str) -> None:
     if metric:
         best = curr["best_oof_score"]
         best_lb = curr["best_submission_score"]
-        print(f"  Metric       : {metric} ({comp['metric_direction']})")
-        print(f"  Best OOF     : {f'{best:.6f}' if best is not None else 'none'}")
-        print(f"  Best LB      : {f'{best_lb:.6f}' if best_lb is not None else 'none'}")
+        logger.info(f"  Metric       : {metric} ({comp['metric_direction']})")
+        logger.info(f"  Best OOF     : {f'{best:.6f}' if best is not None else 'none'}")
+        logger.info(
+            f"  Best LB      : {f'{best_lb:.6f}' if best_lb is not None else 'none'}"
+        )
     else:
         best_q = curr["best_quality_score"]
-        print("  Task type    : open-ended (quality score)")
-        print(f"  Best quality : {f'{best_q}/100' if best_q is not None else 'none'}")
-    print(
+        logger.info("  Task type    : open-ended (quality score)")
+        logger.info(
+            f"  Best quality : {f'{best_q}/100' if best_q is not None else 'none'}"
+        )
+    logger.info(
         f"  Submissions  : {curr['submission_count']}/{comp['max_submissions_per_day']} today"
     )
     if curr["last_stop_reason"]:
-        print(f"  Stop reason  : {curr['last_stop_reason']}")
+        logger.info(f"  Stop reason  : {curr['last_stop_reason']}")
 
     # ── experiments ──────────────────────────────────────────────────────────
     exps = conn.execute("SELECT * FROM experiments ORDER BY id").fetchall()
     if exps:
-        print(f"\n  {'─' * 66}")
-        print(f"  EXPERIMENTS ({len(exps)} total)")
-        print(f"  {'─' * 66}")
+        logger.info(f"\n  {'─' * 66}")
+        logger.info(f"  EXPERIMENTS ({len(exps)} total)")
+        logger.info(f"  {'─' * 66}")
         score_col = "quality_score" if not metric else "oof_score"
         for e in exps:
             score = e[score_col]
@@ -74,18 +75,18 @@ def print_status(competition_dir: str) -> None:
                 else (f"{score}/100" if (not metric and score is not None) else "n/a")
             )
             files = e["solution_files"] or ""
-            print(f"  iter {e['iteration']:02d}  {score_str:>12}  {files[:50]}")
+            logger.info(f"  iter {e['iteration']:02d}  {score_str:>12}  {files[:50]}")
 
     # ── plans ────────────────────────────────────────────────────────────────
     try:
         plans = conn.execute("SELECT * FROM plans ORDER BY iteration").fetchall()
         if plans:
-            print(f"\n  {'─' * 66}")
-            print(f"  PLANS ({len(plans)} total)")
-            print(f"  {'─' * 66}")
+            logger.info(f"\n  {'─' * 66}")
+            logger.info(f"  PLANS ({len(plans)} total)")
+            logger.info(f"  {'─' * 66}")
             for pl in plans:
                 summary = (pl["approach_summary"] or "")[:65]
-                print(f"  iter {pl['iteration']:02d}  {summary}")
+                logger.info(f"  iter {pl['iteration']:02d}  {summary}")
     except sqlite3.OperationalError:
         pass  # old DB without plans table
 
@@ -95,13 +96,15 @@ def print_status(competition_dir: str) -> None:
             "SELECT * FROM event_log ORDER BY id DESC LIMIT 40"
         ).fetchall()
         if events:
-            print(f"\n  {'─' * 66}")
-            print("  RECENT EVENTS (newest first)")
-            print(f"  {'─' * 66}")
+            logger.info(f"\n  {'─' * 66}")
+            logger.info("  RECENT EVENTS (newest first)")
+            logger.info(f"  {'─' * 66}")
             for ev in events:
                 ts = (ev["ts"] or "")[:19]
                 detail = (ev["detail"] or "")[:55]
-                print(f"  {ts}  iter={ev['iteration']:02d}  {ev['event']:<20} {detail}")
+                logger.info(
+                    f"  {ts}  iter={ev['iteration']:02d}  {ev['event']:<20} {detail}"
+                )
     except sqlite3.OperationalError:
         pass  # old DB without event_log table
 
@@ -111,14 +114,14 @@ def print_status(competition_dir: str) -> None:
             "SELECT * FROM agent_runs ORDER BY id DESC LIMIT 20"
         ).fetchall()
         if runs:
-            print(f"\n  {'─' * 66}")
-            print("  RECENT AGENT RUNS (newest first)")
-            print(f"  {'─' * 66}")
+            logger.info(f"\n  {'─' * 66}")
+            logger.info("  RECENT AGENT RUNS (newest first)")
+            logger.info(f"  {'─' * 66}")
             for r in runs:
                 dur = f"{r['duration_ms'] / 1000:.1f}s" if r["duration_ms"] else "?"
                 err = " ERROR" if r["is_error"] else ""
                 notes = f"  [{r['notes']}]" if r["notes"] else ""
-                print(
+                logger.info(
                     f"  iter={r['iteration']:02d}  {r['phase']:<14} {r['agent_name']:<16}"
                     f"  {dur:>7}{err}{notes}"
                 )
@@ -128,15 +131,15 @@ def print_status(competition_dir: str) -> None:
     # ── errors ───────────────────────────────────────────────────────────────
     errs = conn.execute("SELECT * FROM error_log ORDER BY id DESC LIMIT 10").fetchall()
     if errs:
-        print(f"\n  {'─' * 66}")
-        print(f"  ERRORS / GUARDRAILS (last {min(len(errs), 10)})")
-        print(f"  {'─' * 66}")
+        logger.info(f"\n  {'─' * 66}")
+        logger.info(f"  ERRORS / GUARDRAILS (last {min(len(errs), 10)})")
+        logger.info(f"  {'─' * 66}")
         for e in errs:
-            print(
+            logger.info(
                 f"  iter={e['iteration']}  phase={e['phase']}: {(e['error'] or '')[:80]}"
             )
 
-    print("=" * 70 + "\n")
+    logger.info("=" * 70 + "\n")
     conn.close()
 
 
@@ -249,7 +252,7 @@ async def _amain() -> None:
     _env_file = Path(args.competition_dir) / ".env"
     if _env_file.exists():
         load_dotenv(_env_file, override=True)
-        logger.debug("Loaded env from %s", _env_file)
+        logger.debug(f"Loaded env from {_env_file}")
 
     await run_competition(
         competition_dir=args.competition_dir,

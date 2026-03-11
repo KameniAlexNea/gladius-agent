@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -20,6 +19,7 @@ from claude_agent_sdk.types import (
     SystemMessage,
     ToolUseBlock,
 )
+from loguru import logger
 
 from gladius.agents._console import _BLUE, _BOLD, _c, _log_message
 from gladius.agents.runtime.helpers import (
@@ -32,8 +32,6 @@ from gladius.agents.runtime.helpers import (
     stderr_cb,
     validate_runtime_invocation,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def _extract_plan_text_from_mapping(data: dict) -> str | None:
@@ -130,7 +128,7 @@ async def run_planning_agent(
 
             if verbose:
                 resume_str = f"  resume={resume[:8]}…" if resume else ""
-                print(
+                logger.debug(
                     _c(_BOLD + _BLUE, f"\n▶ [{agent_name}] (plan mode)")
                     + f"  tools={planning_allowed_tools}"
                     + resume_str

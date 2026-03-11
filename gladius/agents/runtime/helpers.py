@@ -8,9 +8,9 @@ import shlex
 from pathlib import Path
 
 from claude_agent_sdk import AgentDefinition
+from loguru import logger
 
 from gladius.agents._agent_defs import SUBAGENT_DEFINITIONS as _SUBAGENT_DEFINITIONS
-from gladius.agents._console import _RED, _c
 
 
 def validate_runtime_invocation(
@@ -62,7 +62,7 @@ def build_runtime_agents(model: str) -> dict[str, AgentDefinition]:
 
 
 def stderr_cb(line: str) -> None:
-    print(_c(_RED, f"  [CLI stderr] {line}"), flush=True)
+    logger.error(f"  [CLI stderr] {line}")
 
 
 def is_tool_allowed(tool_name: str, allowed_tools: list[str]) -> bool:

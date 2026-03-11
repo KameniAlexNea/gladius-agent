@@ -18,14 +18,13 @@ strings. Modify them there; this module is logic only.
 from __future__ import annotations
 
 import json
-import logging
 import os
 import shutil
 import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState

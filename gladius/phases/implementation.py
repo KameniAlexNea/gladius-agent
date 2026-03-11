@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from collections.abc import Callable
 from datetime import datetime as _dt
 from datetime import timezone as _tz
 from pathlib import Path
 
+from loguru import logger
+
 from gladius.db.store import StateStore
 from gladius.state import CompetitionState
-
-logger = logging.getLogger(__name__)
 
 
 def _reset_iteration_experiment_state(project_dir: str, iteration: int) -> None:
@@ -34,7 +33,7 @@ def _reset_iteration_experiment_state(project_dir: str, iteration: int) -> None:
             )
             suffix += 1
         state_path.replace(archive_path)
-        logger.info("Archived prior experiment state to %s", archive_path)
+        logger.info(f"Archived prior experiment state to {archive_path}")
 
     state_path.write_text("{}\n", encoding="utf-8")
 

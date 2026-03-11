@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import subprocess
+
+from loguru import logger
 
 from gladius.state import CompetitionState
 from gladius.tools.zindi_common import (
     create_zindi_user_from_env,
     select_zindi_challenge,
 )
-
-logger = logging.getLogger(__name__)
-
 
 # ── Per-platform submit functions ─────────────────────────────────────────────
 
