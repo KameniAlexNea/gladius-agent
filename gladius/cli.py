@@ -167,13 +167,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-submit", action="store_true", help="Dry-run, skip platform submissions"
     )
     run_p.add_argument(
-        "--parallel",
-        type=int,
-        default=1,
-        metavar="N",
-        help="Run N implementers in parallel with different approaches (default: 1)",
-    )
-    run_p.add_argument(
         "--mode",
         choices=["experimental", "personal-production"],
         default="experimental",
@@ -187,12 +180,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Optional hard runtime budget per iteration in seconds",
-    )
-    run_p.add_argument(
-        "--max-agent-calls-per-iteration",
-        type=int,
-        default=None,
-        help="Optional cap on total planner/implementer/validator/summarizer calls per iteration",
     )
     run_p.add_argument(
         "--max-failed-runs-total",
@@ -216,14 +203,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--iterations", type=int, default=20)
     p.add_argument("--no-resume", action="store_true")
     p.add_argument("--no-submit", action="store_true")
-    p.add_argument("--parallel", type=int, default=1)
     p.add_argument(
         "--mode",
         choices=["experimental", "personal-production"],
         default="experimental",
     )
     p.add_argument("--max-iteration-seconds", type=int, default=None)
-    p.add_argument("--max-agent-calls-per-iteration", type=int, default=None)
     p.add_argument("--max-failed-runs-total", type=int, default=None)
 
     return p
@@ -259,10 +244,8 @@ async def _amain() -> None:
         max_iterations=args.iterations,
         resume_from_db=not args.no_resume,
         auto_submit=not args.no_submit,
-        n_parallel=args.parallel,
         mode=args.mode,
         max_iteration_seconds=args.max_iteration_seconds,
-        max_agent_calls_per_iteration=args.max_agent_calls_per_iteration,
         max_failed_runs_total=args.max_failed_runs_total,
     )
 

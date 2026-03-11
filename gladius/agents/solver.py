@@ -1,38 +1,32 @@
-"""Solver — single-agent, skills-first competition solver.
-
-Replaces the old planner + implementer-coordinator + 6-subagent pipeline
-with a single agent that handles planning, implementation, evaluation,
-review, and submission autonomously, guided by skills loaded via MCP.
-"""
+"""Gladius — single autonomous competition agent."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from gladius.agents._base import run_agent
-from gladius.agents.specs.solver_spec import (
-    SOLVER_OUTPUT_SCHEMA,
-    SOLVER_SYSTEM_PROMPT,
-    build_solver_prompt,
+from gladius.agents.specs.gladius_spec import (
+    GLADIUS_OUTPUT_SCHEMA,
+    GLADIUS_SYSTEM_PROMPT,
+    build_gladius_prompt,
 )
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
-# Backward-compatible alias so existing imports keep working.
-OUTPUT_SCHEMA = SOLVER_OUTPUT_SCHEMA
+OUTPUT_SCHEMA = GLADIUS_OUTPUT_SCHEMA
 
 
-async def run_solver(
+async def run_gladius(
     state: "CompetitionState",
     project_dir: str,
 ) -> dict:
-    """Run the solver. Returns a result dict matching OUTPUT_SCHEMA."""
-    prompt = build_solver_prompt(target_metric=state.target_metric)
+    """Run Gladius for one session. Returns a result dict matching OUTPUT_SCHEMA."""
+    prompt = build_gladius_prompt(target_metric=state.target_metric)
     result, _ = await run_agent(
-        agent_name="solver",
+        agent_name="gladius",
         prompt=prompt,
-        system_prompt=SOLVER_SYSTEM_PROMPT,
+        system_prompt=GLADIUS_SYSTEM_PROMPT,
         allowed_tools=[
             "Read",
             "Write",
@@ -46,6 +40,10 @@ async def run_solver(
         ],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
-        max_turns=300,
+        max_turns=500,
     )
     return result
+
+
+# Backward-compatible alias
+run_solver = run_gladius

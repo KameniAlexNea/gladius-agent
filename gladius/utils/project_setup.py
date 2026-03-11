@@ -340,9 +340,11 @@ Search these domains by keyword to find the right skill:
 {skills_section}
 ## Agent Memory
 
-Read your solver memory at
-`{Path(project_dir).resolve()}/.claude/agent-memory/planner/MEMORY.md` before starting.
-Update it with key findings and insights at the end of each session.
+Your memory lives at:
+`{Path(project_dir).resolve()}/.claude/agent-memory/MEMORY.md`
+
+Read it at the start of every session. Write key findings, scores, and next steps
+at the end of each session. This is how you remember across runs.
 
 ## Package Management
 
@@ -368,8 +370,6 @@ def setup_project_dir(
     One-time (idempotent) setup of Claude Code native config in project_dir.
 
     Creates:
-    - .claude/agents/planner.md
-    - .claude/agents/implementer.md
     - .claude/skills/<name>/SKILL.md  (one per skill)
     - .claude/settings.json           (hooks + env)
     - .mcp.json                       (MCP server registrations for CLI use)
@@ -557,8 +557,8 @@ def _write_mcp_json(root: Path, platform: str = "none") -> None:
 
 
 def _make_memory_dir(root: Path, is_ml: bool) -> None:
-    """Pre-create the planner's memory directory so it exists on first run."""
-    mem_dir = root / ".claude" / "agent-memory" / "planner"
+    """Pre-create Gladius memory directory so it exists on first run."""
+    mem_dir = root / ".claude" / "agent-memory"
     mem_dir.mkdir(parents=True, exist_ok=True)
     mem_file = mem_dir / "MEMORY.md"
     if not mem_file.exists():

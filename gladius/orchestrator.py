@@ -1,29 +1,19 @@
 """
-Main competition loop.
+Competition loop — single Gladius agent architecture.
 
-Design rules:
-  - Agents output structured JSON; the orchestrator acts on it.
-  - Agents NEVER mutate state directly.
-  - Two agents per iteration: planner then implementer.
-  - Planner is resumed each iteration (accumulates competition understanding).
-  - Implementer is fresh each iteration (focused on one plan).
-  - State is saved to SQLite after every phase (crash-safe).
+One agent per iteration. Gladius handles everything: explore, plan, implement,
+evaluate, review, submit. No phases, no sub-coordinators.
 """
 
 from __future__ import annotations
 
 import time
+from datetime import date as _date
 from pathlib import Path
 
 from loguru import logger
 
-from gladius.agents.planner import run_planner
-from gladius.agents.solver import run_solver
-from gladius.agents.summarizer import run_summarizer
-from gladius.agents.validation import run_validation_agent
-from gladius.phases.implementation import run_implementation_phase
-from gladius.phases.planning import run_planning_phase
-from gladius.phases.validation import run_validation_phase
+from gladius.agents.solver import run_gladius
 from gladius.preflight import run_preflight_or_raise
 from gladius.state import CompetitionState, StateStore
 from gladius.submission import (
@@ -35,26 +25,33 @@ from gladius.utils.competition_config import load_competition_config
 from gladius.utils.project_setup import setup_project_dir, write_claude_md
 
 
-def _has_iteration_result(state: CompetitionState) -> bool:
-    """Return True if the current iteration already has a usable experiment artifact."""
-    for exp in reversed(state.experiments):
-        if exp.get("iteration") != state.iteration:
-            continue
-        if exp.get("submission_file") or exp.get("oof_score") is not None:
-            return True
-    return False
+def _is_better(
+    new_score: float,
+    best_score: float | None,
+    direction: str | None,
+    threshold: float = 1e-4,
+) -> bool:
+    if best_score is None:
+        return True
+    if direction is None:
+        return new_score > best_score + 2.0
+    if direction == "maximize":
+        return new_score > best_score + threshold
+    return new_score < best_score - threshold
 
 
-def _halt_with_reason(state: CompetitionState, *, phase: str, reason: str) -> None:
-    state.last_stop_reason = reason
-    state.error_log.append(
-        {"phase": phase, "iteration": state.iteration, "error": reason}
-    )
-    state.phase = "done"
-    logger.warning(f"Guardrail stop [{phase}]: {reason}")
-
-
-# ── Main loop ─────────────────────────────────────────────────────────────────
+def _reset_experiment_state(project_dir: str, iteration: int) -> None:
+    claude_dir = Path(project_dir) / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    state_path = claude_dir / "EXPERIMENT_STATE.json"
+    if state_path.exists():
+        archive = claude_dir / f"EXPERIMENT_STATE.iter-{max(iteration - 1, 0):02d}.json"
+        n = 1
+        while archive.exists():
+            archive = claude_dir / f"EXPERIMENT_STATE.iter-{max(iteration - 1, 0):02d}.{n}.json"
+            n += 1
+        state_path.replace(archive)
+    state_path.write_text("{}\n", encoding="utf-8")
 
 
 async def run_competition(
@@ -62,7 +59,7 @@ async def run_competition(
     max_iterations: int = 20,
     resume_from_db: bool = True,
     auto_submit: bool = True,
-    n_parallel: int = 1,
+    n_parallel: int = 1,  # kept for CLI compat; single-agent ignores this
     mode: str = "experimental",
     max_iteration_seconds: int | None = None,
     max_agent_calls_per_iteration: int | None = None,
@@ -78,11 +75,8 @@ async def run_competition(
     if mode == "personal-production":
         if max_iteration_seconds is None:
             max_iteration_seconds = 1800
-        if max_agent_calls_per_iteration is None:
-            max_agent_calls_per_iteration = 5
         if max_failed_runs_total is None:
             max_failed_runs_total = 20
-        n_parallel = 1
 
     run_preflight_or_raise(
         competition_dir=competition_dir,
@@ -90,13 +84,11 @@ async def run_competition(
         data_dir=data_dir,
         target_metric=target_metric,
         max_iterations=max_iterations,
-        n_parallel=n_parallel,
+        n_parallel=1,
     )
 
-    project_dir = competition_dir
-    gladius_dir = Path(project_dir) / ".gladius"
+    gladius_dir = Path(competition_dir) / ".gladius"
     gladius_dir.mkdir(parents=True, exist_ok=True)
-
     store = StateStore(str(gladius_dir / "state.db"))
 
     state: CompetitionState | None = store.load() if resume_from_db else None
@@ -111,223 +103,211 @@ async def run_competition(
             max_iterations=max_iterations,
         )
     else:
-        _best_str = (
-            f"{state.best_oof_score:.6f}"
-            if state.best_oof_score is not None
-            else "none"
+        _best = (
+            f"{state.best_oof_score:.6f}" if state.best_oof_score is not None else "none"
         )
         logger.info(
-            f"Resuming from iteration {state.iteration}, phase={state.phase}, "
-            f"best={_best_str}"
+            f"Resuming iteration={state.iteration} best={_best} "
+            f"experiments={len(state.experiments)}"
         )
         if state.max_iterations != max_iterations:
-            logger.info(
-                f"Updating max_iterations from CLI: {state.max_iterations} -> {max_iterations}"
-            )
             state.max_iterations = max_iterations
 
-        # Recalibrate best scores if experiments exist but bests were never persisted.
+        # Recalibrate best scores from experiments if needed
         if state.experiments:
             if target_metric and state.best_oof_score is None:
-                scored = [
-                    e["oof_score"]
-                    for e in state.experiments
-                    if e.get("oof_score") is not None
-                ]
+                scored = [e["oof_score"] for e in state.experiments if e.get("oof_score") is not None]
                 if scored:
-                    state.best_oof_score = (
-                        max(scored) if metric_direction != "minimize" else min(scored)
-                    )
-                    logger.info(
-                        f"Recalibrated best_oof_score from experiments: {state.best_oof_score:.6f}"
-                    )
+                    state.best_oof_score = max(scored) if metric_direction != "minimize" else min(scored)
             elif not target_metric and state.best_quality_score is None:
-                scored = [
-                    e["quality_score"]
-                    for e in state.experiments
-                    if e.get("quality_score") is not None
-                ]
+                scored = [e["quality_score"] for e in state.experiments if e.get("quality_score") is not None]
                 if scored:
                     state.best_quality_score = max(scored)
-                    logger.info(
-                        f"Recalibrated best_quality_score from experiments: {state.best_quality_score}/100"
-                    )
 
         if state.phase == "done" and state.iteration < state.max_iterations:
-            logger.info(
-                f"Resuming: phase='done' but only {state.iteration}/{state.max_iterations} "
-                f"iterations used — resetting to planning"
-            )
-            state.phase = "planning"
+            logger.info("Resuming: resetting phase to running")
+            state.phase = "running"
             state.consecutive_errors = 0
 
-    logger.info("Setting up project directory")
-    setup_project_dir(state, project_dir, platform=platform)
+    # Normalise legacy phase names
+    if state.phase in ("planning", "implementing", "validation"):
+        state.phase = "running"
+
+    setup_project_dir(state, competition_dir, platform=platform)
 
     while state.iteration < state.max_iterations and state.phase != "done":
-        iteration_started = time.monotonic()
-        agent_calls_this_iteration = 0
-
-        def _consume_agent_call(agent_label: str) -> bool:
-            return _consume_agent_calls(agent_label, 1)
-
-        def _consume_agent_calls(agent_label: str, count: int) -> bool:
-            nonlocal agent_calls_this_iteration
-            agent_calls_this_iteration += count
-            if (
-                max_agent_calls_per_iteration is not None
-                and agent_calls_this_iteration > max_agent_calls_per_iteration
-            ):
-                _halt_with_reason(
-                    state,
-                    phase="guardrail",
-                    reason=(
-                        "agent call budget exceeded "
-                        f"({agent_calls_this_iteration}/{max_agent_calls_per_iteration}) "
-                        f"before {agent_label}"
-                    ),
-                )
-                return False
-            return True
-
-        def _check_iteration_runtime_budget() -> bool:
-            if max_iteration_seconds is None:
-                return True
-            elapsed = time.monotonic() - iteration_started
-            if elapsed > max_iteration_seconds:
-                _halt_with_reason(
-                    state,
-                    phase="guardrail",
-                    reason=(
-                        "iteration runtime budget exceeded "
-                        f"({elapsed:.1f}s > {max_iteration_seconds}s)"
-                    ),
-                )
-                return False
-            return True
+        t_iter_start = time.monotonic()
 
         if (
             max_failed_runs_total is not None
             and len(state.failed_runs) >= max_failed_runs_total
         ):
-            _halt_with_reason(
-                state,
-                phase="guardrail",
-                reason=(
-                    "failed run budget exceeded "
-                    f"({len(state.failed_runs)}/{max_failed_runs_total})"
-                ),
+            state.last_stop_reason = (
+                f"failed run budget exceeded ({len(state.failed_runs)}/{max_failed_runs_total})"
             )
-            continue
+            state.phase = "done"
+            logger.warning(state.last_stop_reason)
+            break
 
         _score_str = (
-            f"quality={f'{state.best_quality_score}/100' if state.best_quality_score is not None else 'none'}"
+            f"quality={state.best_quality_score}/100"
             if state.target_metric is None
             else f"best={f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}"
         )
         logger.info(
-            f"[iter {state.iteration:02d}/{state.max_iterations}] "
-            f"phase={state.phase}  {_score_str}  "
+            f"[iter {state.iteration:02d}/{state.max_iterations}] {_score_str}  "
             f"experiments={len(state.experiments)}"
         )
 
-        write_claude_md(state, project_dir)
+        write_claude_md(state, competition_dir)
+        _reset_experiment_state(competition_dir, state.iteration)
 
         try:
-            if state.phase == "planning":
-                if await run_planning_phase(
-                    state,
-                    store,
-                    data_dir,
-                    project_dir,
-                    platform,
-                    n_parallel,
-                    run_planner=run_planner,
-                    consume_agent_call=_consume_agent_call,
-                    check_budget=_check_iteration_runtime_budget,
-                ):
-                    continue
+            t0 = time.perf_counter()
+            result = await run_gladius(state, competition_dir)
+            dur_ms = int((time.perf_counter() - t0) * 1000)
 
-            elif state.phase == "implementing":
-                if await run_implementation_phase(
-                    state,
-                    store,
-                    project_dir,
-                    n_parallel,
-                    run_solver=run_solver,
-                    consume_agent_call=_consume_agent_call,
-                    consume_agent_calls=_consume_agent_calls,
-                    check_budget=_check_iteration_runtime_budget,
-                ):
-                    continue
-
-            elif state.phase == "validation":
-                if await run_validation_phase(
-                    state,
-                    store,
-                    project_dir,
-                    platform,
-                    auto_submit,
-                    run_validation_agent=run_validation_agent,
-                    run_summarizer=run_summarizer,
-                    submit=submit,
-                    score_submission_artifact=score_submission_artifact,
-                    update_best_submission_score=update_best_submission_score,
-                    consume_agent_call=_consume_agent_call,
-                    check_budget=_check_iteration_runtime_budget,
-                ):
-                    continue
-
-        except Exception as exc:
-            logger.error(
-                f"Unhandled error in phase={state.phase}: {exc}", exc_info=True
+            store.record_agent_run(
+                iteration=state.iteration,
+                phase="running",
+                agent_name="gladius",
+                started_at=None,
+                duration_ms=dur_ms,
+                is_error=result.get("status") != "success",
+                notes=result.get("status") if result.get("status") != "success" else None,
             )
-            state.error_log.append(
+
+            if result["status"] != "success":
+                logger.warning(f"Gladius {result['status']}: {result.get('error_message', '')}")
+                state.failed_runs.append(
+                    {
+                        "iteration": state.iteration,
+                        "status": result["status"],
+                        "error": result.get("error_message", ""),
+                    }
+                )
+                state.consecutive_errors += 1
+                store.record_event(
+                    iteration=state.iteration,
+                    phase="running",
+                    event="run_failed",
+                    detail=f"status={result['status']}",
+                )
+                state.iteration += 1
+                store.save(state)
+                continue
+
+            state.consecutive_errors = 0
+            oof_score = result.get("oof_score")
+            quality_score = result.get("quality_score", 0) or 0
+            submission_file = result.get("submission_file", "")
+
+            state.experiments.append(
                 {
-                    "phase": state.phase,
                     "iteration": state.iteration,
-                    "error": str(exc),
+                    "oof_score": oof_score,
+                    "quality_score": quality_score,
+                    "solution_files": result.get("solution_files", []),
+                    "submission_file": submission_file,
+                    "notes": result.get("notes", ""),
                 }
             )
-            state.consecutive_errors += 1
+            store.record_code_snapshots(
+                state.iteration, result.get("solution_files", []), competition_dir
+            )
+
+            primary_score = quality_score if target_metric is None else oof_score
+            best_primary = state.best_quality_score if target_metric is None else state.best_oof_score
+
+            if primary_score is not None and _is_better(primary_score, best_primary, metric_direction):
+                if target_metric:
+                    logger.info(f"New best OOF {target_metric}: {oof_score:.6f}")
+                    state.best_oof_score = oof_score
+                else:
+                    logger.info(f"New best quality: {quality_score}/100")
+                    state.best_quality_score = quality_score
+
+            # Auto-submit if we have a submission file and it improved
+            today = _date.today().isoformat()
+            if state.last_submission_date != today:
+                state.submission_count = 0
+                state.last_submission_date = today
+
+            if (
+                auto_submit
+                and submission_file
+                and primary_score is not None
+                and _is_better(primary_score, best_primary, metric_direction)
+                and (platform == "none" or state.submission_count < state.max_submissions_per_day)
+            ):
+                try:
+                    sub_result = await submit(
+                        submission_file=submission_file,
+                        competition_id=competition_id,
+                        platform=platform,
+                        project_dir=competition_dir,
+                    )
+                    state.submission_count += 1
+                    lb_score = await score_submission_artifact(
+                        submission_file=submission_file,
+                        competition_id=competition_id,
+                        platform=platform,
+                    )
+                    if lb_score is not None:
+                        update_best_submission_score(state, lb_score, metric_direction)
+                    store.record_event(
+                        iteration=state.iteration,
+                        phase="running",
+                        event="submitted",
+                        detail=f"lb={lb_score}",
+                    )
+                except Exception as sub_exc:
+                    logger.warning(f"Submission failed (non-fatal): {sub_exc}")
+
             store.record_event(
                 iteration=state.iteration,
-                phase=state.phase,
-                event="error",
-                detail=f"consecutive={state.consecutive_errors} {type(exc).__name__}: {str(exc)[:200]}",
+                phase="running",
+                event="iteration_complete",
+                detail=(
+                    f"oof={f'{oof_score:.6f}' if oof_score is not None else 'n/a'} "
+                    f"quality={quality_score}/100"
+                ),
             )
+
+            # Runtime budget check
+            if max_iteration_seconds is not None:
+                elapsed = time.monotonic() - t_iter_start
+                if elapsed > max_iteration_seconds:
+                    logger.warning(
+                        f"Iteration runtime budget exceeded ({elapsed:.1f}s > {max_iteration_seconds}s)"
+                    )
+
+        except Exception as exc:
+            logger.error(f"Unhandled error in iteration {state.iteration}: {exc}", exc_info=True)
+            state.error_log.append(
+                {"phase": "running", "iteration": state.iteration, "error": str(exc)}
+            )
+            state.consecutive_errors += 1
             if state.consecutive_errors >= 3:
                 logger.critical("3 consecutive errors — halting")
                 state.last_stop_reason = "consecutive error budget exceeded (3/3)"
                 state.phase = "done"
-            else:
-                if state.phase == "implementing" and _has_iteration_result(state):
-                    logger.warning(
-                        "Implementation failed after producing artifacts; "
-                        "continuing with validation phase"
-                    )
-                    state.phase = "validation"
-                else:
-                    state.phase = "planning"
 
         finally:
+            state.iteration += 1
             store.save(state)
 
     store.close()
-    if state.target_metric:
-        _final_score = f"best_oof={f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}"
-    else:
-        _final_score = f"best_quality={f'{state.best_quality_score}/100' if state.best_quality_score is not None else 'none'}"
+    _final = (
+        f"best_oof={f'{state.best_oof_score:.6f}' if state.best_oof_score is not None else 'none'}"
+        if state.target_metric
+        else f"best_quality={state.best_quality_score}/100"
+    )
     logger.info(
-        f"Done. iterations={state.iteration}  "
-        f"{_final_score}  "
-        f"submissions={state.submission_count}"
+        f"Done. iterations={state.iteration}  {_final}  submissions={state.submission_count}"
     )
     return state
 
 
-# ── Entry point shim ──────────────────────────────────────────────────────────
-# pyproject.toml scripts entry point (gladius.orchestrator:main) stays valid
-# without reinstalling the package.
-
+# Entry-point shim for pyproject.toml
 from gladius.cli import main  # noqa: E402, F401
