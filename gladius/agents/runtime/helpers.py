@@ -7,10 +7,7 @@ import re
 import shlex
 from pathlib import Path
 
-from claude_agent_sdk import AgentDefinition
 from loguru import logger
-
-from gladius.agents._agent_defs import SUBAGENT_DEFINITIONS as _SUBAGENT_DEFINITIONS
 
 
 def validate_runtime_invocation(
@@ -42,23 +39,6 @@ def get_runtime_model() -> str:
             "  GLADIUS_MODEL=qwen3-coder"
         )
     return model
-
-
-_SMALL_MODEL_AGENTS: frozenset[str] = frozenset()  # no small-model specialisation in single-agent mode
-
-
-def build_runtime_agents(model: str) -> dict[str, AgentDefinition]:
-    """Stamp the live model name into every entry in the registry."""
-    small_model = os.environ.get("GLADIUS_SMALL_MODEL") or model
-    return {
-        k: AgentDefinition(
-            description=v.description,
-            prompt=v.prompt,
-            tools=v.tools,
-            model=small_model if k in _SMALL_MODEL_AGENTS else model,
-        )
-        for k, v in _SUBAGENT_DEFINITIONS.items()
-    }
 
 
 def stderr_cb(line: str) -> None:

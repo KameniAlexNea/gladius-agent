@@ -15,14 +15,11 @@ def _build_preflight_errors(
     data_dir: str,
     target_metric: str | None,
     max_iterations: int,
-    n_parallel: int,
 ) -> list[str]:
     errors: list[str] = []
 
     if max_iterations <= 0:
         errors.append("max_iterations must be > 0")
-    if n_parallel <= 0:
-        errors.append("--parallel must be >= 1")
 
     model_name = os.environ.get("GLADIUS_MODEL")
     if not model_name:
@@ -71,7 +68,6 @@ def run_preflight_or_raise(
     data_dir: str,
     target_metric: str | None,
     max_iterations: int,
-    n_parallel: int,
 ) -> None:
     errors = _build_preflight_errors(
         competition_dir=competition_dir,
@@ -79,7 +75,6 @@ def run_preflight_or_raise(
         data_dir=data_dir,
         target_metric=target_metric,
         max_iterations=max_iterations,
-        n_parallel=n_parallel,
     )
     if errors:
         msg = "Preflight checks failed:\n- " + "\n- ".join(errors)

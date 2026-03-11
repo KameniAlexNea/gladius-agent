@@ -13,7 +13,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from gladius.agents.solver import run_gladius
+from gladius.agents.gladius_agent import run_gladius
 from gladius.preflight import run_preflight_or_raise
 from gladius.state import CompetitionState, StateStore
 from gladius.submission import (
@@ -59,10 +59,8 @@ async def run_competition(
     max_iterations: int = 20,
     resume_from_db: bool = True,
     auto_submit: bool = True,
-    n_parallel: int = 1,  # kept for CLI compat; single-agent ignores this
     mode: str = "experimental",
     max_iteration_seconds: int | None = None,
-    max_agent_calls_per_iteration: int | None = None,
     max_failed_runs_total: int | None = None,
 ) -> CompetitionState:
     cfg = load_competition_config(competition_dir)
@@ -84,7 +82,6 @@ async def run_competition(
         data_dir=data_dir,
         target_metric=target_metric,
         max_iterations=max_iterations,
-        n_parallel=1,
     )
 
     gladius_dir = Path(competition_dir) / ".gladius"
@@ -113,25 +110,10 @@ async def run_competition(
         if state.max_iterations != max_iterations:
             state.max_iterations = max_iterations
 
-        # Recalibrate best scores from experiments if needed
-        if state.experiments:
-            if target_metric and state.best_oof_score is None:
-                scored = [e["oof_score"] for e in state.experiments if e.get("oof_score") is not None]
-                if scored:
-                    state.best_oof_score = max(scored) if metric_direction != "minimize" else min(scored)
-            elif not target_metric and state.best_quality_score is None:
-                scored = [e["quality_score"] for e in state.experiments if e.get("quality_score") is not None]
-                if scored:
-                    state.best_quality_score = max(scored)
-
         if state.phase == "done" and state.iteration < state.max_iterations:
             logger.info("Resuming: resetting phase to running")
             state.phase = "running"
             state.consecutive_errors = 0
-
-    # Normalise legacy phase names
-    if state.phase in ("planning", "implementing", "validation"):
-        state.phase = "running"
 
     setup_project_dir(state, competition_dir, platform=platform)
 

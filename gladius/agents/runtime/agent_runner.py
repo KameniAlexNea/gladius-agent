@@ -23,10 +23,8 @@ from claude_agent_sdk.types import (
 from llm_output_parser import parse_json as _parse_json
 from loguru import logger
 
-from gladius.agents._agent_defs import SUBAGENT_DEFINITIONS
 from gladius.agents._console import _BLUE, _BOLD, _c, _log_message
 from gladius.agents.runtime.helpers import (
-    build_runtime_agents,
     get_runtime_model,
     is_bash_command_scoped_to_cwd,
     is_tool_allowed,
@@ -75,7 +73,6 @@ async def run_agent(
         max_turns=max_turns,
         stderr=stderr_cb,
         setting_sources=["project"],
-        agents=build_runtime_agents(runtime_model),
         model=runtime_model,
         **option_kwargs,
     )
@@ -86,7 +83,6 @@ async def run_agent(
             last_assistant_msg: AssistantMessage | None = None
             forbidden_tool_error: str | None = None
             early_session_id: str | None = None
-            delegated_tool_policies: dict[str, list[str]] = {}
 
             if verbose:
                 resume_str = f"  resume={resume[:8]}…" if resume else ""
@@ -104,32 +100,10 @@ async def run_agent(
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, ToolUseBlock):
-                            if block.name == "Task":
-                                subagent_type = str(
-                                    block.input.get("subagent_type", "")
-                                )
-                                if (
-                                    subagent_type
-                                    and subagent_type in SUBAGENT_DEFINITIONS
-                                ):
-                                    delegated_tool_policies[block.id] = list(
-                                        SUBAGENT_DEFINITIONS[subagent_type].tools
-                                    )
-
-                            effective_allowed_tools = allowed_tools
-                            policy_label = f"allowed_tools={allowed_tools}"
-                            if message.parent_tool_use_id:
-                                delegated = delegated_tool_policies.get(
-                                    message.parent_tool_use_id
-                                )
-                                if delegated:
-                                    effective_allowed_tools = delegated
-                                    policy_label = f"subagent_allowed_tools={effective_allowed_tools}"
-
-                            if not is_tool_allowed(block.name, effective_allowed_tools):
+                            if not is_tool_allowed(block.name, allowed_tools):
                                 forbidden_tool_error = (
                                     f"[{agent_name}] attempted forbidden tool '{block.name}'. "
-                                    f"{policy_label}"
+                                    f"allowed_tools={allowed_tools}"
                                 )
                             elif block.name == "Bash":
                                 cmd = str(block.input.get("command", ""))
