@@ -172,62 +172,35 @@ Standard files to expect:
 ## Available Skills
 
 > **No task starts without loading a skill. This is a hard requirement.**
-> Search → load → execute is the mandatory workflow for every agent action.
 
-### Discover skills on demand
+### Search then load
 
 ```
-mcp__skills-on-demand__search_skills({"query": "...", "top_k": 5})
-mcp__skills-on-demand__list_skills({})
+mcp__skills-on-demand__search_skills({"query": "<task description>", "top_k": 5})
+Skill({"skill": "<skill-name>"})
 ```
 
-### Workflow
+### Key ML skills from the catalog
 
-1. `mcp__skills-on-demand__search_skills({"query": "<task description>", "top_k": 5})`
-2. Read the best match: `.claude/skills/<name>/SKILL.md`
-3. Follow the skill's patterns and execute
-
-### Core ML skills
-
-| Skill name | When to invoke |
+| Domain | Skills |
 | --- | --- |
-| `ml-setup` | **Invoke first** — project layout, CV patterns, baselines, metric formulas |
-| `code-review` | **Required before reporting results** — leakage, metric errors, submission bugs |
-| `adversarial-validation` | Train/test distribution shift; leaking features |
-| `feature-engineering` | Systematic feature recipes, SHAP importance, feature pruning |
-| `hpo` | Bayesian hyperparameter search with Optuna (after baseline is solid) |
-| `ensembling` | OOF blending, rank averaging, stacking, hill-climbing |
-| `submit-check` | Validate submission CSV format |
-| `jupyter-mcp` | Work in a Jupyter notebook |
-| `git-workflow` | After each working solution |
-| `uv-venv` | Installing packages and running scripts |
+| **Tabular ML** | `scikit-learn`, `polars`, `shap`, `statsmodels`, `statistical-analysis` |
+| **Deep learning** | `pytorch-lightning`, `transformers`, `torch-geometric`, `stable-baselines3` |
+| **Forecasting** | `timesfm-forecasting`, `aeon` |
+| **Visualization** | `matplotlib`, `seaborn`, `plotly`, `scientific-visualization` |
+| **Data** | `exploratory-data-analysis`, `dask`, `lamindb`, `zarr-python` |
+| **Life sciences** | `biopython`, `scanpy`, `anndata`, `scvi-tools`, `deeptools`, `gget` |
+| **Chem / Drug** | `rdkit`, `deepchem`, `datamol`, `molfeat`, `matchms` |
+| **Structural bio** | `alphafold-database`, `esm`, `pdb-database`, `uniprot-database` |
+| **Genomics** | `pydeseq2`, `scikit-bio`, `scvelo`, `pathml`, `histolab` |
+| **Databases** | `pubmed-database`, `biorxiv-database`, `openalex-database`, `chembl-database`, `ensembl-database` |
+| **Research** | `perplexity-search`, `hypothesis-generation`, `literature-review`, `scientific-brainstorming` |
+| **Clinical** | `clinical-decision-support`, `clinicaltrials-database`, `clinvar-database` |
+| **Finance** | `alpha-vantage`, `fred-economic-data`, `edgartools` |
+| **Compute** | `modal`, `networkx`, `sympy`, `geopandas` |
+| **Writing** | `scientific-writing`, `latex-posters`, `infographics` |
 
-### Scientific skills catalog (170+ skills across 17+ domains)
-
-Search these domains by keyword to find the right skill:
-
-| Domain | Example skills |
-| --- | --- |
-| **ML / AI** | polars, lightgbm, xgboost, transformers, pytorch-lightning, timm, shap, scikit-learn, optuna, deepchem |
-| **Bioinformatics** | biopython, bioservices, ensembl, ncbi-entrez, gget, deeptools, scanpy, anndata, geniml |
-| **Cheminformatics** | rdkit, datamol, chembl, binding-db, hmdb, drugbank, brenda, glycoengineering |
-| **Proteomics / Structural** | alphafold, esm, diffdock, protein-engineering |
-| **Multi-omics** | arboreto, cobrapy, cellxgene-census, gtex, geo-database |
-| **Clinical / Healthcare AI** | clinical-decision-support, clinical-reports, clinicaltrials, clinvar, cbioportal, fda-database |
-| **Medical imaging** | histolab, imaging-data-commons |
-| **Materials science** | materials-project, ase |
-| **Physics / Astronomy** | astropy, fluidsim |
-| **Data analysis** | dask, exploratory-data-analysis, geopandas, infographics |
-| **Research** | biorxiv-database, perplexity-search, hypothesis-generation, hypogenic, citation-management |
-| **Lab automation** | benchling-integration, ginkgo-cloud-lab, adaptyv |
-| **Financial** | alpha-vantage, fred-economic-data, edgartools, hedgefundmonitor |
-| **Geospatial** | geopandas, geomaster |
-| **Storage / Compute** | dnanexus-integration, parallel-web, datacommons-client |
-| **Quantum** | cirq |
-| **Scientific communication** | docx, infographics |
-
-> 250+ databases, 60+ optimized package skills, 15+ integration skills.
-> Always search — do not guess. The library grows continuously.
+> Always search — do not guess. The catalog grows continuously.
 """
     else:
         best_quality = (
@@ -258,55 +231,32 @@ Search these domains by keyword to find the right skill:
 ## Available Skills
 
 > **No task starts without loading a skill. This is a hard requirement.**
-> Search → load → execute is the mandatory workflow for every agent action.
 
-### Discover skills on demand
+### Search then load
 
 ```
-mcp__skills-on-demand__search_skills({"query": "...", "top_k": 5})
-mcp__skills-on-demand__list_skills({})
+mcp__skills-on-demand__search_skills({"query": "<task description>", "top_k": 5})
+Skill({"skill": "<skill-name>"})
 ```
 
-### Workflow
+### Key skills from the catalog
 
-1. `mcp__skills-on-demand__search_skills({"query": "<task description>", "top_k": 5})`
-2. Read the best match: `.claude/skills/<name>/SKILL.md`
-3. Follow the skill's patterns and execute
-
-### Core task skills
-
-| Skill name | When to invoke |
+| Domain | Skills |
 | --- | --- |
-| `code-review` | **Required before reporting results** — correctness, completeness, quality 0–100 |
-| `git-workflow` | After each working iteration |
-| `uv-venv` | Installing packages and running scripts |
+| **Tabular / Analysis** | `scikit-learn`, `polars`, `shap`, `statsmodels`, `statistical-analysis` |
+| **Deep learning** | `pytorch-lightning`, `transformers`, `torch-geometric`, `stable-baselines3` |
+| **Visualization** | `matplotlib`, `seaborn`, `plotly`, `scientific-visualization` |
+| **Data** | `exploratory-data-analysis`, `dask`, `lamindb`, `zarr-python` |
+| **Life sciences** | `biopython`, `scanpy`, `anndata`, `scvi-tools`, `deeptools`, `gget` |
+| **Chem / Drug** | `rdkit`, `deepchem`, `datamol`, `molfeat`, `matchms` |
+| **Structural bio** | `alphafold-database`, `esm`, `pdb-database`, `uniprot-database` |
+| **Databases** | `pubmed-database`, `biorxiv-database`, `openalex-database`, `chembl-database` |
+| **Research** | `perplexity-search`, `hypothesis-generation`, `literature-review`, `scientific-brainstorming` |
+| **Clinical** | `clinical-decision-support`, `clinicaltrials-database`, `clinvar-database` |
+| **Finance** | `alpha-vantage`, `fred-economic-data`, `edgartools` |
+| **Writing** | `scientific-writing`, `latex-posters`, `infographics`, `docx` |
 
-### Scientific skills catalog (170+ skills across 17+ domains)
-
-Search these domains by keyword to find the right skill:
-
-| Domain | Example skills |
-| --- | --- |
-| **ML / AI** | polars, lightgbm, xgboost, transformers, pytorch-lightning, timm, shap, scikit-learn, optuna, deepchem |
-| **Bioinformatics** | biopython, bioservices, ensembl, ncbi-entrez, gget, deeptools, scanpy, anndata, geniml |
-| **Cheminformatics** | rdkit, datamol, chembl, binding-db, hmdb, drugbank, brenda, glycoengineering |
-| **Proteomics / Structural** | alphafold, esm, diffdock, protein-engineering |
-| **Multi-omics** | arboreto, cobrapy, cellxgene-census, gtex, geo-database |
-| **Clinical / Healthcare AI** | clinical-decision-support, clinical-reports, clinicaltrials, clinvar, cbioportal, fda-database |
-| **Medical imaging** | histolab, imaging-data-commons |
-| **Materials science** | materials-project, ase |
-| **Physics / Astronomy** | astropy, fluidsim |
-| **Data analysis** | dask, exploratory-data-analysis, geopandas, infographics |
-| **Research** | biorxiv-database, perplexity-search, hypothesis-generation, hypogenic, citation-management |
-| **Lab automation** | benchling-integration, ginkgo-cloud-lab, adaptyv |
-| **Financial** | alpha-vantage, fred-economic-data, edgartools, hedgefundmonitor |
-| **Geospatial** | geopandas, geomaster |
-| **Storage / Compute** | dnanexus-integration, parallel-web, datacommons-client |
-| **Quantum** | cirq |
-| **Scientific communication** | docx, infographics |
-
-> 250+ databases, 60+ optimized package skills, 15+ integration skills.
-> Always search — do not guess. The library grows continuously.
+> Always search — do not guess. The catalog grows continuously.
 """
 
     content = f"""\

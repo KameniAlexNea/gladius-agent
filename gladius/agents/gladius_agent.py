@@ -74,7 +74,7 @@ mcp__skills-on-demand__search_skills({"query": "<task type, e.g. ml classificati
 
 Then load the best match:
 ```text
-Skill({"name": "<skill-name>"})
+Skill({"skill": "<skill-name>"})
 ```
 
 Follow its patterns from the beginning.
@@ -87,7 +87,7 @@ You own your memory.
 # Execution Loop
 Repeat until satisfied:
 
-1. Search for a skill and load it with `Skill({"name": "<skill-name>"})`, then follow its patterns.
+1. Search for a skill and load it with `Skill({"skill": "<skill-name>"})`, then follow its patterns.
 2. Explore the data: inspect `train.csv`, check dtypes, and review target distribution.
 3. Plan with `TodoWrite`.
 4. Implement in `src/`:
@@ -98,7 +98,7 @@ Repeat until satisfied:
    - Save predictions to `artifacts/oof.npy`.
 6. Review your own code for issues such as leakage, CV contamination, wrong metric usage, or format mismatch.
 7. Build a submission matching `sample_submission.csv` exactly and save it to `submissions/submission.csv`.
-8. Search for the next improvement skill and load it with `Skill({"name": "<skill-name>"})`.
+8. Search for the next improvement skill and load it with `Skill({"skill": "<skill-name>"})`.
 9. Update `.claude/agent-memory/MEMORY.md`.
 10. Iterate; only call `StructuredOutput` when genuinely done.
 
@@ -136,6 +136,19 @@ def _build_prompt(*, target_metric: str | None) -> str:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 async def run_gladius(state: "CompetitionState", project_dir: str) -> dict:
+    import sys
+    from pathlib import Path
+
+    skills_dir = str(Path(project_dir) / ".claude" / "skills")
+    mcp_servers = {
+        "skills-on-demand": {
+            "type": "stdio",
+            "command": sys.executable,
+            "args": ["-m", "skills_on_demand.server"],
+            "env": {"SKILLS_DIR": skills_dir},
+        }
+    }
+
     prompt = _build_prompt(target_metric=state.target_metric)
     result, _ = await run_agent(
         agent_name="gladius",
@@ -144,9 +157,13 @@ async def run_gladius(state: "CompetitionState", project_dir: str) -> dict:
         allowed_tools=[
             "Read", "Write", "Edit", "MultiEdit",
             "Bash", "Glob", "Grep", "TodoWrite", "WebSearch",
+            "mcp__skills-on-demand__search_skills",
+            "mcp__skills-on-demand__list_skills",
+            "Skill",
         ],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
+        mcp_servers=mcp_servers,
         max_turns=500,
     )
     return result
