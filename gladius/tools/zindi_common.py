@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import logging
 import os
 
+from loguru import logger
 from zindi.user import Zindian
-
-logger = logging.getLogger(__name__)
 
 
 def _get_selected_challenge_id(user: Zindian) -> str | None:

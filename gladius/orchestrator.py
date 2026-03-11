@@ -12,9 +12,10 @@ Design rules:
 
 from __future__ import annotations
 
-import logging
 import time
 from pathlib import Path
+
+from loguru import logger
 
 from gladius.agents.implementer import run_implementer
 from gladius.agents.planner import run_planner
@@ -32,8 +33,6 @@ from gladius.submission import (
 )
 from gladius.utils.competition_config import load_competition_config
 from gladius.utils.project_setup import setup_project_dir, write_claude_md
-
-logger = logging.getLogger(__name__)
 
 
 def _has_iteration_result(state: CompetitionState) -> bool:

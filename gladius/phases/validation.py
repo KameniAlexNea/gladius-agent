@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import logging
 import time
 from collections.abc import Callable
 from datetime import date as _date
@@ -11,11 +10,10 @@ from datetime import datetime as _dt
 from datetime import timezone as _tz
 from pathlib import Path
 
+from loguru import logger
+
 from gladius.db.store import StateStore
 from gladius.state import CompetitionState
-
-logger = logging.getLogger(__name__)
-
 
 # ── Score helpers (used only in this phase) ───────────────────────────────────
 
@@ -178,7 +176,7 @@ async def run_validation_phase(
         submission_file=submission_file,
     )
     if not format_ok:
-        logger.warning("Deterministic format check failed: %s", format_note)
+        logger.warning(f"Deterministic format check failed: {format_note}")
         validation["format_ok"] = False
         validation["submit"] = False
         reasoning = str(validation.get("reasoning") or "")

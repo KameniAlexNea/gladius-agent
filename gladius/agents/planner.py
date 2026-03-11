@@ -8,7 +8,6 @@ It is NOT told how to structure files, what to name things, or how to compute
 metrics. Its only job is to produce a concrete, ordered action plan.
 """
 
-import logging
 import re
 from typing import TYPE_CHECKING
 
@@ -22,7 +21,7 @@ from gladius.agents.specs.planner_spec import (
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 def _first_nonblank_line(text: str) -> str:

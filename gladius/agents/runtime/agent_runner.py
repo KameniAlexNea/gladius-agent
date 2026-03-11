@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Any
 
 from claude_agent_sdk import (
@@ -22,6 +21,7 @@ from claude_agent_sdk.types import (
     ToolUseBlock,
 )
 from llm_output_parser import parse_json as _parse_json
+from loguru import logger
 
 from gladius.agents._agent_defs import SUBAGENT_DEFINITIONS
 from gladius.agents._console import _BLUE, _BOLD, _c, _log_message
@@ -33,8 +33,6 @@ from gladius.agents.runtime.helpers import (
     stderr_cb,
     validate_runtime_invocation,
 )
-
-logger = logging.getLogger(__name__)
 
 
 async def run_agent(
@@ -92,7 +90,7 @@ async def run_agent(
 
             if verbose:
                 resume_str = f"  resume={resume[:8]}…" if resume else ""
-                print(
+                logger.debug(
                     _c(_BOLD + _BLUE, f"\n▶ [{agent_name}]")
                     + f"  tools={allowed_tools}"
                     + resume_str
@@ -144,8 +142,12 @@ async def run_agent(
                 if isinstance(message, ResultMessage):
                     result_msg = message
 
-            if forbidden_tool_error:
+            if forbidden_tool_error and result_msg is None:
                 raise RuntimeError(forbidden_tool_error)
+            if forbidden_tool_error and result_msg is not None:
+                logger.warning(
+                    f"[{agent_name}] forbidden tool attempt was blocked by policy; continuing with available output"
+                )
             if result_msg is None:
                 raise RuntimeError("No ResultMessage received from agent")
 

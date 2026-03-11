@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import logging
 import time
 from collections.abc import Callable
 from datetime import datetime as _dt
 from datetime import timezone as _tz
 from pathlib import Path
 
+from loguru import logger
+
 from gladius.db.store import StateStore
 from gladius.state import CompetitionState
-
-logger = logging.getLogger(__name__)
 
 
 async def run_planning_phase(

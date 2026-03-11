@@ -39,6 +39,18 @@ In both modes:
   You do NOT write to any files. You do NOT update any state.
   You ONLY observe and report.
 
+Format-or-fail rule (ML mode):
+    If submission column names or row counts do not match the sample template
+    EXACTLY (case-sensitive), you MUST set:
+    - format_ok = False
+    - submit = False
+    regardless of OOF score.
+
+OOF validity rule (ML mode):
+    Validate that OOF prediction row count matches training row count using
+    available metadata/state evidence. If mismatch is detected, treat OOF as
+    invalid and set is_improvement=False.
+
 Stop condition:
   Set stop=True ONLY when you are certain the deliverable is production-ready
   and no further iteration would produce meaningful improvement:
@@ -106,6 +118,11 @@ VALIDATION_OUTPUT_SCHEMA: dict[str, Any] = {
                 "If stop=False you MUST list at least one item here."
             ),
         },
+        "critique_list": {
+            "type": ["array", "null"],
+            "items": {"type": "string"},
+            "description": "Structured list of concrete gaps/risks found during validation.",
+        },
     },
     "additionalProperties": False,
 }
@@ -134,8 +151,8 @@ def build_validation_prompt(
         new_oof_str = f"{oof_score:.6f}" if oof_score is not None else "n/a"
         submission_check_instruction = (
             f"Use Read to open {submission_path} and check the header + first data row (CSV format). "
-            "Use CLAUDE.md to find the sample template path and respect exact filename casing "
-            "(e.g., SampleSubmission.csv vs sample_submission.csv)."
+            "Use current context/project files to locate the sample template path and enforce exact "
+            "column names, row count, and filename casing (e.g., SampleSubmission.csv vs sample_submission.csv)."
             if submission_path
             else "No submission file — set format_ok=False."
         )
@@ -156,11 +173,14 @@ Context:
 ## Tasks
 1. Determine is_improvement: is {new_oof_str} meaningfully better than {best_score_str}?
 2. {submission_check_instruction}
-{quota_instruction}3. Decide stop=True only if the score has genuinely plateaued (last 3+ OOF scores
+{quota_instruction}3. If header/row count/casing mismatches sample template, force format_ok=False and submit=False.
+4. Validate OOF row-count consistency from available state/metadata evidence; if invalid, set is_improvement=False.
+5. Decide stop=True only if the score has genuinely plateaued (last 3+ OOF scores
    within 0.001) and you cannot identify a concrete next improvement.
-4. Populate next_directions with every concrete improvement you can still identify.
+6. Populate next_directions with every concrete improvement you can still identify.
    If stop=True, next_directions MUST be empty. If stop=False, it MUST be non-empty.
-5. Return the structured JSON result."""
+7. Populate critique_list with concise, concrete validation gaps (or [] if none).
+8. Return the structured JSON result."""
     else:
         best_q = (
             f"{best_quality_score}/100"
@@ -194,6 +214,7 @@ Context:
    is preventing a score of 100/100.
 7. Populate next_directions with every concrete improvement you can still identify.
    If stop=True, next_directions MUST be empty. If stop=False, it MUST be non-empty.
-8. Return the structured JSON result."""
+8. Populate critique_list with concise, concrete validation gaps (or [] if none).
+9. Return the structured JSON result."""
 
     return f"## Validation Request\n\n{score_section}\n"
