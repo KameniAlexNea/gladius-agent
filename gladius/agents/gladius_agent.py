@@ -42,7 +42,10 @@ OUTPUT_SCHEMA: dict[str, Any] = {
             "description": "Path to submission CSV or deliverable. Empty if not produced.",
         },
         "notes": {"type": "string", "description": "Brief summary of what was built."},
-        "error_message": {"type": "string", "description": "What went wrong (errors only)."},
+        "error_message": {
+            "type": "string",
+            "description": "What went wrong (errors only).",
+        },
         "total_turns": {"type": ["integer", "null"]},
     },
     "additionalProperties": False,
@@ -140,6 +143,7 @@ def _build_prompt(*, target_metric: str | None) -> str:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+
 async def run_gladius(state: "CompetitionState", project_dir: str) -> dict:
     import sys
     from pathlib import Path
@@ -160,8 +164,15 @@ async def run_gladius(state: "CompetitionState", project_dir: str) -> dict:
         prompt=prompt,
         system_prompt=SYSTEM_PROMPT,
         allowed_tools=[
-            "Read", "Write", "Edit", "MultiEdit",
-            "Bash", "Glob", "Grep", "TodoWrite", "WebSearch",
+            "Read",
+            "Write",
+            "Edit",
+            "MultiEdit",
+            "Bash",
+            "Glob",
+            "Grep",
+            "TodoWrite",
+            "WebSearch",
             "mcp__skills-on-demand__search_skills",
             "mcp__skills-on-demand__list_skills",
             "Skill",

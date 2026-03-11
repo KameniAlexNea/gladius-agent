@@ -48,7 +48,10 @@ def _reset_experiment_state(project_dir: str, iteration: int) -> None:
         archive = claude_dir / f"EXPERIMENT_STATE.iter-{max(iteration - 1, 0):02d}.json"
         n = 1
         while archive.exists():
-            archive = claude_dir / f"EXPERIMENT_STATE.iter-{max(iteration - 1, 0):02d}.{n}.json"
+            archive = (
+                claude_dir
+                / f"EXPERIMENT_STATE.iter-{max(iteration - 1, 0):02d}.{n}.json"
+            )
             n += 1
         state_path.replace(archive)
     state_path.write_text("{}\n", encoding="utf-8")
@@ -102,7 +105,9 @@ async def run_competition(
         )
     else:
         _best = (
-            f"{state.best_oof_score:.6f}" if state.best_oof_score is not None else "none"
+            f"{state.best_oof_score:.6f}"
+            if state.best_oof_score is not None
+            else "none"
         )
         logger.info(
             f"Resuming iteration={state.iteration} best={_best} "
@@ -125,9 +130,7 @@ async def run_competition(
             max_failed_runs_total is not None
             and len(state.failed_runs) >= max_failed_runs_total
         ):
-            state.last_stop_reason = (
-                f"failed run budget exceeded ({len(state.failed_runs)}/{max_failed_runs_total})"
-            )
+            state.last_stop_reason = f"failed run budget exceeded ({len(state.failed_runs)}/{max_failed_runs_total})"
             state.phase = "done"
             logger.warning(state.last_stop_reason)
             break
@@ -157,11 +160,15 @@ async def run_competition(
                 started_at=None,
                 duration_ms=dur_ms,
                 is_error=result.get("status") != "success",
-                notes=result.get("status") if result.get("status") != "success" else None,
+                notes=(
+                    result.get("status") if result.get("status") != "success" else None
+                ),
             )
 
             if result["status"] != "success":
-                logger.warning(f"Gladius {result['status']}: {result.get('error_message', '')}")
+                logger.warning(
+                    f"Gladius {result['status']}: {result.get('error_message', '')}"
+                )
                 state.failed_runs.append(
                     {
                         "iteration": state.iteration,
@@ -200,9 +207,15 @@ async def run_competition(
             )
 
             primary_score = quality_score if target_metric is None else oof_score
-            best_primary = state.best_quality_score if target_metric is None else state.best_oof_score
+            best_primary = (
+                state.best_quality_score
+                if target_metric is None
+                else state.best_oof_score
+            )
 
-            if primary_score is not None and _is_better(primary_score, best_primary, metric_direction):
+            if primary_score is not None and _is_better(
+                primary_score, best_primary, metric_direction
+            ):
                 if target_metric:
                     logger.info(f"New best OOF {target_metric}: {oof_score:.6f}")
                     state.best_oof_score = oof_score
@@ -221,10 +234,13 @@ async def run_competition(
                 and submission_file
                 and primary_score is not None
                 and _is_better(primary_score, best_primary, metric_direction)
-                and (platform == "none" or state.submission_count < state.max_submissions_per_day)
+                and (
+                    platform == "none"
+                    or state.submission_count < state.max_submissions_per_day
+                )
             ):
                 try:
-                    sub_result = await submit(
+                    await submit(
                         submission_file=submission_file,
                         competition_id=competition_id,
                         platform=platform,
@@ -266,7 +282,9 @@ async def run_competition(
                     )
 
         except Exception as exc:
-            logger.error(f"Unhandled error in iteration {state.iteration}: {exc}", exc_info=True)
+            logger.error(
+                f"Unhandled error in iteration {state.iteration}: {exc}", exc_info=True
+            )
             state.error_log.append(
                 {"phase": "running", "iteration": state.iteration, "error": str(exc)}
             )
