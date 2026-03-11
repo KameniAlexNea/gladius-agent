@@ -144,8 +144,12 @@ async def run_agent(
                 if isinstance(message, ResultMessage):
                     result_msg = message
 
-            if forbidden_tool_error:
+            if forbidden_tool_error and result_msg is None:
                 raise RuntimeError(forbidden_tool_error)
+            if forbidden_tool_error and result_msg is not None:
+                logger.warning(
+                    f"[{agent_name}] forbidden tool attempt was blocked by policy; continuing with available output"
+                )
             if result_msg is None:
                 raise RuntimeError("No ResultMessage received from agent")
 

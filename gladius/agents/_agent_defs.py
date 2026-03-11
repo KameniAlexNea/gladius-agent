@@ -130,6 +130,9 @@ No CRITICAL issues → SUBMIT.
 STRICT RULES:
 - NEVER modify CLAUDE.md.
 - Only write to .claude/EXPERIMENT_STATE.json — no other files.
+- Tool-call hygiene: Write accepts ONLY `file_path` and `content`.
+- Never send unsupported Write args (e.g., `description`, `create`).
+- Read a file before rewriting it.
 - Never advance phase on missing/partial state.
 - Once you have reported results via StructuredOutput, stop immediately.""",
     # Agent() restricts delegation to the six named subagents only.
@@ -171,6 +174,11 @@ Use your current context to get:
 Skill usage:
 - Load the `ml-setup` skill before scaffolding so folder layout and contracts are consistent.
 - Use Skill{"skill": "ml-setup"} and only read the specific sections you need.
+
+Tool-call hygiene:
+- Write accepts ONLY `file_path` and `content`.
+- Do not pass unsupported Write args (e.g., `description`, `create`).
+- Read existing files before overwriting them.
 
 State finalizer contract:
 - Your final tool call MUST be Write to .claude/EXPERIMENT_STATE.json.
@@ -218,6 +226,11 @@ successfully end-to-end.
 
 Use your current context (metric, data_dir, target column).
 Read the full plan in your task prompt before writing any code.
+
+Tool-call hygiene:
+- Write accepts ONLY `file_path` and `content`.
+- Do not pass unsupported Write args (e.g., `description`, `create`).
+- Read existing files before overwriting them.
 
 Development steps:
 0. If the plan references a skill, load that skill first (e.g., feature-engineering,
@@ -291,6 +304,11 @@ Steps:
 3. Read the relevant source files to understand the bug precisely.
 4. Apply minimal targeted fixes; do NOT refactor unrelated code.
 5. Comment each fix with WHY it resolves the reviewer's concern.
+
+Tool-call hygiene:
+- Write accepts ONLY `file_path` and `content`.
+- Do not pass unsupported Write args (e.g., `description`, `create`).
+- Read existing files before overwriting them.
 
 Surgical fix contract:
 - Perform minimal invasive edits only to the components implicated by reviewer evidence.
@@ -375,6 +393,11 @@ Steps:
    column names against the sample submission — never guess from previews.
 4. List all issues with their severity.
 
+Tool-call hygiene:
+- Write accepts ONLY `file_path` and `content`.
+- Do not pass unsupported Write args (e.g., `description`, `create`).
+- Read .claude/EXPERIMENT_STATE.json before writing final reviewer state.
+
 On completion write to .claude/EXPERIMENT_STATE.json:
 {"reviewer": {"status": "complete", "critical_issues": ["<issue>", ...], "warnings": ["..."], "message": "..."}}
 
@@ -412,6 +435,11 @@ Steps:
 4. Save to submissions/submission.csv (create the directory if needed).
 5. Verify: row count matches test set, and column names match sample submission exactly.
 6. Run submit-check skill validation on the final CSV before writing success state.
+
+Tool-call hygiene:
+- Write accepts ONLY `file_path` and `content`.
+- Do not pass unsupported Write args (e.g., `description`, `create`).
+- Read existing files before overwriting them.
 
 State finalizer contract:
 - Your final tool call MUST be Write to .claude/EXPERIMENT_STATE.json.

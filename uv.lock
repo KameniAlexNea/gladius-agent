@@ -985,6 +985,7 @@ dependencies = [
     { name = "langsmith", extra = ["claude-agent-sdk"] },
     { name = "lightgbm" },
     { name = "llm-output-parser" },
+    { name = "loguru" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "ollama" },
@@ -1027,6 +1028,7 @@ requires-dist = [
     { name = "langsmith", extras = ["claude-agent-sdk"], specifier = ">=0.7.14" },
     { name = "lightgbm", specifier = ">=4.6.0" },
     { name = "llm-output-parser", specifier = ">=0.3.0" },
+    { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "numpy", marker = "extra == 'dev'", specifier = ">=1.24.0" },
     { name = "ollama", specifier = ">=0.6.1" },
@@ -1601,6 +1603,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9e/fd/3517db603e1fc124ce4a59cab568a6433cfba3733cafd9070bdf3334b32e/llm_output_parser-0.3.0.tar.gz", hash = "sha256:2bf5c20b0da6460d4c7860c8a48d47d527bafd07f9af4f4fb9b1ff47d3c70c1f", size = 14508, upload_time = "2025-06-19T20:17:47.412Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c2/6c/888e9db804503ef31567b7b20bbe19263ec85c67c941a7beda2ac2797ae4/llm_output_parser-0.3.0-py3-none-any.whl", hash = "sha256:b9d7c9cd469205aa698efb60fffad591f943e806858f9f77c60139295ad96ff9", size = 14449, upload_time = "2025-06-19T20:17:45.331Z" },
+]
+
+[[package]]
+name = "loguru"
+version = "0.7.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "win32-setctime", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3a/05/a1dae3dffd1116099471c643b8924f5aa6524411dc6c63fdae648c4f1aca/loguru-0.7.3.tar.gz", hash = "sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6", size = 63559, upload_time = "2024-12-06T11:20:56.608Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl", hash = "sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c", size = 61595, upload_time = "2024-12-06T11:20:54.538Z" },
 ]
 
 [[package]]
@@ -4160,6 +4175,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a5/8f/aea9c71cc92bf9b6cc0f7f70df8f0b420636b6c96ef4feee1e16f80f75dd/websockets-16.0-pp311-pypy311_pp73-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:0298d07ee155e2e9fda5be8a9042200dd2e3bb0b8a38482156576f863a9d457c", size = 176968, upload_time = "2026-01-10T09:23:41.031Z" },
     { url = "https://files.pythonhosted.org/packages/9a/3f/f70e03f40ffc9a30d817eef7da1be72ee4956ba8d7255c399a01b135902a/websockets-16.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:a653aea902e0324b52f1613332ddf50b00c06fdaf7e92624fbf8c77c78fa5767", size = 178735, upload_time = "2026-01-10T09:23:42.259Z" },
     { url = "https://files.pythonhosted.org/packages/6f/28/258ebab549c2bf3e64d2b0217b973467394a9cea8c42f70418ca2c5d0d2e/websockets-16.0-py3-none-any.whl", hash = "sha256:1637db62fad1dc833276dded54215f2c7fa46912301a24bd94d45d46a011ceec", size = 171598, upload_time = "2026-01-10T09:23:45.395Z" },
+]
+
+[[package]]
+name = "win32-setctime"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/8f/705086c9d734d3b663af0e9bb3d4de6578d08f46b1b101c2442fd9aecaa2/win32_setctime-1.2.0.tar.gz", hash = "sha256:ae1fdf948f5640aae05c511ade119313fb6a30d7eabe25fef9764dca5873c4c0", size = 4867, upload_time = "2024-12-07T15:28:28.314Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/07/c6fe3ad3e685340704d314d765b7912993bcb8dc198f0e7a89382d37974b/win32_setctime-1.2.0-py3-none-any.whl", hash = "sha256:95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390", size = 4083, upload_time = "2024-12-07T15:28:26.465Z" },
 ]
 
 [[package]]

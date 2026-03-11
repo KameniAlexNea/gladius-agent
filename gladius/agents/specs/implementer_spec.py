@@ -146,6 +146,9 @@ SUBMIT → spawn submission-builder
 ## Rules
 
 - Only write to .claude/EXPERIMENT_STATE.json — no other files.
+- Tool-call hygiene: when using Write, pass ONLY `file_path` and `content`.
+- Do NOT pass unsupported Write parameters like `description` or `create`.
+- If rewriting an existing file, read it first before writing.
 - Track progress with TodoWrite.
 - Spawn exactly one subagent at a time, then wait for completion.
 - After each subagent finishes, immediately read .claude/EXPERIMENT_STATE.json before deciding anything else.
