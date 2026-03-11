@@ -1,27 +1,18 @@
-"""
-Implementer — ML experiment coordinator.
+"""Backward-compat shim — delegates to run_solver."""
 
-Orchestrates specialized subagents (ml-scaffolder, ml-developer, ml-scientist,
-ml-evaluator, code-reviewer, submission-builder) via the Agent() tool.
-Routes between phases by reading EXPERIMENT_STATE.json after each subagent completes.
-
-Fresh session every iteration (not resumed) — it works from the plan alone.
-"""
+from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from gladius.agents._base import run_agent
-from gladius.agents.specs.implementer_spec import (
-    IMPLEMENTER_OUTPUT_SCHEMA,
-    IMPLEMENTER_SYSTEM_PROMPT,
-    build_implementer_prompt,
-)
+from gladius.agents.solver import OUTPUT_SCHEMA as SOLVER_OUTPUT_SCHEMA
+from gladius.agents.solver import run_solver
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
-# Backwards-compatible alias for existing imports/tests.
-OUTPUT_SCHEMA = IMPLEMENTER_OUTPUT_SCHEMA
+# Backward-compatible alias so existing imports/tests keep working.
+OUTPUT_SCHEMA = SOLVER_OUTPUT_SCHEMA
+IMPLEMENTER_OUTPUT_SCHEMA = SOLVER_OUTPUT_SCHEMA
 
 
 async def run_implementer(
@@ -29,23 +20,5 @@ async def run_implementer(
     state: "CompetitionState",
     project_dir: str,
 ) -> dict:
-    """
-    Run the coordinator. Returns a result dict matching OUTPUT_SCHEMA.
-    """
-    prompt = build_implementer_prompt(plan=plan, target_metric=state.target_metric)
-    result, _ = await run_agent(
-        agent_name="implementer",
-        prompt=prompt,
-        system_prompt=IMPLEMENTER_SYSTEM_PROMPT,
-        allowed_tools=[
-            "Agent(ml-scaffolder,ml-developer,ml-scientist,ml-evaluator,code-reviewer,submission-builder)",
-            "Read",
-            "Write",
-            "Glob",
-            "TodoWrite",
-        ],
-        output_schema=OUTPUT_SCHEMA,
-        cwd=project_dir,
-        max_turns=30,
-    )
-    return result
+    """Backward-compat wrapper. Plan context comes from CLAUDE.md, not plan dict."""
+    return await run_solver(state, project_dir)

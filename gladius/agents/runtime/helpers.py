@@ -44,7 +44,7 @@ def get_runtime_model() -> str:
     return model
 
 
-_SMALL_MODEL_AGENTS = frozenset({"ml-scaffolder", "ml-evaluator"})
+_SMALL_MODEL_AGENTS: frozenset[str] = frozenset()  # no small-model specialisation in single-agent mode
 
 
 def build_runtime_agents(model: str) -> dict[str, AgentDefinition]:

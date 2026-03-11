@@ -79,18 +79,7 @@ def test_submission_counter_not_incremented_on_failed_submit(monkeypatch, tmp_pa
         },
     )
 
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
+    async def fake_solver(*args, **kwargs):
         return {
             "status": "success",
             "oof_score": 0.8,
@@ -114,8 +103,7 @@ def test_submission_counter_not_incremented_on_failed_submit(monkeypatch, tmp_pa
     async def fake_summarizer(*args, **kwargs):
         return "summary"
 
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
+    monkeypatch.setattr(orchestrator, "run_solver", fake_solver)
     monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
     monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
     monkeypatch.setattr(
@@ -164,18 +152,7 @@ def test_submission_counter_incremented_on_successful_submit(monkeypatch, tmp_pa
         },
     )
 
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
+    async def fake_solver(*args, **kwargs):
         return {
             "status": "success",
             "oof_score": 0.8,
@@ -199,8 +176,7 @@ def test_submission_counter_incremented_on_successful_submit(monkeypatch, tmp_pa
     async def fake_summarizer(*args, **kwargs):
         return "summary"
 
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
+    monkeypatch.setattr(orchestrator, "run_solver", fake_solver)
     monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
     monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
     monkeypatch.setattr(orchestrator, "submit", lambda **kwargs: (True, None))
@@ -240,18 +216,7 @@ def test_submit_false_blocks_submission_even_when_improved(monkeypatch, tmp_path
         },
     )
 
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
+    async def fake_solver(*args, **kwargs):
         return {
             "status": "success",
             "oof_score": 0.8,
@@ -281,8 +246,7 @@ def test_submit_false_blocks_submission_even_when_improved(monkeypatch, tmp_path
         calls.append(kwargs)
         return True, None
 
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
+    monkeypatch.setattr(orchestrator, "run_solver", fake_solver)
     monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
     monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
     monkeypatch.setattr(orchestrator, "submit", fake_submit)
@@ -329,18 +293,7 @@ def test_deterministic_format_check_blocks_submit(monkeypatch, tmp_path):
         },
     )
 
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
+    async def fake_solver(*args, **kwargs):
         return {
             "status": "success",
             "oof_score": 0.81,
@@ -371,8 +324,7 @@ def test_deterministic_format_check_blocks_submit(monkeypatch, tmp_path):
         calls.append(kwargs)
         return True, None
 
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
+    monkeypatch.setattr(orchestrator, "run_solver", fake_solver)
     monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
     monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
     monkeypatch.setattr(orchestrator, "submit", fake_submit)
@@ -446,18 +398,7 @@ def test_open_task_uses_hybrid_quality_for_best_score(monkeypatch, tmp_path):
         },
     )
 
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
+    async def fake_solver(*args, **kwargs):
         return {
             "status": "success",
             "oof_score": None,
@@ -482,8 +423,7 @@ def test_open_task_uses_hybrid_quality_for_best_score(monkeypatch, tmp_path):
     async def fake_summarizer(*args, **kwargs):
         return "summary"
 
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
+    monkeypatch.setattr(orchestrator, "run_solver", fake_solver)
     monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
     monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
     monkeypatch.setattr(orchestrator, "submit", lambda **kwargs: (True, None))
@@ -529,18 +469,7 @@ def test_submission_score_updates_lb_tracking(monkeypatch, tmp_path):
         },
     )
 
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
+    async def fake_solver(*args, **kwargs):
         return {
             "status": "success",
             "oof_score": 0.84,
@@ -564,8 +493,7 @@ def test_submission_score_updates_lb_tracking(monkeypatch, tmp_path):
     async def fake_summarizer(*args, **kwargs):
         return "summary"
 
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
+    monkeypatch.setattr(orchestrator, "run_solver", fake_solver)
     monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
     monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
     monkeypatch.setattr(orchestrator, "submit", lambda **kwargs: (True, None))

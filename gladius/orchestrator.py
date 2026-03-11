@@ -17,8 +17,8 @@ from pathlib import Path
 
 from loguru import logger
 
-from gladius.agents.implementer import run_implementer
 from gladius.agents.planner import run_planner
+from gladius.agents.solver import run_solver
 from gladius.agents.summarizer import run_summarizer
 from gladius.agents.validation import run_validation_agent
 from gladius.phases.implementation import run_implementation_phase
@@ -254,7 +254,7 @@ async def run_competition(
                     store,
                     project_dir,
                     n_parallel,
-                    run_implementer=run_implementer,
+                    run_solver=run_solver,
                     consume_agent_call=_consume_agent_call,
                     consume_agent_calls=_consume_agent_calls,
                     check_budget=_check_iteration_runtime_budget,
