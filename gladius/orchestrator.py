@@ -8,6 +8,7 @@ State lives in memory; all observability comes from gladius.log.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import date as _date
 from pathlib import Path
@@ -78,6 +79,10 @@ async def run_competition(
             max_iteration_seconds = 1800
         if max_failed_runs_total is None:
             max_failed_runs_total = 20
+    else:
+        # Experimental: cap iterations at 3 hours to prevent infinite hangs
+        if max_iteration_seconds is None:
+            max_iteration_seconds = 10800
 
     run_preflight_or_raise(
         competition_dir=competition_dir,
@@ -127,7 +132,20 @@ async def run_competition(
 
         try:
             t0 = time.perf_counter()
-            result = await run_gladius(state, competition_dir)
+            try:
+                result = await asyncio.wait_for(
+                    run_gladius(state, competition_dir),
+                    timeout=float(max_iteration_seconds),
+                )
+            except asyncio.TimeoutError:
+                dur_s = time.perf_counter() - t0
+                logger.error(
+                    f"Iteration {state.iteration} hard-killed after {dur_s:.0f}s "
+                    f"(limit={max_iteration_seconds}s)"
+                )
+                raise RuntimeError(
+                    f"iteration timeout after {dur_s:.0f}s (limit={max_iteration_seconds}s)"
+                )
             dur_s = time.perf_counter() - t0
 
             if result["status"] != "success":
@@ -214,7 +232,7 @@ async def run_competition(
                 except Exception as sub_exc:
                     logger.warning(f"Submission failed (non-fatal): {sub_exc}")
 
-            # Runtime budget check
+            # Runtime budget check (soft warning — hard kill is asyncio.wait_for above)
             if max_iteration_seconds is not None:
                 elapsed = time.monotonic() - t_iter_start
                 if elapsed > max_iteration_seconds:
