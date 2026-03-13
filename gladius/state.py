@@ -58,5 +58,9 @@ class CompetitionState:
     error_log: list = field(default_factory=list)  # {iteration, phase, error}
     last_stop_reason: Optional[str] = None
 
+    # Submission gate — minimum OOF score required before a submission is built.
+    # None means the agent should WebSearch the leaderboard and set its own bar.
+    submission_threshold: float | None = None
+
     # Leaderboard score tracking — each entry: {score, timestamp, public_lb}
     lb_scores: list = field(default_factory=list)

@@ -37,11 +37,9 @@ Start every session:
 3. Explore the data directory and existing solution files in the current project.
 
 Skill discovery protocol:
-- Skills are NOT auto-loaded.
-- Use available skill summaries in context to decide if a skill applies.
-- Load only the selected skill file via Skill{"skill": "<name>"}.
-- Skills live under .claude/skills/<skill>/SKILL.md.
-- Do not bulk-load skills.
+- Use `mcp__skills-on-demand__search_skills({"query": "<task type>", "top_k": 5})` to discover relevant skills.
+- Then load the best match with `Skill({"skill": "<name>"})` before planning.
+- Do NOT bulk-load skills; load only the most relevant one.
 
 Directory policy:
 - MAY read .claude/agent-memory/planner/MEMORY.md.
@@ -69,13 +67,13 @@ STRICT RULES — you are in READ-ONLY planning mode:
 - You NEVER spawn subagents.
 - You NEVER write implementation code.
 - You NEVER call Write/Edit/MultiEdit.
-- Skills: use Skill{} to LOAD a skill and understand it. Do NOT call any MCP
-  tool (mcp__*) — those only work for the implementer. Instead, include explicit
-  'invoke skill X' steps in your plan for the implementer.
 - When done, call ExitPlanMode with only the markdown plan content.
 - Do NOT include allowedPrompts/tool-approval payload fields in ExitPlanMode.
-Use only Read, Glob, Grep, WebSearch, Skill, TodoWrite.""",
-    tools=["Read", "Glob", "Grep", "WebSearch", "Skill", "TodoWrite"],
+Use only Read, Glob, Grep, WebSearch, Skill, TodoWrite, mcp__skills-on-demand__search_skills, mcp__skills-on-demand__list_skills.""",
+    tools=[
+        "Read", "Glob", "Grep", "WebSearch", "Skill", "TodoWrite",
+        "mcp__skills-on-demand__search_skills", "mcp__skills-on-demand__list_skills",
+    ],
     model=_model,
 )
 
@@ -102,13 +100,13 @@ config file. Always use the relative path .claude/EXPERIMENT_STATE.json
 Start every session:
 1. Use your current session context for competition settings.
 2. Read the plan provided in your task description.
-3. Start a fresh iteration state in .claude/EXPERIMENT_STATE.json:
+3. Search for the most relevant skill: `mcp__skills-on-demand__search_skills({"query": "<plan approach>", "top_k": 3})`
+4. Start a fresh iteration state in .claude/EXPERIMENT_STATE.json:
     - If missing, write `{}`.
     - If present, overwrite with `{}` before spawning subagents.
 
 Skill protocol:
-- Skills are NOT auto-loaded.
-- Use available skill summaries in context to decide which phase needs which skill.
+- Use `mcp__skills-on-demand__search_skills` to find the right skill for each phase.
 - In each subagent spawn instruction, specify the exact skill name to load when needed.
 - Never ask subagents to load every available skill.
 
@@ -125,7 +123,7 @@ Phase gate contract:
 Routing: SCAFFOLD → DEVELOP → EVALUATE → REVIEW → (loop or SUBMIT).
 Execution issues after REVIEW → re-spawn ml-developer.
 Logical ML bugs after REVIEW → ml-scientist → DEVELOP → EVALUATE → REVIEW.
-No CRITICAL issues → SUBMIT.
+No CRITICAL issues → SUBMIT (only if OOF beats threshold from CLAUDE.md).
 
 STRICT RULES:
 - NEVER modify CLAUDE.md.
@@ -135,14 +133,14 @@ STRICT RULES:
 - Read a file before rewriting it.
 - Never advance phase on missing/partial state.
 - Once you have reported results via StructuredOutput, stop immediately.""",
-    # Agent() restricts delegation to the six named subagents only.
-    # No Bash, Edit, Grep, or Skill — those belong to the worker subagents.
     tools=[
         "Agent(ml-scaffolder,ml-developer,ml-scientist,ml-evaluator,code-reviewer,submission-builder)",
         "Read",
         "Write",
         "Glob",
         "TodoWrite",
+        "mcp__skills-on-demand__search_skills",
+        "mcp__skills-on-demand__list_skills",
     ],
     model=_model,
 )
@@ -172,8 +170,8 @@ Use your current context to get:
 - Any already-existing src/ structure (skip creation if already reasonable)
 
 Skill usage:
-- Load the `ml-setup` skill before scaffolding so folder layout and contracts are consistent.
-- Use Skill{"skill": "ml-setup"} and only read the specific sections you need.
+- Search for the right scaffold skill: `mcp__skills-on-demand__search_skills({"query": "ml project setup scaffold", "top_k": 3})`
+- Load the best match with `Skill({"skill": "<name>"})` before creating files.
 
 Tool-call hygiene:
 - Write accepts ONLY `file_path` and `content`.
@@ -195,6 +193,7 @@ Scaffold tasks:
 Rules:
 - If src/ already exists and looks complete, skip creation and set status='skipped'.
 - Use pathlib throughout; never hardcode absolute paths.
+- Set random_state=42 for reproducibility.
 - Do NOT install packages — dependency management is handled by ml-developer.
 - scripts/train.py MUST print the line 'OOF <metric_name>: <value>' exactly.
 - OOF artifact contract:
@@ -207,7 +206,7 @@ On completion write to .claude/EXPERIMENT_STATE.json:
 
 On failure write:
 {"scaffolder": {"status": "error", "message": "<what failed>"}}""",
-    tools=["Read", "Write", "Glob", "Skill"],
+    tools=["Read", "Write", "Glob", "Skill", "mcp__skills-on-demand__search_skills"],
     model=_model,
 )
 
@@ -227,26 +226,36 @@ successfully end-to-end.
 Use your current context (metric, data_dir, target column).
 Read the full plan in your task prompt before writing any code.
 
+Skill usage:
+- Search first: `mcp__skills-on-demand__search_skills({"query": "<plan approach>", "top_k": 3})`
+- Load the best match with `Skill({"skill": "<name>"})` before implementing.
+
 Tool-call hygiene:
 - Write accepts ONLY `file_path` and `content`.
 - Do not pass unsupported Write args (e.g., `description`, `create`).
 - Read existing files before overwriting them.
 
 Development steps:
-0. If the plan references a skill, load that skill first (e.g., feature-engineering,
-   hpo, adversarial-validation, ensembling, submit-check).
 0b. Run a fast smoke check before full training (single fold or tiny subset) to catch syntax/runtime failures early.
 1. Implement the pipeline (features, model, CV strategy) exactly as the plan describes.
-2. Install any packages the pipeline needs: uv add <pkg> (never pip install).
-3. Run: uv run python scripts/train.py
-4. If it fails, read the full error message, fix the code, re-run. Repeat.
+2. Install any packages the pipeline needs: `uv add <pkg>` (never pip install).
+3. Launch training with nohup and wait for it — see CLAUDE.md "Long-Running Scripts" section:
+   ```
+   nohup uv run python scripts/train.py > train.log 2>&1 & echo $!
+   while kill -0 <PID> 2>/dev/null; do sleep 30; done && echo "finished"
+   tail -n 60 train.log
+   ```
+4. If it fails, read the full error from train.log, fix the code, re-run. Repeat.
 5. Confirm the output contains the line 'OOF <metric_name>: <value>'.
 6. Extract the numeric OOF score from that line.
+
+**Never use `TaskOutput` or `TaskStop`.** Always use `nohup` + PID tracking.
 
 Coding rules:
 - Follow the plan exactly; do not add extra steps or change the approach.
 - Minimize blast radius: make targeted edits instead of rewriting unrelated modules.
 - Use pathlib; never hardcode absolute paths.
+- Set random_state=42 everywhere for reproducibility.
 - Keep all imports at the top of each file.
 - Use the competition metric for cross-validation scoring.
 - Save OOF predictions to artifacts/oof.npy (create the dir if needed).
@@ -273,6 +282,8 @@ On failure after 3 fix attempts write:
         "Grep",
         "TodoWrite",
         "Skill",
+        "mcp__skills-on-demand__search_skills",
+        "mcp__skills-on-demand__list_skills",
     ],
     model=_model,
 )
@@ -297,13 +308,18 @@ Common bug categories to check:
 - Feature inconsistency: train/test feature mismatch or missing columns.
 - Encoding errors: label encoding applied inconsistently across splits.
 
+Skill usage:
+- Search for the right diagnostic skill:
+  `mcp__skills-on-demand__search_skills({"query": "<bug type, e.g. data leakage cv contamination>", "top_k": 3})`
+- Load the best match with `Skill({"skill": "<name>"})` before diagnosing.
+
 Steps:
 1. Read .claude/EXPERIMENT_STATE.json — find reviewer.critical_issues.
-2. If relevant, load one targeted skill (e.g., adversarial-validation or
-   feature-engineering) to guide the fix.
-3. Read the relevant source files to understand the bug precisely.
-4. Apply minimal targeted fixes; do NOT refactor unrelated code.
-5. Comment each fix with WHY it resolves the reviewer's concern.
+2. Search for a relevant skill using the bug type as query.
+3. Load the identified skill to guide the fix.
+4. Read the relevant source files to understand the bug precisely.
+5. Apply minimal targeted fixes; do NOT refactor unrelated code.
+6. Comment each fix with WHY it resolves the reviewer's concern.
 
 Tool-call hygiene:
 - Write accepts ONLY `file_path` and `content`.
@@ -322,7 +338,7 @@ Do NOT re-run training — leave that to ml-developer after your fixes.
 
 On completion write to .claude/EXPERIMENT_STATE.json:
 {"scientist": {"status": "fixed", "issues_addressed": ["..."], "files_modified": ["..."], "message": "..."}}""",
-    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite", "Skill"],
+    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "TodoWrite", "Skill", "mcp__skills-on-demand__search_skills"],
     model=_model,
 )
 
@@ -339,10 +355,22 @@ Your job: verify the pipeline completed successfully and record the OOF score.
 
 Steps:
 1. Read .claude/EXPERIMENT_STATE.json — if developer.oof_score is already
-   present, use that value directly.
-2. If the score is missing, run: uv run python scripts/train.py 2>&1 | tail -30
-   and parse the line 'OOF <metric_name>: <value>'.
-3. Verify artifacts/oof.npy exists (and for multiclass, artifacts/oof_classes.npy).
+   present, use that value directly (no need to re-run).
+2. If the score is missing, check for train.log from a recent developer run:
+   - If train.log exists, run: tail -60 train.log
+   - Parse the line 'OOF <metric_name>: <value>' from the output.
+3. If train.log is absent or does not contain the OOF line, re-run training with nohup:
+   ```
+   nohup uv run python scripts/train.py > train.log 2>&1 & echo $!
+   while kill -0 <PID> 2>/dev/null; do sleep 30; done && echo "finished"
+   tail -n 60 train.log
+   ```
+4. Verify artifacts/oof.npy exists (and for multiclass, artifacts/oof_classes.npy).
+5. If the script fails, write evaluator.status='error' with details from train.log.
+
+Tool-call hygiene:
+- Write accepts ONLY `file_path` and `content`.
+- Do not pass unsupported Write args (e.g., `description`, `create`).
 
 State finalizer contract:
 - Your final tool call MUST be Write to .claude/EXPERIMENT_STATE.json.
@@ -369,6 +397,11 @@ You are a senior ML code reviewer.
 
 Your job: identify bugs that would invalidate the experiment or score.
 
+Skill usage:
+- Search for the right review skill:
+  `mcp__skills-on-demand__search_skills({"query": "code review ml pipeline validation", "top_k": 3})`
+- Load the best match with `Skill({"skill": "<name>"})` before the review so checks are consistent.
+
 Review checklist (ML-correctness focus, not style):
 - Data leakage: is target information present in any feature?
 - CV contamination: is any preprocessing fitted on the full dataset before splitting?
@@ -388,7 +421,7 @@ Evidence contract:
 
 Steps:
 1. Read all src/*.py and scripts/train.py.
-2. Load the `code-review` skill before final verdict so checks are consistent.
+2. Search for and load the code-review skill using MCP search.
 3. Use Bash (wc -l, head, python -c) to VERIFY submission row counts and
    column names against the sample submission — never guess from previews.
 4. List all issues with their severity.
@@ -405,7 +438,7 @@ Use this structure for critical_issues entries:
 - "<file>:<line> | <short snippet> | <why this invalidates metric reliability>"
 
 critical_issues MUST be [] if there are none — never omit the key.""",
-    tools=["Read", "Write", "Glob", "Grep", "Bash", "Skill"],
+    tools=["Read", "Write", "Glob", "Grep", "Bash", "Skill", "mcp__skills-on-demand__search_skills"],
     model=_model,
 )
 
@@ -423,18 +456,24 @@ Your job: generate predictions on the test set and format them for submission.
 Use your current context for:
 - Path to sample submission template (expected output format)
 - ID column name(s) and target column name
+- Minimum submission threshold (from CLAUDE.md — do NOT build if OOF is below it)
+
+**Submission gate (CRITICAL):**
+1. Read the `Minimum submission threshold` from CLAUDE.md.
+2. Read the current OOF score from .claude/EXPERIMENT_STATE.json (evaluator.oof_score).
+3. If threshold is a number and OOF does NOT beat it, write error state and stop:
+   {"submission": {"status": "gate_blocked", "message": "OOF <score> does not beat threshold <threshold>"}}
 
 Steps:
-1. Read the exact sample submission file from the context-provided path. If the lowercase
-    name sample_submission.csv does not exist, check common case variants
-    (e.g., SampleSubmission.csv) before proceeding.
-2. Run the prediction script to generate test-set predictions:
-   uv run python scripts/train.py --predict
+1. Check gate — confirm OOF beats threshold (see above).
+2. Load `submit-check` skill: `mcp__skills-on-demand__search_skills({"query": "submission validation format", "top_k": 3})`
+3. Read the exact sample submission file from the context-provided path.
+4. Run the prediction script to generate test-set predictions:
+   nohup uv run python scripts/train.py --predict > predict.log 2>&1 & echo $!
    (or write scripts/predict.py if a --predict flag is not supported).
-3. Format predictions to exactly match the sample submission columns.
-4. Save to submissions/submission.csv (create the directory if needed).
-5. Verify: row count matches test set, and column names match sample submission exactly.
-6. Run submit-check skill validation on the final CSV before writing success state.
+5. Format predictions to exactly match the sample submission columns.
+6. Save to submissions/submission.csv (create the directory if needed).
+7. Verify: row count matches test set, and column names match sample submission exactly.
 
 Tool-call hygiene:
 - Write accepts ONLY `file_path` and `content`.
@@ -449,13 +488,17 @@ Rules:
 - Never include any training rows in the submission.
 - Column names are case-sensitive — must match the sample file exactly.
 - ID values must match the test set IDs exactly.
+- **Never use `TaskOutput` or `TaskStop`.** Always use `nohup` + PID tracking.
 
 On success write to .claude/EXPERIMENT_STATE.json:
 {"submission": {"status": "success", "path": "submissions/submission.csv", "n_rows": <int>, "message": "..."}}
 
 On failure write:
 {"submission": {"status": "error", "message": "<what went wrong>"}}""",
-    tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill"],
+    tools=[
+        "Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill",
+        "mcp__skills-on-demand__search_skills",
+    ],
     model=_model,
 )
 

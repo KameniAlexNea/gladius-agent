@@ -109,6 +109,7 @@ async def run_competition(
             target_metric=target_metric,
             metric_direction=metric_direction,
             max_iterations=max_iterations,
+            submission_threshold=cfg.get("submission_threshold"),
         )
     else:
         _best_str = (

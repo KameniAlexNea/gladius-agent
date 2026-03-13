@@ -96,6 +96,18 @@ def load_competition_config(competition_dir: str) -> dict:
     cfg["metric"] = cfg.get("metric") or None
     cfg["direction"] = cfg.get("direction") or None
 
+    # submission_threshold: optional numeric gate
+    raw_threshold = cfg.get("submission_threshold")
+    if raw_threshold is not None:
+        try:
+            cfg["submission_threshold"] = float(raw_threshold)
+        except (ValueError, TypeError):
+            raise CompetitionConfigError(
+                f"submission_threshold must be a number, got {raw_threshold!r}"
+            )
+    else:
+        cfg["submission_threshold"] = None
+
     # Resolve data_dir relative to competition_dir
     # data_dir_explicit = "data_dir" in cfg  # True only when user set it in frontmatter
     p = Path(cfg.get("data_dir") or "data")
@@ -133,4 +145,6 @@ def _parse_frontmatter(readme: Path) -> dict:
         ) from exc
     if not isinstance(cfg, dict):
         raise CompetitionConfigError(f"{readme}: frontmatter must be a YAML mapping.")
-    return {k: str(v) for k, v in cfg.items()}
+    # Keep numeric values as-is; coerce everything else to str so downstream
+    # code that expects strings (competition_id, platform, metric, etc.) works.
+    return {k: v if isinstance(v, (int, float, bool)) else str(v) for k, v in cfg.items()}

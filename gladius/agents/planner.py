@@ -105,12 +105,20 @@ async def run_planner(
     When n_parallel > 1, the planner is asked to produce that many independent
     approaches in the `plans` list field.
     """
-    # SDK MCP servers race with the result message (end_input closes stdin
-    # before control-response can be written back).  The planner only needs
-    # to *plan*; it doesn't submit or check the real leaderboard, so we
-    # skip MCP entirely here.  Platform tools are injected for validation/
-    # submission agents instead.
-    mcp_servers: dict = {}
+    # Inject skills-on-demand MCP so the planner can search the skill catalog
+    # without bulk-loading every SKILL.md file.
+    import sys
+    from pathlib import Path as _Path
+
+    skills_dir = str(_Path(project_dir) / ".claude" / "skills")
+    mcp_servers: dict = {
+        "skills-on-demand": {
+            "type": "stdio",
+            "command": sys.executable,
+            "args": ["-m", "skills_on_demand.server"],
+            "env": {"SKILLS_DIR": skills_dir},
+        }
+    }
 
     prompt = build_planner_prompt(
         iteration=state.iteration,
@@ -131,6 +139,8 @@ async def run_planner(
             "Skill",
             "TodoWrite",
             "ExitPlanMode",
+            "mcp__skills-on-demand__search_skills",
+            "mcp__skills-on-demand__list_skills",
         ],
         cwd=project_dir,
         mcp_servers=mcp_servers,

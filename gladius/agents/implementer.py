@@ -8,6 +8,8 @@ Routes between phases by reading EXPERIMENT_STATE.json after each subagent compl
 Fresh session every iteration (not resumed) — it works from the plan alone.
 """
 
+import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from gladius.agents._base import run_agent
@@ -32,6 +34,16 @@ async def run_implementer(
     """
     Run the coordinator. Returns a result dict matching OUTPUT_SCHEMA.
     """
+    skills_dir = str(Path(project_dir) / ".claude" / "skills")
+    mcp_servers = {
+        "skills-on-demand": {
+            "type": "stdio",
+            "command": sys.executable,
+            "args": ["-m", "skills_on_demand.server"],
+            "env": {"SKILLS_DIR": skills_dir},
+        }
+    }
+
     prompt = build_implementer_prompt(plan=plan, target_metric=state.target_metric)
     result, _ = await run_agent(
         agent_name="implementer",
@@ -43,9 +55,12 @@ async def run_implementer(
             "Write",
             "Glob",
             "TodoWrite",
+            "mcp__skills-on-demand__search_skills",
+            "mcp__skills-on-demand__list_skills",
         ],
         output_schema=OUTPUT_SCHEMA,
         cwd=project_dir,
+        mcp_servers=mcp_servers,
         max_turns=30,
     )
     return result

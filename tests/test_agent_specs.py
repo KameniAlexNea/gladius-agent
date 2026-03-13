@@ -34,8 +34,8 @@ def test_planner_prompts_define_lazy_skill_loading_protocol():
         project_dir="/tmp/project",
         n_parallel=1,
     )
-    assert "Skills are NOT auto-loaded" in prompt
-    assert 'Skill{"skill": "<name>"}' in PLANNER_SYSTEM_PROMPT
+    assert "mcp__skills-on-demand__search_skills" in prompt
+    assert "mcp__skills-on-demand__search_skills" in PLANNER_SYSTEM_PROMPT
 
 
 def test_build_implementer_prompt_includes_plan_and_metric():
@@ -53,8 +53,8 @@ def test_build_implementer_prompt_includes_plan_and_metric():
 
 
 def test_implementer_system_prompt_mentions_skill_registry_protocol():
-    assert "Skills are NOT auto-loaded" in IMPLEMENTER_SYSTEM_PROMPT
-    assert "skill summaries in context" in IMPLEMENTER_SYSTEM_PROMPT
+    assert "mcp__skills-on-demand__search_skills" in IMPLEMENTER_SYSTEM_PROMPT
+    assert "skill" in IMPLEMENTER_SYSTEM_PROMPT.lower()
 
 
 def test_validation_prompt_metric_mode_contains_submission_checks():

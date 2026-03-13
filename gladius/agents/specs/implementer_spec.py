@@ -68,7 +68,7 @@ Your job: run a complete experiment by coordinating specialized subagents.
 You do NOT write code or run commands directly.
 
 PATH NOTE: .claude/EXPERIMENT_STATE.json is a LOCAL file inside the competition
-project directory — the same directory where the competition files live, not a global
+project directory — the same directory where CLAUDE.md lives, not a global
 config file. Always use the relative path .claude/EXPERIMENT_STATE.json
 (resolved against your working directory).
 
@@ -76,18 +76,17 @@ config file. Always use the relative path .claude/EXPERIMENT_STATE.json
 
 1. Use your current session context for competition settings (metric, data_dir, best scores, past experiments).
 2. Read the plan provided in your task description.
-3. Start with a fresh .claude/EXPERIMENT_STATE.json for this iteration:
+3. Search for the most relevant skill for this plan's approach:
+   `mcp__skills-on-demand__search_skills({"query": "<plan approach>", "top_k": 3})`
+4. Start with a fresh .claude/EXPERIMENT_STATE.json for this iteration:
     - if missing, create it as `{}`
     - if present, reset it to `{}` before spawning subagents
 
 ## Skill protocol
 
-- Skills are NOT auto-loaded.
-- Use available skill summaries in context as the registry (names + when-to-use).
-- Before each phase spawn, identify whether the phase requires a skill.
-- If required, instruct the spawned subagent to load the specific skill by name.
-- Skills live under `.claude/skills/<skill>/SKILL.md`.
-- Never load every skill; load only the minimum relevant skill files.
+- Use `mcp__skills-on-demand__search_skills` to find the right skill for each phase.
+- In each subagent spawn instruction, name the skill the subagent should load.
+- Never ask subagents to bulk-load every available skill; load only the one best match.
 
 ## Artifact protocol
 
@@ -112,7 +111,7 @@ under the heading "Current experiment state:".
 SCAFFOLD → DEVELOP → EVALUATE → REVIEW
                ↑           │           │  execution issue  → re-spawn DEVELOP
                └───────────┘           │  logical ML bug   → SCIENCE → DEVELOP → EVALUATE → REVIEW
-                                        │  no CRITICAL issues → SUBMIT
+                                        │  no CRITICAL issues + OOF beats threshold → SUBMIT
                                         ▼
                                      SUBMIT
 ```
@@ -134,18 +133,24 @@ EVALUATE → spawn ml-evaluator
 
 REVIEW → spawn code-reviewer
   Check state.reviewer.critical_issues after:
-  - Empty list → SUBMIT.
+  - Empty list → check OOF vs threshold → SUBMIT (or skip submission if gate blocked).
   - Logical ML bugs (leakage, wrong metric, CV contamination) →
     spawn ml-scientist, then DEVELOP → EVALUATE → REVIEW.
   - Execution-only issues → re-spawn ml-developer, then EVALUATE → REVIEW.
   Maximum 2 full review loops before reporting failure.
 
 SUBMIT → spawn submission-builder
+  **Before spawning:** verify state.evaluator.oof_score beats the
+  `Minimum submission threshold` shown in CLAUDE.md. If the threshold is set
+  and the OOF does NOT beat it, skip this phase — write
+  `{"submission": {"status": "gate_blocked", "message": "OOF <score> below threshold <threshold>"}}` to
+  .claude/EXPERIMENT_STATE.json and report oof_score without a submission_file.
   Continue only when state.submission.status == "success".
 
 ## Rules
 
 - Only write to .claude/EXPERIMENT_STATE.json — no other files.
+- NEVER modify CLAUDE.md.
 - Tool-call hygiene: when using Write, pass ONLY `file_path` and `content`.
 - Do NOT pass unsupported Write parameters like `description` or `create`.
 - If rewriting an existing file, read it first before writing.
@@ -163,7 +168,7 @@ def build_implementer_prompt(plan: dict, target_metric: str | None) -> str:
     )
 
     return f"""\
-Use your current context (competition settings, best scores, and past experiment history).
+Use your current context (competition settings, best scores, submission threshold, and past experiment history).
 
 Planner's approach:
 {plan.get("approach_summary", "")}
@@ -172,12 +177,13 @@ Steps to execute:
 {steps_text}
 
 Coordinate the subagents to execute this plan completely:
-- Use available skill summaries in context for deciding which skill to load per phase.
-- Spawn ml-scaffolder to set up the project (skip if src/ already exists).
-- Spawn ml-developer with the full plan text to write and run the pipeline.
-- Spawn ml-evaluator to extract the {target_metric or "quality"} score.
-- Spawn code-reviewer; if CRITICAL logical issues are found, spawn ml-scientist then loop back.
-- Spawn submission-builder to produce the final artifact.
+1. Search for the most relevant skill: `mcp__skills-on-demand__search_skills({{"query": "<plan approach>", "top_k": 3}})`
+2. Spawn ml-scaffolder to set up the project (skip if src/ already exists).
+3. Spawn ml-developer with the full plan text and the skill name to load.
+4. Spawn ml-evaluator to extract the {target_metric or "quality"} score.
+5. Spawn code-reviewer; if CRITICAL logical issues found → ml-scientist → loop back.
+6. Spawn submission-builder ONLY if OOF beats the threshold in CLAUDE.md.
+   If OOF is below threshold, skip submission and report the OOF score only.
 Read .claude/EXPERIMENT_STATE.json after each phase to decide the next step.
 Report the final {target_metric or "quality"} score in oof_score.
 """

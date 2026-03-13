@@ -138,6 +138,13 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
 
     # Performance section varies by task type
     if state.target_metric:
+        threshold_val = state.submission_threshold
+        threshold_str = f"{threshold_val:.6f}" if threshold_val is not None else "not set"
+        threshold_note = (
+            f"> ⛔ **Do not build a submission unless your OOF score beats {threshold_str}.**"
+            if threshold_val is not None
+            else "> ⚠️ Threshold not set — `WebSearch` the leaderboard and use the current median score as your bar."
+        )
         perf_section = f"""\
 ## Current Best
 
@@ -146,6 +153,9 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
 | Best OOF ({state.target_metric}) | **{best_oof}** |
 | Best leaderboard | **{best_lb}** |
 | Submissions today | {state.submission_count} / {state.max_submissions_per_day} |
+| **Minimum submission threshold** | **{threshold_str}** |
+
+{threshold_note}
 """
         metric_row = f"| Target metric | `{state.target_metric}` ({direction_str}) |"
         data_section = f"""\
@@ -160,13 +170,15 @@ Standard files to expect:
 - `test.csv` — test set (no target column)
 - `sample_submission.csv` — submission format template
 """
-        submission_section = """\
+        submission_section = f"""\
 ## Submission Rules
 
-1. Load `sample_submission.csv` to get the exact submission format.
-2. Your submission must match its columns and row count exactly.
-3. Save as a CSV in the project directory.
-4. Report the path in `submission_file` in your output.
+1. **Gate:** Only build a submission once your OOF score beats the `Minimum submission threshold` shown above.
+   - If threshold is "not set", `WebSearch` the leaderboard first and use the current median score as your bar.
+2. Load `sample_submission.csv` to get the exact submission format.
+3. Your submission must match its columns and row count exactly.
+4. Save to `submissions/submission.csv`.
+5. Report the path in `submission_file` in your output.
 """
         skills_section = """\
 ## Available Skills
@@ -346,6 +358,27 @@ Update it with insights after each exploration session.
 
 If you are an **implementer**, focus only on executing the given plan.
 
+## Project Structure
+
+Organise all code under `src/` and `scripts/` as importable modules:
+
+```
+src/
+├── __init__.py
+├── config.py      # constants: paths, metric, target column
+├── data.py        # load_train(), load_test() helpers
+├── features.py    # feature engineering transforms
+└── models.py      # model factory + CV loop
+scripts/
+├── train.py       # entry point: fit, save artifacts/oof.npy, print OOF score
+└── evaluate.py    # reload artifacts/oof.npy and report metric
+```
+
+- `scripts/train.py` MUST print: `OOF <metric>: <value>` — the evaluator parses this.
+- Save OOF predictions to `artifacts/oof.npy` (and `artifacts/oof_classes.npy` for multiclass).
+- Use `pathlib` throughout; no hardcoded absolute paths.
+- Set `random_state=42` everywhere for reproducibility.
+
 ## Package Management
 
 > **This project uses `uv` — there is no `pip` in the venv.**
@@ -354,7 +387,26 @@ If you are an **implementer**, focus only on executing the given plan.
 
 ```bash
 uv add optuna catboost lightgbm   # install packages
-uv run python solution.py         # run a script inside the venv
+uv run python scripts/train.py    # run a script inside the venv
+```
+
+## Long-Running Scripts
+
+For training scripts that take more than a few seconds, use `nohup` and track the PID.
+**Never use background task IDs (`TaskOutput`, `TaskStop`).**
+
+```bash
+# Launch and capture PID
+nohup uv run python scripts/train.py > train.log 2>&1 & echo $!
+
+# Check if still running
+ps -p <PID> -o pid,stat,etime,cmd --no-headers 2>/dev/null || echo "done"
+
+# Tail progress
+tail -n 50 train.log
+
+# Wait for finish
+while kill -0 <PID> 2>/dev/null; do sleep 30; done && echo "finished"
 ```
 """
     p.write_text(content, encoding="utf-8")
