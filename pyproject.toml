@@ -23,6 +23,7 @@ dependencies = [
     "llm-output-parser>=0.3.0",
     "langsmith[claude-agent-sdk]>=0.7.14",
     "loguru>=0.7.3",
+    "skills-on-demand @ git+https://github.com/KameniAlexNea/skills-on-demand.git",
 ]
 
 [project.optional-dependencies]
