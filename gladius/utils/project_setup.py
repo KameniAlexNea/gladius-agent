@@ -323,175 +323,114 @@ Search these domains by keyword to find the right skill:
     _TOPOLOGY_DESCRIPTIONS: dict[str, str] = {
         "functional": """\
 **Functional topology** — Apple-style deep-expertise pipeline.
+Control flow is a linear sequence where each agent is a "Directly Responsible Individual" (DRI) for their phase. Quality at the source is the priority; the `ml-engineer` expects perfect data from the `data-expert`.
 
-Each role is a deep specialist. Roles execute in strict sequence; every role
-reads the outputs of all previous roles via `EXPERIMENT_STATE.json` and adds
-its own entry before passing control to the next.
-
+```mermaid
+graph LR
+    TL[team-lead] --> DE[data-expert]
+    DE --> FE[feature-engineer]
+    FE --> ME[ml-engineer]
+    ME --> EV[evaluator]
+    EV --> V[validator]
+    V --> MK[memory-keeper]
 ```
-team-lead  →  data-expert  →  feature-engineer  →  ml-engineer
-           →  evaluator    →  validator          →  memory-keeper
-```
 
-**Role responsibilities:**
-
-| Role | Session | Job |
-| --- | --- | --- |
-| `team-lead` | **Resumed** (persistent across iterations) | Read-only planner. Reads `MEMORY.md` + experiment history + data. Produces a concrete ordered experiment strategy via `ExitPlanMode`. Never writes files or runs commands. |
-| `data-expert` | Fresh | Bootstraps `src/` project scaffold (`config.py`, `data.py`, `features.py`, `models.py`, `scripts/train.py`). Performs EDA: schema, distributions, missing values, class imbalance, target leakage. Writes `EXPERIMENT_STATE.json["data_expert"]`. |
-| `feature-engineer` | Fresh | Implements the features specified in the plan: categorical encoding, numerical transforms, temporal features, interaction terms. Runs a quick 2-fold smoke test, then full CV. Prunes with SHAP importance. Writes `EXPERIMENT_STATE.json["feature_engineer"]`. |
-| `ml-engineer` | Fresh | Implements the model + CV pipeline from the plan. Installs deps (`uv add`), launches training with `nohup`, monitors `train.log`, fixes runtime errors (up to 3 retries). Confirms `OOF <metric>: <value>` line appears. Writes `EXPERIMENT_STATE.json["ml_engineer"]`. |
-| `evaluator` | Fresh (small model) | Reads `EXPERIMENT_STATE.json["ml_engineer"].oof_score`. If missing, re-parses `train.log`. If still missing, re-runs `scripts/train.py`. Verifies `artifacts/oof.npy` exists. Writes `EXPERIMENT_STATE.json["evaluator"]`. |
-| `validator` | Fresh (small model) | Impartial judge. Compares new OOF to `best_oof_score` (improvement threshold: 1e-4). Checks submission CSV format vs `sample_submission.csv`. Recommends `submit=True/False`. Signals `stop=True` only when score has genuinely plateaued (last 3 OOF within 0.001) AND score is strong. Emits structured JSON — does NOT write files. |
-| `memory-keeper` | Fresh (small model) | Rewrites `.claude/agent-memory/team-lead/MEMORY.md`. Captures: what worked ✅, what failed ❌, data insights, score history, recommended next directions. The `team-lead` reads this at the start of every iteration to build on prior knowledge. |
+| Role | Responsibility |
+| --- | --- |
+| **team-lead** | Visionary alignment. Sets the "Product" (Experiment) roadmap. |
+| **data-expert** | Data Integrity. Ensures the foundation is bulletproof. |
+| **feature-engineer** | Technical Craft. Designs the most representative signals. |
+| **ml-engineer** | Performance Engineering. Optimizes model architecture and CV. |
+| **evaluator** | QA Testing. Validates the logs and artifact existence. |
+| **validator** | Final Sign-off. Acts as the impartial judge for submission quality. |
+| **memory-keeper** | Institutional Knowledge. Documents the "why" behind every success/failure. |
 
 **Handoff contract:** Every executing role MUST write its result to `.claude/EXPERIMENT_STATE.json` as its final action. The topology reads this file to gate progression — a missing or malformed entry halts the pipeline.""",
 
         "two-pizza": """\
-**Two-pizza topology** — Amazon-style small cross-functional team (≤ 6 agents total).
+**Two-Pizza topology** — Amazon-style cross-functional ownership.
+Instead of a relay race, a `full-stack-coordinator` owns the entire execution of a "Single-Threaded Goal." They delegate to specialists but remain responsible for the "Customer Outcome" (the score).
 
-The team is intentionally small. One full-stack coordinator owns the entire
-experiment end-to-end; it delegates to specialists only when needed. No
-separate coordinator layer — the coordinator IS the worker.
-
-```
-team-lead  →  full-stack-coordinator  →  validator  →  memory-keeper
-                     │
-                     ├─ delegates to data-expert       (if scaffold missing)
-                     ├─ delegates to feature-engineer  (if feature work needed)
-                     └─ delegates to ml-engineer       (for model training)
+```mermaid
+graph TD
+    TL[team-lead] --> FSC[full-stack-coordinator]
+    FSC --> DE[data-expert]
+    FSC --> ME[ml-engineer]
+    FSC --> V[validator]
+    V --> MK[memory-keeper]
 ```
 
-**Role responsibilities:**
-
-| Role | Session | Job |
-| --- | --- | --- |
-| `team-lead` | **Resumed** (persistent) | Same as functional: read-only planner, produces strategy via `ExitPlanMode`. |
-| Full-stack coordinator | Fresh | Owns the whole experiment. Reads the plan, asseses what already exists, and decides which specialists to delegate to. Coordinates via `EXPERIMENT_STATE.json`. Minimises agent spawning — does work itself when the scope is small. |
-| `data-expert` | Fresh (spawned on demand) | Bootstraps scaffold and EDA — only spawned if `src/` is missing or incomplete. |
-| `feature-engineer` | Fresh (spawned on demand) | Feature work — only spawned if the plan includes significant feature engineering. |
-| `ml-engineer` | Fresh (spawned on demand) | Model training — always spawned for the training loop. |
-| `validator` | Fresh (small model) | Same as functional: impartial judge, submit/hold decision, stop signal. |
-| `memory-keeper` | Fresh (small model) | Same as functional: rewrites `MEMORY.md`. |
-
-**When to use:** Best for straightforward competitions where the full specialist pipeline would be wasteful. The coordinator can shortcut when steps are already done.""",
+| Role | Responsibility |
+| --- | --- |
+| **team-lead** | Principle Enforcement. Ensures the experiment follows the 16 Leadership Principles. |
+| **full-stack-coordinator** | Delivery Lead. Writes the core code, orchestrates runs, and fixes bugs in real-time. |
+| **data-expert** | On-demand support for schema/EDA bottlenecks. |
+| **ml-engineer** | On-demand support for hyperparameter tuning and CV structure. |
+| **validator** | "Bar Raiser." Impartially checks if the result is better than the current best. |
+| **memory-keeper** | Post-Mortem. Writes the "6-pager" summary into `MEMORY.md`. |""",
 
         "platform": """\
-**Platform topology** — Google/Amazon-style shared infrastructure layer.
+**Platform topology** — Google-style "Product vs Infra" layers.
+The `platform-layer` builds the tools (scaffolding, data cleaning, evaluation suites) while the `product-layer` builds the model. This allows for rapid iteration on the model without rewriting boilerplate.
 
-A platform layer provisions shared infrastructure once per iteration. Product
-agents then consume it without duplicating setup work. Think of platform
-outputs as internal APIs.
-
-```
-team-lead
-    │
-    ▼
-Platform layer (runs once, in parallel where possible)
-    ├── data-expert    →  src/ scaffold + data loading helpers + EDA report
-    └── evaluator      →  evaluation harness (scripts/evaluate.py, OOF schema)
-    │
-    ▼
-Product layer (consumes platform outputs)
-    ├── feature-engineer  →  features built on top of data-expert's data.py
-    └── ml-engineer       →  model trained using evaluator's harness
-    │
-    ▼
-validator  →  memory-keeper
+```mermaid
+graph TD
+    TL[team-lead] --> PL[Platform Layer: data-expert + evaluator]
+    PL --> PR[Product Layer: feature-engineer + ml-engineer]
+    PR --> V[validator]
+    V --> MK[memory-keeper]
 ```
 
-**Role responsibilities:**
-
-| Role | Layer | Job |
-| --- | --- | --- |
-| `team-lead` | — | Persistent planner, same as functional. |
-| `data-expert` | **Platform** | Provisions shared data infrastructure: `src/data.py`, `src/config.py`, EDA summary. Product agents import from these without re-reading raw files. |
-| `evaluator` | **Platform** | Provisions the evaluation harness: `scripts/evaluate.py`, OOF artifact schema. Ensures the evaluation contract is fixed before any model is trained. |
-| `feature-engineer` | **Product** | Builds features on top of `data-expert`'s `data.py`. Treats data loading as a stable API it cannot modify. |
-| `ml-engineer` | **Product** | Trains the model using the evaluation harness. Treats `scripts/evaluate.py` as a stable API it cannot modify. |
-| `validator` | — | Same as functional. |
-| `memory-keeper` | — | Same as functional. |
-
-**When to use:** Best for competitions where EDA and evaluation setup are expensive and should not be repeated across multiple experiment variants in the same iteration.""",
+| Role | Responsibility |
+| --- | --- |
+| **team-lead** | OKR Setting. Defines the objective for the current "Quarter" (Iteration). |
+| **platform-layer** | Tooling. `data-expert` builds the `src/` scaffold; `evaluator` builds the scoring harness. |
+| **product-layer** | Implementation. `feature-engineer` and `ml-engineer` iterate within the platform's constraints. |
+| **validator** | Launch Review. Checks if the experiment meets the "Product Requirements" (Score). |
+| **memory-keeper** | Documentation. Updates the "Internal Wiki" (`MEMORY.md`). |""",
 
         "autonomous": """\
 **Autonomous topology** — Meta-style parallel independent teams.
+The `team-lead` generates N distinct experiment plans. N mini-teams run concurrently in their own isolated environments. The `validator` selects the "Evolutionary Winner."
 
-The team-lead generates N independent, differentiated plans. N mini-teams
-(each a full functional pipeline) run concurrently via `asyncio.gather`.
-The validator picks the single best result; all successful runs are recorded.
-
-```
-team-lead  (produces N distinct plans)
-    │
-    ├── mini-team-1  (full functional pipeline for plan 1)
-    │       data-expert → feature-engineer → ml-engineer → evaluator
-    │
-    ├── mini-team-2  (full functional pipeline for plan 2)
-    │       data-expert → feature-engineer → ml-engineer → evaluator
-    │
-    └── ... × N
-    │
-validator  (compares all OOF scores, picks best)
-    │
-memory-keeper  (records all results, highlights what worked across branches)
+```mermaid
+graph TD
+    TL[team-lead] --> P1[Mini-Team A]
+    TL --> P2[Mini-Team B]
+    TL --> P3[Mini-Team C]
+    P1 & P2 & P3 --> V[validator]
+    V --> MK[memory-keeper]
 ```
 
-**Role responsibilities:**
-
-| Role | Job |
+| Role | Responsibility |
 | --- | --- |
-| `team-lead` | Produces exactly N plans. Each plan MUST be genuinely different: different model family, different feature approach, different CV strategy. Not N variations of the same thing. |
-| Each mini-team | A complete functional pipeline (data-expert → feature-engineer → ml-engineer → evaluator) working in an isolated working directory. Teams cannot see each other's intermediate files. |
-| `validator` | Receives all N `IterationResult` objects. Selects the one with the best OOF score. All results are recorded as experiments regardless of whether they win. |
-| `memory-keeper` | Records all N results, noting which branch strategy won and which failed, and why. This cross-branch comparison is especially valuable for future iterations. |
+| **team-lead** | Portfolio Manager. Diversifies the approach by generating multiple plans. |
+| **mini-teams** | Rapid Prototyping. Each team (data-expert + feature-engineer + ml-engineer) builds a full pipeline for their specific plan. |
+| **validator** | Selection Pressure. Picks the best OOF to promote to the leaderboard. |
+| **memory-keeper** | Synthesis. Aggregates findings from all parallel branches into one cohesive history. |
 
-**N is controlled by `--parallel N` CLI flag (default: 1).**
-
-**When to use:** When the search space is large and it's unclear which approach will work. Costs N× API calls per iteration.""",
+**N is controlled by `--parallel N` CLI flag (default: 1).**""",
 
         "matrix": """\
-**Matrix topology** — Microsoft-style dual-authority coordination.
+**Matrix topology** — Microsoft-style dual-authority approval.
+The `ml-engineer` executes the plan, but their work must be approved by *both* the technical lead (`team-lead`) and the science lead (`domain-expert`). This ensures no leakage and high scientific rigor.
 
-Both `team-lead` AND `domain-expert` must independently approve before the
-result advances to submission. This creates two accountability axes: technical
-correctness (team-lead) and domain/scientific correctness (domain-expert).
-
-```
-team-lead  (plan)
-    │
-ml-engineer  (implement + train)
-    │
-    ├── team-lead review      →  APPROVE or REJECT (technical review)
-    └── domain-expert review  →  APPROVE or REJECT (domain/ML correctness review)
-    │
-    (only if BOTH approve)
-    │
-evaluator  →  validator  →  memory-keeper
-
-    (if either rejects with CRITICAL issues)
-    │
-domain-expert  (fixes issues)  →  ml-engineer  (re-trains)  →  reviews again
+```mermaid
+graph TD
+    TL[team-lead] --> ME[ml-engineer]
+    DE[domain-expert] --> ME
+    ME --> Approval{Dual Review}
+    Approval --> V[validator]
+    V --> MK[memory-keeper]
 ```
 
-**Role responsibilities:**
-
-| Role | Job |
+| Role | Responsibility |
 | --- | --- |
-| `team-lead` | Persistent planner AND technical reviewer. After `ml-engineer` completes, reviews the implementation for technical correctness: does the code implement the plan faithfully? Are there obvious bugs? |
-| `ml-engineer` | Implements and trains the model. Same as functional topology. Must write `EXPERIMENT_STATE.json["ml_engineer"]` with full details for both reviewers to inspect. |
-| `domain-expert` | Domain/ML correctness reviewer. Checks for: data leakage, CV contamination, wrong metric formula, train/test mismatch, target encoding leakage, class imbalance handling, etc. Rates each issue as `CRITICAL` (blocks submission) or `WARNING` (should fix later). If it finds CRITICAL issues, it also provides the fix. |
-| `evaluator` | Only runs after both reviewers approve. Same as functional. |
-| `validator` | Same as functional. |
-| `memory-keeper` | Records reviewer feedback alongside OOF scores so future iterations benefit from accumulated domain knowledge. |
-
-**Rejection loop (CRITICAL issues found):**
-1. `domain-expert` writes fixes to source files and outputs `EXPERIMENT_STATE.json["domain_expert"]["status"] = "fixed"`.
-2. `ml-engineer` re-runs training on the fixed code.
-3. Both reviewers re-approve.
-Maximum 2 rejection cycles per iteration to prevent infinite loops.
-
-**When to use:** High-stakes competitions, scientific domains (bioinformatics, clinical, cheminformatics) where domain correctness errors are costly, or when past iterations have shown recurring logical bugs.""",
+| **team-lead** | Technical Authority. Ensures the code and logic are sound. |
+| **domain-expert** | Scientific Authority. Checks for data leakage, business logic errors, and domain validity. |
+| **ml-engineer** | Implementation Partner. Works across both leads to build a valid solution. |
+| **evaluator / validator** | Compliance. Ensures the result meets all organizational standards. |
+| **memory-keeper** | Knowledge Transfer. Shares the collaborative learnings across the "Ecosystem." |""",
     }
     topology_desc = _TOPOLOGY_DESCRIPTIONS.get(
         state.topology,
