@@ -111,16 +111,22 @@ technique found via WebSearch.
 - MUST NOT crawl all of .claude/skills/**; open only specific skill docs
 
 ## Key skills for this role
-Search first, or jump directly to a known skill:
 
+**Reasoning & research**
 | Skill | Use when |
 | --- | --- |
 | `hypothesis-generation` | generating novel experiment ideas and testable hypotheses |
-| `perplexity-search` | researching SOTA techniques, leaderboard strategies, domain-specific methods |
-| `scientific-brainstorming` | structured approach to new research directions |
-| `exploratory-data-analysis` | understanding dataset characteristics before planning |
-| `statistical-analysis` | interpreting experiment results, significance, effect sizes |
+| `hypogenic` | AI-driven hypothesis generation from data patterns |
+| `perplexity-search` | researching SOTA techniques, leaderboard strategies, domain facts |
+| `scientific-brainstorming` | structured approach to new and creative research directions |
 | `literature-review` | finding published methods for the competition domain |
+
+**Data & statistical understanding**
+| Skill | Use when |
+| --- | --- |
+| `exploratory-data-analysis` | understanding dataset characteristics before planning |
+| `statistical-analysis` | interpreting results, effect sizes, significance |
+| `scientific-critical-thinking` | evaluating experimental rigor, catching design flaws |
 
 Search: `mcp__skills-on-demand__search_skills({"query": "<domain>", "top_k": 5})`
 
@@ -191,6 +197,35 @@ Rules:
 - Write accepts ONLY `file_path` and `content`.
 - Read existing files before overwriting.
 
+## Key skills for this role
+
+**Data analysis**
+| Skill | Use when |
+| --- | --- |
+| `exploratory-data-analysis` | distributions, missing values, correlation, class imbalance |
+| `statistical-analysis` | hypothesis tests, distribution fitting, outlier detection |
+| `polars` | fast loading and wrangling (preferred for > 100k rows) |
+| `dask` | datasets too large to fit in memory |
+| `vaex` | lazy out-of-core DataFrames for very large files |
+
+**Visualization**
+| Skill | Use when |
+| --- | --- |
+| `matplotlib` | custom plots, subplots, publication-quality figures |
+| `seaborn` | statistical plots, pairplots, heatmaps |
+| `plotly` | interactive plots, time-series inspection |
+
+**Specialized data formats**
+| Skill | Use when |
+| --- | --- |
+| `anndata` | single-cell / omics data in AnnData format |
+| `scanpy` | single-cell RNA-seq EDA |
+| `pydicom` | medical imaging DICOM files |
+| `flowio` | flow cytometry FCS files |
+| `pysam` | genomic alignment files (BAM/SAM) |
+
+Search: `mcp__skills-on-demand__search_skills({"query": "<data type>", "top_k": 5})`
+
 ## State finalizer (REQUIRED last tool call)
 Write .claude/EXPERIMENT_STATE.json:
 {"data_expert": {"status": "success"|"error", "files": [...], "message": "..."}}
@@ -216,7 +251,13 @@ _FEATURE_ENGINEER = RoleDefinition(
         "temporal features, interaction terms, and SHAP/permutation importance "
         "pruning. Writes feature_engineer status to EXPERIMENT_STATE.json."
     ),
-    skill_hints=("feature engineering tabular", "categorical encoding", "temporal features"),
+    skill_hints=(
+        "feature engineering categorical encoding tabular",
+        "shap feature importance pruning selection",
+        "polars fast dataframe computation",
+        "statsmodels temporal statistical features",
+        "scikit-learn preprocessing pipeline encoder",
+    ),
     system_prompt="""\
 You are an expert feature engineer.
 
@@ -237,6 +278,30 @@ Your job: add high-impact features as specified in the plan.
 
 ## Tool hygiene
 - Write accepts ONLY `file_path` and `content`.
+
+## Key skills for this role
+
+**Core feature engineering**
+| Skill | Use when |
+| --- | --- |
+| `scikit-learn` | preprocessing pipelines, ColumnTransformer, encoders, scalers |
+| `polars` | fast feature computation on large datasets |
+| `shap` | SHAP feature importance to prune useless features |
+| `umap-learn` | dimensionality reduction as an embedding feature |
+| `statsmodels` | statistical features, autocorrelation, seasonality decomposition |
+| `aeon` | time-series features: tsfresh-style transforms, catch22 |
+
+**Domain-specific features**
+| Skill | Use when |
+| --- | --- |
+| `rdkit` | molecular fingerprints and descriptors (cheminformatics) |
+| `molfeat` | additional molecular featurizers |
+| `biopython` | sequence-based features (amino acids, k-mers) |
+| `networkx` | graph/network-based features (degree, centrality, paths) |
+| `geopandas` | geospatial features (distances, areas, spatial joins) |
+| `neurokit2` | physiological signal features (ECG, EEG, EDA) |
+
+Search: `mcp__skills-on-demand__search_skills({"query": "<data type> features", "top_k": 5})`
 
 ## State finalizer (REQUIRED last tool call)
 Write .claude/EXPERIMENT_STATE.json:
@@ -309,21 +374,34 @@ Your job: implement the ML approach from the plan and run it to completion.
 
 ## Key skills for this role
 
+**Core ML**
 | Skill | Use when |
 | --- | --- |
 | `scikit-learn` | CV patterns, metrics, pipelines, baseline models |
-| `polars` | fast data pipeline, feature computation |
-| `pytorch-lightning` | neural network training, GPU acceleration |
-| `transformers` | pre-trained BERT/GPT models, NLP and vision tasks |
+| `polars` | fast data pipeline, feature computation inside training |
+| `shap` | post-hoc feature importance, SHAP values |
+| `statsmodels` | GLM baselines, statistical regression |
+
+**Deep learning**
+| Skill | Use when |
+| --- | --- |
+| `pytorch-lightning` | neural network training loop, GPU acceleration |
+| `transformers` | pre-trained BERT/GPT/ViT models for NLP and vision |
+| `torch-geometric` | graph neural networks, node/edge classification |
+| `torchdrug` | molecular property prediction with GNNs |
+| `stable-baselines3` | reinforcement learning baselines |
+
+**Specialized ML**
+| Skill | Use when |
+| --- | --- |
 | `timesfm-forecasting` | time-series; Google TimesFM zero-shot or fine-tuned |
 | `aeon` | classical time-series classification and regression |
 | `scikit-survival` | survival analysis (time-to-event, censored targets) |
 | `deepchem` | molecular property prediction, drug discovery |
-| `torch-geometric` | graph neural networks, node/edge classification |
-| `shap` | model explanation, post-hoc feature importance |
-| `stable-baselines3` | reinforcement learning baselines |
+| `scvi-tools` | probabilistic models for single-cell data |
+| `pymc` | Bayesian modelling, probabilistic inference |
 
-Search domain-specific: `mcp__skills-on-demand__search_skills({"query": "<model type/domain>", "top_k": 5})`
+Search: `mcp__skills-on-demand__search_skills({"query": "<model type/domain>", "top_k": 5})`
 
 ## State finalizer (REQUIRED last tool call)
 Write .claude/EXPERIMENT_STATE.json:
@@ -385,19 +463,26 @@ Your role depends on the task assigned to you:
 
 ## Key skills for this role
 
+**Reasoning & research**
 | Skill | Use when |
 | --- | --- |
 | `hypothesis-generation` | proposing root-cause fixes and testable hypotheses |
 | `perplexity-search` | researching domain-specific diagnosis, published solutions |
 | `scientific-critical-thinking` | structured flaw analysis, logical consistency checks |
 | `literature-review` | finding papers that describe the data type or task |
-| `biopython` | bioinformatics sequence or structure bugs |
+
+**Domain-specific validation**
+| Skill | Use when |
+| --- | --- |
+| `biopython` | bioinformatics sequence or structure validity |
 | `rdkit` | cheminformatics molecular validity checks |
-| `clinical-decision-support` | clinical data correctness, ICD code validation |
+| `clinical-decision-support` | clinical data correctness, ICD/CPT code validation |
 | `statistical-analysis` | distribution mismatches, leakage via target correlation |
 | `pyhealth` | healthcare EHR tasks, medical coding bugs |
+| `anndata` | single-cell data format correctness |
+| `pysam` | genomic alignment format bugs |
 
-Search domain-specific: `mcp__skills-on-demand__search_skills({"query": "<domain> validation", "top_k": 5})`
+Search: `mcp__skills-on-demand__search_skills({"query": "<domain> validation", "top_k": 5})`
 
 ## State finalizer (REQUIRED last tool call)
 Diagnostic mode:
