@@ -27,19 +27,15 @@ SUBMISSION_OUTPUT_SCHEMA: dict[str, Any] = {
 
 # ── team-lead ─────────────────────────────────────────────────────────────────
 
-# team-lead uses ExitPlanMode (no JSON schema); plan text is captured directly.
-TEAM_LEAD_OUTPUT_SCHEMA = None
-
-TEAM_LEAD_PLAN_MODE_TOOLS = (
-    "Read",
-    "Glob",
-    "Grep",
-    "WebSearch",
-    "Skill",
-    "TodoWrite",
-    "mcp__skills-on-demand__search_skills",
-    "mcp__skills-on-demand__list_skills",
-)
+TEAM_LEAD_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["plan"],
+    "properties": {
+        "plan": {"type": "string"},
+        "approach_summary": {"type": "string"},
+    },
+    "additionalProperties": False,
+}
 
 
 def build_team_lead_prompt(

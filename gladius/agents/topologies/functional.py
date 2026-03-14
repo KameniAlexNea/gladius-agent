@@ -22,6 +22,7 @@ from gladius.agents.roles.catalog import ROLE_CATALOG
 from gladius.agents.roles.specs import (
     ITERATION_RESULT_SCHEMA,
     MEMORY_KEEPER_OUTPUT_SCHEMA,
+    TEAM_LEAD_OUTPUT_SCHEMA,
     VALIDATOR_OUTPUT_SCHEMA,
     build_memory_keeper_prompt,
     build_team_lead_prompt,
@@ -29,7 +30,7 @@ from gladius.agents.roles.specs import (
 )
 from gladius.agents.runtime.agent_runner import run_agent
 from gladius.agents.runtime.helpers import build_runtime_agents, get_runtime_model
-from gladius.agents.runtime.planning_runner import run_planning_agent
+
 from gladius.agents.topologies.base import BaseTopology, IterationResult
 
 if TYPE_CHECKING:
@@ -95,11 +96,12 @@ class FunctionalTopology(BaseTopology):
             n_parallel=n_parallel,
         )
         try:
-            plan_text, session_id = await run_planning_agent(
+            plan_result, session_id = await run_agent(
                 agent_name="team-lead",
                 prompt=plan_prompt,
                 system_prompt=role.system_prompt,
                 allowed_tools=list(role.tools),
+                output_schema=TEAM_LEAD_OUTPUT_SCHEMA,
                 cwd=project_dir,
                 resume=team_session_ids.get("team-lead"),
                 mcp_servers=mcp,
@@ -109,9 +111,10 @@ class FunctionalTopology(BaseTopology):
             result.error_message = str(exc)
             return result
 
+        plan_text = plan_result["plan"]
         team_session_ids["team-lead"] = session_id
         result.plan_text = plan_text
-        result.approach_summary = _first_nonblank_line(plan_text)
+        result.approach_summary = plan_result.get("approach_summary") or _first_nonblank_line(plan_text)
         result.team_session_ids = team_session_ids
 
         # Save plan to .claude/plans/

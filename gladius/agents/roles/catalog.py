@@ -21,7 +21,6 @@ class RoleDefinition:
     description: str
     system_prompt: str
     tools: tuple[str, ...]
-    is_plan_mode: bool = False
 
 
 def _parse_template(path: Path) -> RoleDefinition:
@@ -47,7 +46,6 @@ def _parse_template(path: Path) -> RoleDefinition:
         description=_get_multiline("description"),
         system_prompt=body,
         tools=tuple(t.strip() for t in tools_str.split(",") if t.strip()),
-        is_plan_mode=_get("permissionMode") == "plan",
     )
 
 

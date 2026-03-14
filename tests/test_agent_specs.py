@@ -44,15 +44,6 @@ def test_role_catalog_roles_registered_in_subagent_definitions():
     assert not missing, f"Roles missing from SUBAGENT_DEFINITIONS: {missing}"
 
 
-def test_team_lead_is_plan_mode():
-    assert ROLE_CATALOG["team-lead"].is_plan_mode is True
-
-
-def test_non_plan_mode_roles_have_tools():
-    for name, role in ROLE_CATALOG.items():
-        if not role.is_plan_mode:
-            assert role.tools, f"Role {name!r} is not plan-mode but has no tools"
-
 
 # ── build_team_lead_prompt ────────────────────────────────────────────────────
 

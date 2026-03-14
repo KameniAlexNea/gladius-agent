@@ -23,11 +23,12 @@ from loguru import logger
 from gladius.agents.roles.catalog import ROLE_CATALOG
 from gladius.agents.roles.specs import (
     ITERATION_RESULT_SCHEMA,
+    TEAM_LEAD_OUTPUT_SCHEMA,
     build_team_lead_prompt,
 )
 from gladius.agents.runtime.agent_runner import run_agent
 from gladius.agents.runtime.helpers import get_runtime_model
-from gladius.agents.runtime.planning_runner import run_planning_agent
+
 from gladius.agents.topologies.base import BaseTopology, IterationResult
 from gladius.agents.topologies.functional import (
     _build_pipeline_agent_defs,
@@ -120,11 +121,12 @@ class TwoPizzaTopology(BaseTopology):
             n_parallel=1,  # two-pizza: single plan, full team owns it
         )
         try:
-            plan_text, session_id = await run_planning_agent(
+            plan_result, session_id = await run_agent(
                 agent_name="team-lead",
                 prompt=plan_prompt,
                 system_prompt=role_lead.system_prompt,
                 allowed_tools=list(role_lead.tools),
+                output_schema=TEAM_LEAD_OUTPUT_SCHEMA,
                 cwd=project_dir,
                 resume=team_session_ids.get("team-lead"),
                 mcp_servers=mcp,
@@ -134,9 +136,10 @@ class TwoPizzaTopology(BaseTopology):
             result.error_message = str(exc)
             return result
 
+        plan_text = plan_result["plan"]
         team_session_ids["team-lead"] = session_id
         result.plan_text = plan_text
-        result.approach_summary = _first_nonblank_line(plan_text)
+        result.approach_summary = plan_result.get("approach_summary") or _first_nonblank_line(plan_text)
 
         plans_dir = Path(project_dir) / ".claude" / "plans"
         plans_dir.mkdir(parents=True, exist_ok=True)
