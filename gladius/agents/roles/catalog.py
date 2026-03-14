@@ -61,9 +61,10 @@ _TEAM_LEAD = RoleDefinition(
         "Persistent across iterations — resumes prior session context each time."
     ),
     skill_hints=(
-        "ml project setup scaffold",
-        "tabular classification",
-        "feature engineering",
+        "hypothesis generation experiment strategy",
+        "perplexity web search SOTA techniques",
+        "exploratory data analysis distribution",
+        "statistical analysis testing",
     ),
     system_prompt="""\
 You are an expert ML competition analyst and team lead.
@@ -109,6 +110,20 @@ technique found via WebSearch.
 - MUST NOT read .gladius/**
 - MUST NOT crawl all of .claude/skills/**; open only specific skill docs
 
+## Key skills for this role
+Search first, or jump directly to a known skill:
+
+| Skill | Use when |
+| --- | --- |
+| `hypothesis-generation` | generating novel experiment ideas and testable hypotheses |
+| `perplexity-search` | researching SOTA techniques, leaderboard strategies, domain-specific methods |
+| `scientific-brainstorming` | structured approach to new research directions |
+| `exploratory-data-analysis` | understanding dataset characteristics before planning |
+| `statistical-analysis` | interpreting experiment results, significance, effect sizes |
+| `literature-review` | finding published methods for the competition domain |
+
+Search: `mcp__skills-on-demand__search_skills({"query": "<domain>", "top_k": 5})`
+
 ## Mode
 You are in READ-ONLY planning mode. You NEVER:
 - Run Bash commands
@@ -139,7 +154,12 @@ _DATA_EXPERT = RoleDefinition(
         "helpers, train/test schema, target distribution, missing values, and "
         "class imbalance. Writes scaffolder status to EXPERIMENT_STATE.json."
     ),
-    skill_hints=("ml project setup scaffold", "exploratory data analysis"),
+    skill_hints=(
+        "exploratory data analysis distributions missing values",
+        "polars dataframe fast data loading",
+        "statistical analysis outlier detection",
+        "matplotlib seaborn visualization",
+    ),
     system_prompt="""\
 You are an ML data expert.
 
@@ -183,6 +203,7 @@ Write .claude/EXPERIMENT_STATE.json:
         "Grep",
         "Skill",
         "mcp__skills-on-demand__search_skills",
+        "mcp__skills-on-demand__list_skills",
     ),
 )
 
@@ -232,6 +253,7 @@ Write .claude/EXPERIMENT_STATE.json:
         "TodoWrite",
         "Skill",
         "mcp__skills-on-demand__search_skills",
+        "mcp__skills-on-demand__list_skills",
     ),
 )
 
@@ -244,7 +266,13 @@ _ML_ENGINEER = RoleDefinition(
         "evaluation, install dependencies. Fixes runtime errors until the script "
         "runs clean. Writes developer status + OOF score to EXPERIMENT_STATE.json."
     ),
-    skill_hints=("machine learning cross validation", "lightgbm xgboost training"),
+    skill_hints=(
+        "scikit-learn cross validation OOF training",
+        "pytorch lightning deep learning training",
+        "transformers NLP text classification",
+        "timesfm forecasting time series",
+        "scikit-survival survival analysis",
+    ),
     system_prompt="""\
 You are an expert ML engineer.
 
@@ -279,6 +307,24 @@ Your job: implement the ML approach from the plan and run it to completion.
 ## Tool hygiene
 - Write accepts ONLY `file_path` and `content`.
 
+## Key skills for this role
+
+| Skill | Use when |
+| --- | --- |
+| `scikit-learn` | CV patterns, metrics, pipelines, baseline models |
+| `polars` | fast data pipeline, feature computation |
+| `pytorch-lightning` | neural network training, GPU acceleration |
+| `transformers` | pre-trained BERT/GPT models, NLP and vision tasks |
+| `timesfm-forecasting` | time-series; Google TimesFM zero-shot or fine-tuned |
+| `aeon` | classical time-series classification and regression |
+| `scikit-survival` | survival analysis (time-to-event, censored targets) |
+| `deepchem` | molecular property prediction, drug discovery |
+| `torch-geometric` | graph neural networks, node/edge classification |
+| `shap` | model explanation, post-hoc feature importance |
+| `stable-baselines3` | reinforcement learning baselines |
+
+Search domain-specific: `mcp__skills-on-demand__search_skills({"query": "<model type/domain>", "top_k": 5})`
+
 ## State finalizer (REQUIRED last tool call)
 Write .claude/EXPERIMENT_STATE.json:
 {"ml_engineer": {"status": "success"|"error", "oof_score": <float|null>, "metric": "<name>", "files_modified": [...], "message": "..."}}
@@ -308,7 +354,12 @@ _DOMAIN_EXPERT = RoleDefinition(
         "Used as the second approver in matrix topology. Writes domain_expert status "
         "to EXPERIMENT_STATE.json."
     ),
-    skill_hints=("data leakage detection", "ml debugging", "scientific domain"),
+    skill_hints=(
+        "hypothesis generation diagnosis",
+        "perplexity web search domain research",
+        "scientific critical thinking evaluation",
+        "data leakage cv contamination detection",
+    ),
     system_prompt="""\
 You are an ML domain expert and research scientist.
 
@@ -332,6 +383,22 @@ Your role depends on the task assigned to you:
 ## Tool hygiene
 - Write accepts ONLY `file_path` and `content`.
 
+## Key skills for this role
+
+| Skill | Use when |
+| --- | --- |
+| `hypothesis-generation` | proposing root-cause fixes and testable hypotheses |
+| `perplexity-search` | researching domain-specific diagnosis, published solutions |
+| `scientific-critical-thinking` | structured flaw analysis, logical consistency checks |
+| `literature-review` | finding papers that describe the data type or task |
+| `biopython` | bioinformatics sequence or structure bugs |
+| `rdkit` | cheminformatics molecular validity checks |
+| `clinical-decision-support` | clinical data correctness, ICD code validation |
+| `statistical-analysis` | distribution mismatches, leakage via target correlation |
+| `pyhealth` | healthcare EHR tasks, medical coding bugs |
+
+Search domain-specific: `mcp__skills-on-demand__search_skills({"query": "<domain> validation", "top_k": 5})`
+
 ## State finalizer (REQUIRED last tool call)
 Diagnostic mode:
 {"domain_expert": {"status": "fixed"|"no_issues"|"error", "issues_addressed": [...], "files_modified": [...], "message": "..."}}
@@ -348,6 +415,7 @@ Review mode:
         "TodoWrite",
         "Skill",
         "mcp__skills-on-demand__search_skills",
+        "mcp__skills-on-demand__list_skills",
     ),
 )
 

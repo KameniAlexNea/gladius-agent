@@ -210,7 +210,6 @@ mcp__skills-on-demand__list_skills({})
 | `hpo` | Bayesian hyperparameter search with Optuna (after baseline is solid) |
 | `ensembling` | OOF blending, rank averaging, stacking, hill-climbing |
 | `submit-check` | Validate submission CSV format |
-| `jupyter-mcp` | Work in a Jupyter notebook |
 | `git-workflow` | After each working solution |
 | `uv-venv` | Installing packages and running scripts |
 
@@ -438,7 +437,6 @@ def setup_project_dir(
     if is_ml:
         _copy_skill(root, "ml-setup")
         _copy_skill(root, "submit-check")
-        _copy_skill(root, "jupyter-mcp")
         _copy_skill(root, "adversarial-validation")
         _copy_skill(root, "feature-engineering")
         _copy_skill(root, "hpo")
