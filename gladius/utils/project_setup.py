@@ -108,7 +108,7 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
             for f in state.failed_runs[-5:]
         )
 
-    # Stagnation detection — warn planner if last 3 experiments barely moved
+    # Stagnation detection — warn team lead if last 3 experiments barely moved
     stagnation_block = ""
     if state.target_metric:
         scored = [e for e in state.experiments if e.get("oof_score") is not None]
@@ -130,7 +130,7 @@ def write_claude_md(state: "CompetitionState", project_dir: str) -> None:
 > The last **{len(last3)} experiments** moved the {threshold_label} score by only
 > **{span:.4f}** (threshold: {stagnation_threshold}). Incremental tweaks are not working.
 >
-> **Planner: stop tuning. Go back to first principles.**
+> **Team lead: stop tuning. Go back to first principles.**
 > - Re-examine the task description and deliverables.
 > - Try a completely different approach or architecture.
 > - WebSearch for breakthrough techniques specific to this task type.
@@ -336,7 +336,7 @@ Search these domains by keyword to find the right skill:
 | Data directory | `{state.data_dir}` |
 | Output directory | `{state.output_dir}` |
 | Iteration | {state.iteration} / {state.max_iterations} |
-| Phase | {state.phase} |
+| Topology | {state.topology} |
 
 {perf_section}
 ## Recent Experiments
@@ -352,11 +352,9 @@ Search these domains by keyword to find the right skill:
 {skills_section}
 ## Agent Memory
 
-If you are the **planner**, read your agent memory at
-`{Path(project_dir).resolve()}/.claude/agent-memory/planner/MEMORY.md` before exploring.
-Update it with insights after each exploration session.
-
-If you are an **implementer**, focus only on executing the given plan.
+If you are the **team lead**, read your agent memory at
+`{Path(project_dir).resolve()}/.claude/agent-memory/team-lead/MEMORY.md` before planning.
+Update it with insights after each iteration.
 
 ## Project Structure
 
@@ -422,8 +420,7 @@ def setup_project_dir(
     One-time (idempotent) setup of Claude Code native config in project_dir.
 
     Creates:
-    - .claude/agents/planner.md
-    - .claude/agents/implementer.md
+    - .claude/agents/<role>.md       (one per topology role)
     - .claude/skills/<name>/SKILL.md  (one per skill)
     - .claude/settings.json           (hooks + env)
     - .mcp.json                       (MCP server registrations for CLI use)
@@ -433,8 +430,6 @@ def setup_project_dir(
     root = Path(project_dir)
     is_ml = bool(state.target_metric)
 
-    _write_agent(root, "planner")
-    _write_agent(root, "implementer")
     _write_subagents(root)
 
     # Copy all 170+ upstream scientific skills first (idempotent).
@@ -476,20 +471,19 @@ def _write_agent(root: Path, name: str) -> None:
 
 
 def _write_subagents(root: Path) -> None:
-    """Copy supplementary subagent templates into .claude/agents/ (idempotent).
+    """Copy all agent templates into .claude/agents/ (idempotent).
 
-    Handles all *.md files in templates/agents/ except planner and implementer,
-    which are managed by _write_agent() with {{GLADIUS_MODEL}} substitution.
+    All *.md files in templates/agents/ are treated as topology role agents.
     New files are only written once — existing files are preserved so teams can
     customise them without being overwritten on every run.
 
-    {{GLADIUS_SMALL_MODEL}} is substituted at copy time. Defaults to "inherit"
-    (uses whatever model the parent session is running) when the env var is unset.
+    {{GLADIUS_SMALL_MODEL}} and {{GLADIUS_MODEL}} are substituted at copy time.
+    Defaults to "inherit" / "GLADIUS_MODEL_NOT_SET" when env vars are unset.
     """
     agents_dir = root / ".claude" / "agents"
     agents_dir.mkdir(parents=True, exist_ok=True)
     small_model = os.environ.get("GLADIUS_SMALL_MODEL", "inherit")
-    managed = {"planner", "implementer"}
+    managed: set[str] = set()
     for src in sorted((_TEMPLATES / "agents").glob("*.md")):
         if src.stem in managed:
             continue
@@ -653,8 +647,8 @@ def _write_mcp_json(root: Path, platform: str = "none") -> None:
 
 
 def _make_memory_dir(root: Path, is_ml: bool) -> None:
-    """Pre-create the planner's memory directory so it exists on first run."""
-    mem_dir = root / ".claude" / "agent-memory" / "planner"
+    """Pre-create the team lead's memory directory so it exists on first run."""
+    mem_dir = root / ".claude" / "agent-memory" / "team-lead"
     mem_dir.mkdir(parents=True, exist_ok=True)
     mem_file = mem_dir / "MEMORY.md"
     if not mem_file.exists():

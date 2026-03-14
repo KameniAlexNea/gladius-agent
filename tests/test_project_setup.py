@@ -70,28 +70,22 @@ def test_setup_subagents_idempotent(tmp_path):
     )
 
 
-def test_setup_always_overwrites_implementer_not_subagents(tmp_path):
-    """implementer.md (managed template) is always overwritten; subagents are not."""
+def test_setup_all_agents_are_idempotent(tmp_path):
+    """All agent templates are written idempotently — no file is overwritten on re-run."""
     state = _state(tmp_path)
     setup_project_dir(state, str(tmp_path), platform="fake")
 
     agents_dir = tmp_path / ".claude" / "agents"
-    impl_path = agents_dir / "implementer.md"
-    original_impl = impl_path.read_text(encoding="utf-8")
-
-    # Corrupt both; only implementer should be restored.
-    impl_path.write_text("# CORRUPT\n", encoding="utf-8")
-    subagent_path = agents_dir / "ml-scaffolder.md"
-    subagent_path.write_text("# CUSTOM\n", encoding="utf-8")
+    sentinel = "# CUSTOM_SENTINEL\n"
+    for agent_path in agents_dir.glob("*.md"):
+        agent_path.write_text(sentinel, encoding="utf-8")
 
     setup_project_dir(state, str(tmp_path), platform="fake")
 
-    assert impl_path.read_text(encoding="utf-8") == original_impl, (
-        "implementer.md must always be refreshed"
-    )
-    assert subagent_path.read_text(encoding="utf-8") == "# CUSTOM\n", (
-        "ml-scaffolder.md must not be overwritten"
-    )
+    for agent_path in agents_dir.glob("*.md"):
+        assert agent_path.read_text(encoding="utf-8") == sentinel, (
+            f"{agent_path.name} was overwritten — all agents must be idempotent"
+        )
 
 
 def test_subagent_files_contain_experiment_state_reference(tmp_path):

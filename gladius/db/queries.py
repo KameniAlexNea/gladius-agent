@@ -7,8 +7,8 @@
 INSERT_COMPETITION = """
     INSERT OR IGNORE INTO competition
         (competition_id, data_dir, output_dir, target_metric,
-         metric_direction, max_iterations, max_submissions_per_day)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+         metric_direction, topology, max_iterations, max_submissions_per_day)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 # ---------------------------------------------------------------------------
@@ -17,9 +17,9 @@ INSERT_COMPETITION = """
 
 UPSERT_CURRENT_STATE = """
     INSERT OR REPLACE INTO current_state
-        (id, iteration, phase, best_oof_score, best_submission_score,
+        (id, iteration, done, best_oof_score, best_submission_score,
          best_quality_score, best_submission_path, submission_count,
-         consecutive_errors, planner_session_id, current_plan,
+         consecutive_errors, team_session_ids, current_plan,
          last_submission_date, last_stop_reason)
     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
@@ -41,8 +41,8 @@ INSERT_FAILED_RUN = """
 """
 
 INSERT_ERROR_LOG = """
-    INSERT OR IGNORE INTO error_log (iteration, phase, error)
-    VALUES (?, ?, ?)
+    INSERT OR IGNORE INTO error_log (iteration, error)
+    VALUES (?, ?)
 """
 
 INSERT_LB_SCORE = """
@@ -52,7 +52,7 @@ INSERT_LB_SCORE = """
 
 INSERT_STATE_HISTORY = """
     INSERT INTO state_history
-        (iteration, phase, best_oof_score, best_submission_score,
+        (iteration, done, best_oof_score, best_submission_score,
          best_quality_score, best_submission_path, submission_count,
          consecutive_errors, experiments_count, failed_runs_count,
          stop_reason)
@@ -76,7 +76,7 @@ SELECT_LB_SCORES = "SELECT * FROM lb_scores ORDER BY id"
 
 INSERT_AGENT_RUN = """
     INSERT INTO agent_runs
-        (iteration, phase, agent_name, started_at, duration_ms,
+        (iteration, topology, agent_name, started_at, duration_ms,
          num_turns, cost_usd, session_id, is_error, notes)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
@@ -106,6 +106,7 @@ INSERT_PLAN = """
 # ---------------------------------------------------------------------------
 
 INSERT_EVENT = """
-    INSERT INTO event_log (iteration, phase, event, detail)
+    INSERT INTO event_log (iteration, topology, event, detail)
     VALUES (?, ?, ?, ?)
 """
+

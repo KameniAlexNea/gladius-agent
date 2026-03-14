@@ -1,13 +1,9 @@
 """Agent implementations for the Gladius competition loop."""
 
-from gladius.agents.implementer import run_implementer
-from gladius.agents.planner import run_planner
-from gladius.agents.summarizer import run_summarizer
-from gladius.agents.validation import run_validation_agent
+from gladius.agents.roles.catalog import ROLE_CATALOG
+from gladius.agents.topologies import TOPOLOGY_REGISTRY
 
 __all__ = [
-    "run_planner",
-    "run_implementer",
-    "run_validation_agent",
-    "run_summarizer",
+    "ROLE_CATALOG",
+    "TOPOLOGY_REGISTRY",
 ]

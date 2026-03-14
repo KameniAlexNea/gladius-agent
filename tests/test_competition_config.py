@@ -182,3 +182,57 @@ def test_unclosed_frontmatter(tmp_path):
     readme.write_text("---\ncompetition_id: comp\n# never closed\n", encoding="utf-8")
     with pytest.raises(CompetitionConfigError, match="never closed"):
         load_competition_config(str(tmp_path))
+
+
+# ── Topology field ────────────────────────────────────────────────────────────
+
+
+def test_topology_defaults_to_functional(tmp_path):
+    write_readme(
+        tmp_path,
+        """\
+        ---
+        competition_id: comp
+        platform: fake
+        metric: auc_roc
+        direction: maximize
+        ---
+    """,
+    )
+    cfg = load_competition_config(str(tmp_path))
+    assert cfg["topology"] == "functional"
+
+
+def test_valid_topology_values(tmp_path):
+    for topology in ("functional", "two-pizza", "platform", "autonomous", "matrix"):
+        write_readme(
+            tmp_path,
+            f"""\
+            ---
+            competition_id: comp
+            platform: fake
+            metric: auc_roc
+            direction: maximize
+            topology: {topology}
+            ---
+        """,
+        )
+        cfg = load_competition_config(str(tmp_path))
+        assert cfg["topology"] == topology
+
+
+def test_invalid_topology_raises_error(tmp_path):
+    write_readme(
+        tmp_path,
+        """\
+        ---
+        competition_id: comp
+        platform: fake
+        metric: auc_roc
+        direction: maximize
+        topology: flat-hierarchy
+        ---
+    """,
+    )
+    with pytest.raises(CompetitionConfigError, match="topology"):
+        load_competition_config(str(tmp_path))

@@ -37,18 +37,18 @@ class StateStore:
     """
     SQLite-backed persistence for CompetitionState.
 
-    Schema (fully normalised — no JSON blobs except current_plan):
+    Schema (clean break — no migration columns):
       competition    — static settings, one row
-      current_state  — mutable scalars + current_plan, one row (upserted)
+      current_state  — mutable scalars + team_session_ids + current_plan, one row
       experiments    — one row per experiment
       failed_runs    — one row per failed run
       error_log      — one row per error
       lb_scores      — one row per LB entry
-      state_history  — one row per save, scalar columns only (audit log)
+      state_history  — one row per save (audit log)
       agent_runs     — per-agent call stats
       code_snapshots — file hashes per iteration
       plans          — full plan text per iteration
-      event_log      — chronological phase-transition log
+      event_log      — chronological iteration-transition log
     """
 
     def __init__(self, db_path: str = ".gladius/state.db"):
@@ -63,6 +63,7 @@ class StateStore:
         self.conn.executescript(CREATE_TABLES)
         self.conn.commit()
 
+        # MIGRATION_COLUMNS is empty for the new schema (clean break).
         for _tbl, _col, _col_def in MIGRATION_COLUMNS:
             try:
                 self.conn.execute(f"SELECT {_col} FROM {_tbl} LIMIT 1")
@@ -75,7 +76,7 @@ class StateStore:
                     f"CREATE UNIQUE INDEX IF NOT EXISTS {idx_name} ON {tbl}({cols})"
                 )
             except sqlite3.OperationalError:
-                pass  # existing duplicate rows — fall back to count-based save
+                pass
         self.conn.commit()
 
     # ── Save ──────────────────────────────────────────────────────────────────
@@ -90,6 +91,7 @@ class StateStore:
                     state.output_dir,
                     state.target_metric,
                     state.metric_direction,
+                    state.topology,
                     state.max_iterations,
                     state.max_submissions_per_day,
                 ),
@@ -99,14 +101,14 @@ class StateStore:
                 UPSERT_CURRENT_STATE,
                 (
                     state.iteration,
-                    state.phase,
+                    1 if state.done else 0,
                     state.best_oof_score,
                     state.best_submission_score,
                     state.best_quality_score,
                     state.best_submission_path,
                     state.submission_count,
                     state.consecutive_errors,
-                    state.planner_session_id,
+                    json.dumps(state.team_session_ids) if state.team_session_ids else None,
                     json.dumps(state.current_plan) if state.current_plan else None,
                     state.last_submission_date,
                     state.last_stop_reason,
@@ -156,7 +158,7 @@ class StateStore:
             for e in state.error_log[_el_offset:]:
                 self.conn.execute(
                     INSERT_ERROR_LOG,
-                    (e.get("iteration"), e.get("phase"), e.get("error")),
+                    (e.get("iteration"), e.get("error")),
                 )
 
             existing_lb = self.conn.execute(
@@ -176,7 +178,7 @@ class StateStore:
                 INSERT_STATE_HISTORY,
                 (
                     state.iteration,
-                    state.phase,
+                    1 if state.done else 0,
                     state.best_oof_score,
                     state.best_submission_score,
                     state.best_quality_score,
@@ -195,7 +197,7 @@ class StateStore:
         self,
         *,
         iteration: int,
-        phase: str,
+        topology: str = "unknown",
         agent_name: str,
         started_at: str,
         duration_ms: int,
@@ -212,7 +214,7 @@ class StateStore:
                     INSERT_AGENT_RUN,
                     (
                         iteration,
-                        phase,
+                        topology,
                         agent_name,
                         started_at,
                         duration_ms,
@@ -268,7 +270,7 @@ class StateStore:
         plan_text: str,
         session_id: str | None = None,
     ) -> None:
-        """Insert or replace the plan for this iteration (one plan per iteration)."""
+        """Insert or replace the plan for this iteration."""
         try:
             with self.conn:
                 self.conn.execute(
@@ -284,7 +286,7 @@ class StateStore:
         self,
         *,
         iteration: int,
-        phase: str,
+        topology: str = "unknown",
         event: str,
         detail: str | None = None,
     ) -> None:
@@ -293,7 +295,7 @@ class StateStore:
             with self.conn:
                 self.conn.execute(
                     INSERT_EVENT,
-                    (iteration, phase, event, detail),
+                    (iteration, topology, event, detail),
                 )
         except Exception:
             pass
@@ -301,7 +303,6 @@ class StateStore:
     # ── Load ──────────────────────────────────────────────────────────────────
 
     def load(self) -> Optional[CompetitionState]:
-        # Import here to avoid circular import (state imports StateStore).
         from gladius.state import CompetitionState
 
         comp = self.conn.execute(SELECT_COMPETITION).fetchone()
@@ -335,7 +336,7 @@ class StateStore:
         ]
 
         error_log = [
-            {"iteration": r["iteration"], "phase": r["phase"], "error": r["error"]}
+            {"iteration": r["iteration"], "error": r["error"]}
             for r in self.conn.execute(SELECT_ERROR_LOG)
         ]
 
@@ -348,23 +349,29 @@ class StateStore:
             for r in self.conn.execute(SELECT_LB_SCORES)
         ]
 
+        raw_session_ids = curr["team_session_ids"]
+        team_session_ids = (
+            json.loads(raw_session_ids) if raw_session_ids else {}
+        )
+
         return CompetitionState(
             competition_id=comp["competition_id"],
             data_dir=comp["data_dir"],
             output_dir=comp["output_dir"],
             target_metric=comp["target_metric"],
             metric_direction=comp["metric_direction"],
+            topology=comp["topology"],
             max_iterations=comp["max_iterations"],
             max_submissions_per_day=comp["max_submissions_per_day"],
             iteration=curr["iteration"],
-            phase=curr["phase"],
+            done=bool(curr["done"]),
             best_oof_score=curr["best_oof_score"],
             best_submission_score=curr["best_submission_score"],
             best_quality_score=curr["best_quality_score"],
             best_submission_path=curr["best_submission_path"],
             submission_count=curr["submission_count"],
             consecutive_errors=curr["consecutive_errors"],
-            planner_session_id=curr["planner_session_id"],
+            team_session_ids=team_session_ids,
             current_plan=(
                 json.loads(curr["current_plan"]) if curr["current_plan"] else None
             ),
@@ -385,3 +392,4 @@ class StateStore:
 
     def __del__(self) -> None:
         self.close()
+

@@ -35,8 +35,9 @@ def print_status(competition_dir: str) -> None:
     logger.info(f"  GLADIUS STATUS — {comp['competition_id']}")
     logger.info("=" * 70)
     logger.info(
-        f"  Phase        : {curr['phase']}  "
-        f"(iter {curr['iteration']}/{comp['max_iterations']})"
+        f"  Topology     : {comp.get('topology', 'functional')}  "
+        f"(iter {curr['iteration']}/{comp['max_iterations']}  "
+        f"done={'yes' if curr['done'] else 'no'})"
     )
 
     metric = comp["target_metric"]
@@ -136,7 +137,7 @@ def print_status(competition_dir: str) -> None:
         logger.info(f"  {'─' * 66}")
         for e in errs:
             logger.info(
-                f"  iter={e['iteration']}  phase={e['phase']}: {(e['error'] or '')[:80]}"
+                f"  iter={e['iteration']}: {(e['error'] or '')[:80]}"
             )
 
     logger.info("=" * 70 + "\n")

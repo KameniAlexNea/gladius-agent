@@ -26,10 +26,13 @@ class CompetitionState:
     target_metric: str | None = None  # "auc_roc" | "rmse" | "logloss" | None
     metric_direction: str | None = None  # "maximize" | "minimize" | None
 
+    # Topology: which management hierarchy is used for this competition
+    topology: str = "functional"  # functional | two-pizza | platform | autonomous | matrix
+
     # Loop control
     iteration: int = 0
     max_iterations: int = 20
-    phase: str = "planning"  # planning | implementing | validation | done
+    done: bool = False  # True when the competition run has finished
 
     # Best known performance (None = no result yet)
     best_oof_score: float | None = None
@@ -41,8 +44,13 @@ class CompetitionState:
     max_submissions_per_day: int = 5
     last_submission_date: Optional[str] = None  # ISO date (YYYY-MM-DD)
 
-    # Current plan from planner agent — stored as JSON in DB
+    # Current plan from team-lead — stored as JSON in DB
     current_plan: Optional[dict] = None
+
+    # Session IDs for all roles — each role is resumed across iterations.
+    # Key: role name (e.g. "team-lead", "domain-expert")
+    # Value: session_id string returned by the Claude SDK
+    team_session_ids: dict = field(default_factory=dict)
 
     # Experiment registry — each entry: {iteration, oof_score, submission_file, notes, approach, solution_files}
     experiments: list = field(default_factory=list)
@@ -50,12 +58,9 @@ class CompetitionState:
     # Failed run summaries — each entry: {iteration, status, error, approach}
     failed_runs: list = field(default_factory=list)
 
-    # Session ID for the planner (resumed every iteration)
-    planner_session_id: Optional[str] = None
-
     # Error tracking
     consecutive_errors: int = 0
-    error_log: list = field(default_factory=list)  # {iteration, phase, error}
+    error_log: list = field(default_factory=list)  # {iteration, error}
     last_stop_reason: Optional[str] = None
 
     # Submission gate — minimum OOF score required before a submission is built.

@@ -553,17 +553,32 @@ Use only Read, Grep, and any MCP quota tools provided.""",
 # precedence over .claude/agents/*.md and subagents inherit the session's
 # permission mode (bypassPermissions from the coordinator).
 
+from gladius.agents.roles.catalog import ROLE_CATALOG as _ROLE_CATALOG
+
 SUBAGENT_DEFINITIONS: dict[str, AgentDefinition] = {
-    # Top-level agents (run directly via run_agent / run_planning_agent)
+    # Legacy agents (kept for backward compat; will be removed in Phase 7)
     "planner": _PLANNER_AGENT_DEF,
     "implementer": _IMPLEMENTER_AGENT_DEF,
     "summarizer": _SUMMARIZER_AGENT_DEF,
     "validation": _VALIDATION_AGENT_DEF,
-    # Worker subagents spawned by the implementer coordinator
+    # Legacy worker subagents spawned by the implementer coordinator
     "ml-scaffolder": _ML_SCAFFOLDER_DEF,
     "ml-developer": _ML_DEVELOPER_DEF,
     "ml-scientist": _ML_SCIENTIST_DEF,
     "ml-evaluator": _ML_EVALUATOR_DEF,
     "code-reviewer": _CODE_REVIEWER_DEF,
     "submission-builder": _SUBMISSION_BUILDER_DEF,
+    # Role-based agents from the topology system (Phase 3 refactoring).
+    # These are wired in here so that tool-delegation policies and the
+    # agents= registry in ClaudeAgentOptions are populated for every
+    # topology call that goes through run_agent() / build_runtime_agents().
+    **{
+        name: AgentDefinition(
+            description=role.description,
+            prompt=role.system_prompt,
+            tools=list(role.tools),
+            model=_model,
+        )
+        for name, role in _ROLE_CATALOG.items()
+    },
 }

@@ -10,6 +10,7 @@ block at the very top:
     metric: auc_roc           # optional — omit for open/app tasks
     direction: maximize       # required when metric is set: maximize | minimize
     data_dir: data            # optional — relative to competition dir, or absolute
+    topology: functional      # functional | two-pizza | platform | autonomous | matrix  (default: functional)
     ---
 
 Fields:
@@ -22,6 +23,12 @@ Fields:
   data_dir          (optional, default: "data") — path to the data folder.
                                     Resolved to an absolute path; existence is validated later
                                     by runtime components that actually read the files.
+  topology          (optional, default: "functional") — management hierarchy for the agent team:
+                      functional  — Apple-style deep-expertise pipeline (sequential roles)
+                      two-pizza   — Amazon-style small cross-functional team (≤6 agents, each owns a full slice)
+                      platform    — Google/Amazon-style platform layer providing shared infra to product agents
+                      autonomous  — Meta-style: multiple independent mini-teams run in parallel, best wins
+                      matrix      — Microsoft-style: domain-expert + team-lead both approve before advancing
 
 The rest of the README is the human-readable task description that agents
 also read for context. For open-ended tasks this is the primary source of
@@ -95,6 +102,15 @@ def load_competition_config(competition_dir: str) -> dict:
     # Normalise absent metric/direction to None (str coercion may have made them "None")
     cfg["metric"] = cfg.get("metric") or None
     cfg["direction"] = cfg.get("direction") or None
+
+    # topology: which management hierarchy to use (default: functional)
+    _VALID_TOPOLOGIES = ("functional", "two-pizza", "platform", "autonomous", "matrix")
+    topology = cfg.get("topology") or "functional"
+    if topology not in _VALID_TOPOLOGIES:
+        raise CompetitionConfigError(
+            f"topology must be one of {' | '.join(_VALID_TOPOLOGIES)}, got {topology!r}"
+        )
+    cfg["topology"] = topology
 
     # submission_threshold: optional numeric gate
     raw_threshold = cfg.get("submission_threshold")
