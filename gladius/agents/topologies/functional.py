@@ -147,7 +147,7 @@ class FunctionalTopology(BaseTopology):
             impl_result, impl_session = await run_agent(
                 agent_name="functional-coordinator",
                 prompt=coordinator_prompt,
-                system_prompt=_COORDINATOR_SYSTEM_PROMPT,
+                system_prompt=ROLE_CATALOG["functional-coordinator"].system_prompt,
                 allowed_tools=[
                     f"Agent({','.join(self.PIPELINE)})",
                     "Read",
@@ -318,32 +318,6 @@ class FunctionalTopology(BaseTopology):
 
 # ── Coordinator agent (runs the pipeline via Agent() tool) ────────────────────
 
-_COORDINATOR_SYSTEM_PROMPT = """\
-You are the functional pipeline coordinator.
-
-Your job: run a complete ML experiment by delegating to specialist agents in
-strict sequence: data-expert → feature-engineer → ml-engineer → evaluator.
-
-After each agent completes, READ .claude/EXPERIMENT_STATE.json to check status
-before spawning the next agent. If a status is "error", do NOT advance; report
-the experiment as failed.
-
-Pipeline contract:
-- data-expert     → sets up scaffold; writes data_expert.status
-- feature-engineer → adds features; writes feature_engineer.status
-- ml-engineer     → trains model; writes ml_engineer.status + oof_score
-- evaluator       → confirms score; writes evaluator.status + oof_score
-
-Always pass the current EXPERIMENT_STATE.json contents in the task prompt.
-Emit StructuredOutput when the pipeline completes (success or error).
-
-STRICT RULES:
-- NEVER modify CLAUDE.md.
-- Only write to .claude/EXPERIMENT_STATE.json — no other files directly.
-- Read a file before rewriting it.
-- Once StructuredOutput is emitted, stop immediately.
-"""
-
 
 def _build_coordinator_prompt(
     plan_text: str,
@@ -356,13 +330,12 @@ Metric: {state.target_metric or 'open-ended'}  Direction: {state.metric_directio
 Data dir: {state.data_dir}
 Best OOF so far: {state.best_oof_score}
 
-Pipeline roles: {' → '.join(pipeline_roles)}
-
 ## Plan for this iteration
 {plan_text}
 
-Run the pipeline in order. Check EXPERIMENT_STATE.json after each agent.
-Report final results via StructuredOutput.
+Spawn agents in order: {' → '.join(pipeline_roles)}
+After each agent: read .claude/EXPERIMENT_STATE.json, check status, then spawn next.
+When evaluator finishes: emit StructuredOutput with the final oof_score.
 """
 
 

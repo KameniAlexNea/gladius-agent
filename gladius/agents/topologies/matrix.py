@@ -37,7 +37,6 @@ from gladius.agents.runtime.helpers import get_runtime_model
 
 from gladius.agents.topologies.base import BaseTopology, IterationResult
 from gladius.agents.topologies.functional import (
-    _COORDINATOR_SYSTEM_PROMPT,
     _build_coordinator_prompt,
     _build_pipeline_agent_defs,
     _first_nonblank_line,
@@ -60,31 +59,6 @@ _TECHNICAL_REVIEW_SCHEMA = {
     },
     "additionalProperties": False,
 }
-
-_TECHNICAL_REVIEW_SYSTEM_PROMPT = """\
-You are the technical lead reviewer (team-lead in review mode).
-
-Your job: review the ML experiment outcome from a technical perspective.
-Approve if the code runs correctly and the results are technically sound.
-Reject if there are execution failures, invalid OOF scores, or structural problems.
-
-Emit structured output: {"decision": "approve"|"reject", "critical_issues": [...], "warnings": [...], "reasoning": "..."}
-"""
-
-_DOMAIN_REVIEW_SYSTEM_PROMPT = """\
-You are the domain expert reviewer.
-
-Your job: review the ML experiment from a domain/scientific perspective.
-Check for:
-- Data leakage or CV contamination
-- Scientifically invalid features/assumptions
-- Wrong metric or target encoding
-- Train/test distribution issues
-
-Approve if no CRITICAL scientific flaws. Reject otherwise.
-
-Emit structured output: {"decision": "approve"|"reject", "critical_issues": [...], "warnings": [...], "reasoning": "..."}
-"""
 
 
 def _build_review_prompt(
@@ -198,7 +172,7 @@ class MatrixTopology(BaseTopology):
                         state=state,
                         pipeline_roles=pipeline_roles,
                     ),
-                    system_prompt=_COORDINATOR_SYSTEM_PROMPT,
+                    system_prompt=ROLE_CATALOG["functional-coordinator"].system_prompt,
                     allowed_tools=[
                         f"Agent({','.join(pipeline_roles)})",
                         "Read",
@@ -243,7 +217,7 @@ class MatrixTopology(BaseTopology):
                     tech_out, _ = await run_agent(
                         agent_name="technical-review",
                         prompt=review_prompt,
-                        system_prompt=_TECHNICAL_REVIEW_SYSTEM_PROMPT,
+                        system_prompt=ROLE_CATALOG["technical-review"].system_prompt,
                         allowed_tools=["Read", "Glob", "Grep", "Bash"],
                         output_schema=_TECHNICAL_REVIEW_SCHEMA,
                         cwd=project_dir,
@@ -262,7 +236,7 @@ class MatrixTopology(BaseTopology):
                     dom_out, _ = await run_agent(
                         agent_name="domain-review",
                         prompt=review_prompt,
-                        system_prompt=_DOMAIN_REVIEW_SYSTEM_PROMPT,
+                        system_prompt=ROLE_CATALOG["domain-review"].system_prompt,
                         allowed_tools=[
                             "Read",
                             "Glob",

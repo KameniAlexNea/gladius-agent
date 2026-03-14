@@ -54,6 +54,7 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
     for role in (
         _parse_template(_TEMPLATES / f"{name}.md")
         for name in (
+            # Worker roles (spawned as subagents)
             "team-lead",
             "data-expert",
             "feature-engineer",
@@ -62,6 +63,13 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
             "evaluator",
             "validator",
             "memory-keeper",
+            # Coordinator roles (spawned directly by run_agent)
+            "functional-coordinator",
+            "two-pizza-agent",
+            "platform-layer",
+            "product-layer",
+            "technical-review",
+            "domain-review",
         )
     )
 }

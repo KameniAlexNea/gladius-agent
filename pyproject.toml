@@ -49,3 +49,8 @@ include = ["gladius*"]
 
 [tool.setuptools.package-data]
 "gladius.utils" = ["templates/**/*"]
+
+[tool.uv.workspace]
+members = [
+    "examples/data_dog",
+]

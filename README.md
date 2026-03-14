@@ -41,7 +41,7 @@ All roles are defined in `ROLE_CATALOG` (`gladius/agents/roles/catalog.py`). Eac
 
 | Role | Mode | Session | Purpose |
 |---|---|---|---|
-| `team-lead` | plan (read-only) | **Resumed** across iterations | Reads MEMORY.md + experiment history; produces ordered experiment strategy via ExitPlanMode |
+| `team-lead` | read-only execute | **Resumed** across iterations | Reads MEMORY.md + experiment history; produces ordered experiment strategy as structured JSON `{"plan", "approach_summary"}` |
 | `data-expert` | execute | Fresh per iteration | Bootstraps `src/` project scaffold; EDA — schema, distributions, missing values, class balance |
 | `feature-engineer` | execute | Fresh per iteration | Categorical encoding, numerical transforms, temporal features, interaction terms, SHAP pruning |
 | `ml-engineer` | execute | Fresh per iteration | Model training, CV, OOF evaluation; install deps; write-run-fix loop until script runs clean |
@@ -84,7 +84,7 @@ Bootstrapped on first run (idempotent — safe to re-run on resume). Templates l
 ```
 .claude/
   agents/
-    team-lead.md             — plan mode: Read, Glob, Grep, WebSearch, Skill, mcp tools
+    team-lead.md             — read-only execute: Read, Glob, Grep, WebSearch, Skill, mcp tools
     data-expert.md           — execute: Read, Write, Bash, Skill, mcp tools
     feature-engineer.md      — execute: Read, Write, Edit, Bash, Skill, mcp tools
     ml-engineer.md           — execute: Read, Write, Edit, Bash, Skill, mcp tools
@@ -266,7 +266,7 @@ gladius/
   agents/
     _agent_defs.py         — SUBAGENT_DEFINITIONS bridge (thin wrapper over ROLE_CATALOG)
     roles/
-      catalog.py           — ROLE_CATALOG: 8 RoleDefinition frozen dataclasses
+      catalog.py           — ROLE_CATALOG: 14 RoleDefinition frozen dataclasses (8 workers + 6 coordinators)
       specs.py             — Shared prompt builders + output JSON schemas
     topologies/
       functional.py        — Apple-style sequential pipeline
@@ -275,8 +275,7 @@ gladius/
       autonomous.py        — Meta-style parallel mini-teams
       matrix.py            — Microsoft-style dual-authority approval
     runtime/
-      agent_runner.py      — run_agent(): streaming, retry, DB timing
-      planning_runner.py   — run_planning_agent(): plan-mode, resumed session
+      agent_runner.py      — run_agent(): streaming, retry, DB timing (all roles)
       helpers.py           — build_runtime_agents(), small-model routing
   tools/
     fake_platform_tools.py — Offline scoring MCP server (AUC-ROC vs answer key)
@@ -290,7 +289,7 @@ gladius/
     competition_config.py  — Reads YAML frontmatter from competition README.md
     project_setup.py       — Bootstraps .claude/ layout, copies skills + agent files, writes CLAUDE.md
     templates/
-      agents/              — one .md per role (8 total)
+      agents/              — one .md per role (14 total: 8 workers + 6 coordinators)
       skills/              — one .md per bundled skill
       hooks/               — after_edit.sh, validate_bash.sh
       memory/              — MEMORY.md starter template
@@ -323,11 +322,11 @@ gladius --competition-dir examples/fake_competition --iterations 1 --no-resume
 
 1. **Topology-driven — not hard-coded phases.** The orchestrator selects a management topology (functional, two-pizza, platform, autonomous, matrix) from the competition config and calls `topology.run_iteration()`. All agent coordination lives inside the topology class; the orchestrator loop is a thin wrapper that acts on the returned `IterationResult`.
 
-2. **ROLE_CATALOG is the single source of truth.** All 8 agent roles are declared as frozen `RoleDefinition` dataclasses in `catalog.py`. Topologies wire them together differently; the roles themselves never change.
+2. **ROLE_CATALOG is the single source of truth.** All 14 agent roles (8 workers + 6 coordinators) are declared as frozen `RoleDefinition` dataclasses loaded from `templates/agents/*.md`. Topologies wire them together differently; the roles themselves never change.
 
 3. **One persistent role, rest are fresh.** `team-lead` resumes its Claude SDK session across iterations — it accumulates deep competition context in memory. Every other role starts fresh, ensuring clean context for each phase.
 
-4. **Strict plan mode for the team-lead.** `team-lead` runs in `permissionMode: plan` with a `can_use_tool` callback that blocks `Bash`, `Write`, `Edit`, and `Task`. Planning is purely read-only; the only output channel is `ExitPlanMode`.
+4. **Read-only planning for the team-lead.** `team-lead` runs via `run_agent()` with a tool allowlist that restricts it to `Read`, `Glob`, `Grep`, `WebSearch`, and `Skill`. It produces its plan as structured JSON `{"plan", "approach_summary"}` via a JSON schema output constraint — no `Bash`, `Write`, or `Task` calls possible.
 
 5. **Artifact handshake, not free-text routing.** After each role completes it writes `.claude/EXPERIMENT_STATE.json`. The topology reads this structured JSON to determine what to do next — no parsing of conversation text.
 

@@ -19,16 +19,17 @@ to the downstream agents.
 2. Search: `mcp__skills-on-demand__search_skills({"query": "ml project setup scaffold", "top_k": 3})`
 3. Load best match with `Skill({"skill": "<name>"})`.
 
-## Scaffold tasks
-1. Create src/__init__.py, src/config.py, src/data.py, src/features.py, src/models.py.
-2. Create scripts/train.py: trains a simple baseline, saves artifacts/oof.npy, prints 'OOF <metric>: <value>'.
-3. Create scripts/evaluate.py: reloads OOF predictions and prints the metric score.
+## Your scope — ONLY these tasks
+1. Create src/__init__.py, src/config.py (paths, seed, target, metric), src/data.py (load + CV utilities).
+2. Run EDA: data shape, column types, missing values, target distribution, class imbalance, any obvious leakage.
+3. Install data-loading packages only: `uv add pandas numpy`.
 
-Rules:
-- If src/ already exists and looks complete, set status='skipped'.
-- Use pathlib; no hardcoded absolute paths. random_state=42.
-- Do NOT install packages.
+## HARD BOUNDARY — NEVER do any of the following
+- Do NOT write src/features.py, src/models.py, scripts/train.py, scripts/evaluate.py.
+- Do NOT run training scripts.
+- Do NOT install ML model packages (lightgbm, xgboost, sklearn beyond data loading).
+- feature engineering, model training, and evaluation belong to downstream agents.
 
 ## State finalizer (REQUIRED last action)
 Write .claude/EXPERIMENT_STATE.json:
-{"data_expert": {"status": "success"|"error", "files": [...], "message": "..."}}
+{"data_expert": {"status": "success"|"error", "files": [...], "eda_summary": "...", "message": "..."}}

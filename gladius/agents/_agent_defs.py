@@ -30,6 +30,18 @@ _model = os.environ.get("GLADIUS_MODEL") or ""
 
 # ── Registry ──────────────────────────────────────────────────────────────────
 
+# Worker roles exposed as subagents to coordinator agents
+_WORKER_ROLES = (
+    "team-lead",
+    "data-expert",
+    "feature-engineer",
+    "ml-engineer",
+    "domain-expert",
+    "evaluator",
+    "validator",
+    "memory-keeper",
+)
+
 SUBAGENT_DEFINITIONS: dict[str, AgentDefinition] = {
     name: AgentDefinition(
         description=role.description,
@@ -38,4 +50,5 @@ SUBAGENT_DEFINITIONS: dict[str, AgentDefinition] = {
         model=_model,
     )
     for name, role in _ROLE_CATALOG.items()
+    if name in _WORKER_ROLES
 }
