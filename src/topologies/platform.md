@@ -4,8 +4,7 @@ style: Google — Product vs Infra layers
 flow: team-lead → platform-layer (data-expert + evaluator) → product-layer (feature-engineer + ml-engineer) → validator → memory-keeper
 ---
 
-**Platform topology** — Google-style "Product vs Infra" layers.
-The `platform-layer` builds the tools (scaffolding, data cleaning, evaluation suites) while the `product-layer` builds the model. This allows for rapid iteration on the model without rewriting boilerplate.
+**Platform topology** — infrastructure is provisioned once; product agents consume it without duplicating setup.
 
 ```mermaid
 graph TD
@@ -15,12 +14,25 @@ graph TD
     V --> MK[memory-keeper]
 ```
 
-| Role | Responsibility |
-| --- | --- |
-| **team-lead** | OKR Setting. Defines the objective for the current "Quarter" (Iteration). |
-| **platform-layer** | Tooling. `data-expert` builds the `src/` scaffold; `evaluator` builds the scoring harness. |
-| **product-layer** | Implementation. `feature-engineer` and `ml-engineer` iterate within the platform's constraints. |
-| **validator** | Launch Review. Checks if the experiment meets the "Product Requirements" (Score). |
-| **memory-keeper** | Documentation. Updates the "Internal Wiki" (`MEMORY.md`). |
+### How this iteration works
 
-**Handoff contract:** Every executing role MUST write its result to `.claude/EXPERIMENT_STATE.json` as its final action. The topology reads this file to gate progression — a missing or malformed entry halts the pipeline.
+1. **team-lead** reads `MEMORY.md` + experiment history, outputs `{"plan": "...", "approach_summary": "..."}`.
+2. **platform-layer** (coordinator) runs **data-expert** to build `src/` scaffold and `src/data.py`. Confirms `scripts/train.py` exposes the `OOF <metric>: <value>` print contract. Writes `EXPERIMENT_STATE.json["platform"]`.
+3. **product-layer** (coordinator) reads the plan + platform outputs, runs **feature-engineer** then **ml-engineer**. Writes `EXPERIMENT_STATE.json["product"]`.
+4. **validator** compares OOF to best score, checks submission format. Emits structured JSON — does NOT write files.
+5. **memory-keeper** rewrites `.claude/agent-memory/team-lead/MEMORY.md`.
+
+### Handoff contract — EXPERIMENT_STATE.json
+
+```json
+{
+  "platform": {"status": "success", "scaffold_files": [...], "train_contract_verified": true},
+  "data_expert":      {"status": "success", "files": [...], "eda_summary": "..."},
+  "product":          {"status": "success", "oof_score": 0.0},
+  "feature_engineer": {"status": "success", "features_added": [...]},
+  "ml_engineer":      {"status": "success", "oof_score": 0.0, "metric": "f1-score", "files_modified": [...]},
+  "evaluator":        {"status": "success", "oof_score": 0.0, "metric": "f1-score"}
+}
+```
+
+**Rule:** Product agents treat `src/data.py` and the train print contract as stable APIs — they must not modify them.

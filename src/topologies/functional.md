@@ -4,8 +4,7 @@ style: Apple — deep-expertise pipeline
 flow: team-lead → data-expert → feature-engineer → ml-engineer → evaluator → validator → memory-keeper
 ---
 
-**Functional topology** — Apple-style deep-expertise pipeline.
-Control flow is a linear sequence where each agent is a "Directly Responsible Individual" (DRI) for their phase. Quality at the source is the priority; the `ml-engineer` expects perfect data from the `data-expert`.
+**Functional topology** — sequential pipeline, each role hands off to the next via `EXPERIMENT_STATE.json`.
 
 ```mermaid
 graph LR
@@ -17,14 +16,27 @@ graph LR
     V --> MK[memory-keeper]
 ```
 
-| Role | Responsibility |
-| --- | --- |
-| **team-lead** | Visionary alignment. Sets the "Product" (Experiment) roadmap. |
-| **data-expert** | Data Integrity. Ensures the foundation is bulletproof. |
-| **feature-engineer** | Technical Craft. Designs the most representative signals. |
-| **ml-engineer** | Performance Engineering. Optimizes model architecture and CV. |
-| **evaluator** | QA Testing. Validates the logs and artifact existence. |
-| **validator** | Final Sign-off. Acts as the impartial judge for submission quality. |
-| **memory-keeper** | Institutional Knowledge. Documents the "why" behind every success/failure. |
+### How this iteration works
 
-**Handoff contract:** Every executing role MUST write its result to `.claude/EXPERIMENT_STATE.json` as its final action. The topology reads this file to gate progression — a missing or malformed entry halts the pipeline.
+1. **team-lead** reads `MEMORY.md` + experiment history, outputs `{"plan": "...", "approach_summary": "..."}`.
+2. **data-expert** reads the plan, sets up `src/` scaffold, runs EDA. Writes `EXPERIMENT_STATE.json["data_expert"]`.
+3. **feature-engineer** reads the plan + `src/data.py`, implements features in `src/features.py`. Writes `EXPERIMENT_STATE.json["feature_engineer"]`.
+4. **ml-engineer** reads the plan + `src/`, writes `src/models.py` + `scripts/train.py`, runs training, saves `artifacts/oof.npy`. Writes `EXPERIMENT_STATE.json["ml_engineer"]`.
+5. **evaluator** confirms `OOF <metric>: <value>` appears in `train.log`, verifies `artifacts/oof.npy`. Writes `EXPERIMENT_STATE.json["evaluator"]`.
+6. **validator** compares OOF to best score, checks submission format. Emits structured JSON — does NOT write files.
+7. **memory-keeper** rewrites `.claude/agent-memory/team-lead/MEMORY.md`.
+
+### Handoff contract — EXPERIMENT_STATE.json
+
+Every executing role MUST write its entry as its **final action**. The topology stops if an entry is missing or `status != "success"`.
+
+```json
+{
+  "data_expert":      {"status": "success", "files": [...], "eda_summary": "..."},
+  "feature_engineer": {"status": "success", "features_added": [...]},
+  "ml_engineer":      {"status": "success", "oof_score": 0.0, "metric": "f1-score", "files_modified": [...]},
+  "evaluator":        {"status": "success", "oof_score": 0.0, "metric": "f1-score"}
+}
+```
+
+**Rule:** Read `EXPERIMENT_STATE.json` at startup to see what previous roles already completed. Do not redo work that is already marked `"success"`.
