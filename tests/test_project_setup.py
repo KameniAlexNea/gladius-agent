@@ -7,12 +7,14 @@ from gladius.state import CompetitionState
 from gladius.utils.project_setup import setup_project_dir
 
 _SUBAGENT_NAMES = {
-    "ml-scaffolder",
-    "ml-developer",
-    "ml-evaluator",
-    "code-reviewer",
-    "ml-scientist",
-    "submission-builder",
+    "team-lead",
+    "data-expert",
+    "feature-engineer",
+    "ml-engineer",
+    "domain-expert",
+    "evaluator",
+    "validator",
+    "memory-keeper",
 }
 
 
@@ -60,13 +62,13 @@ def test_setup_subagents_idempotent(tmp_path):
     )
     # Corrupt one subagent file to verify it is preserved on re-run.
     sentinel = "# CUSTOM_SENTINEL\n"
-    target = agents_dir / "ml-developer.md"
+    target = agents_dir / "ml-engineer.md"
     target.write_text(sentinel, encoding="utf-8")
 
     setup_project_dir(state, str(tmp_path), platform="fake")
 
     assert target.read_text(encoding="utf-8") == sentinel, (
-        "ml-developer.md was overwritten — subagents must be idempotent"
+        "ml-engineer.md was overwritten — subagents must be idempotent"
     )
 
 
@@ -89,14 +91,24 @@ def test_setup_all_agents_are_idempotent(tmp_path):
 
 
 def test_subagent_files_contain_experiment_state_reference(tmp_path):
-    """Every subagent template must reference EXPERIMENT_STATE.json (artifact protocol)."""
+    """Executing roles must reference EXPERIMENT_STATE.json (artifact protocol).
+    team-lead (plan-only), validator (read-only), and memory-keeper (writes MEMORY.md)
+    are exempt — they never touch EXPERIMENT_STATE.json by design.
+    """
+    _EXECUTOR_ROLES = {
+        "data-expert",
+        "feature-engineer",
+        "ml-engineer",
+        "domain-expert",
+        "evaluator",
+    }
     state = _state(tmp_path)
     setup_project_dir(state, str(tmp_path), platform="fake")
 
     agents_dir = tmp_path / ".claude" / "agents"
     missing = [
         name
-        for name in _SUBAGENT_NAMES
+        for name in _EXECUTOR_ROLES
         if "EXPERIMENT_STATE"
         not in (agents_dir / f"{name}.md").read_text(encoding="utf-8")
     ]
@@ -110,7 +122,7 @@ def test_subagent_small_model_default_is_inherit(tmp_path, monkeypatch):
     setup_project_dir(state, str(tmp_path), platform="fake")
 
     agents_dir = tmp_path / ".claude" / "agents"
-    for name in ("ml-scaffolder", "ml-evaluator"):
+    for name in ("evaluator", "memory-keeper", "validator"):
         content = (agents_dir / f"{name}.md").read_text(encoding="utf-8")
         assert "model: inherit" in content, (
             f"{name}.md should default to model: inherit"
@@ -119,13 +131,13 @@ def test_subagent_small_model_default_is_inherit(tmp_path, monkeypatch):
 
 
 def test_subagent_small_model_env_var_substituted(tmp_path, monkeypatch):
-    """GLADIUS_SMALL_MODEL env var is substituted into the scaffolder/evaluator templates."""
+    """GLADIUS_SMALL_MODEL env var is substituted into the small-model role templates."""
     monkeypatch.setenv("GLADIUS_SMALL_MODEL", "claude-haiku-4-5")
     state = _state(tmp_path)
     setup_project_dir(state, str(tmp_path), platform="fake")
 
     agents_dir = tmp_path / ".claude" / "agents"
-    for name in ("ml-scaffolder", "ml-evaluator"):
+    for name in ("evaluator", "validator", "memory-keeper"):
         content = (agents_dir / f"{name}.md").read_text(encoding="utf-8")
         assert "model: claude-haiku-4-5" in content, (
             f"{name}.md should contain the substituted model name"
