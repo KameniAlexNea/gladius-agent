@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-_TEMPLATES = Path(__file__).parent
+_TEMPLATES = Path(__file__).parent / "templates"
 
 ROLES = (
     "team-lead",
@@ -85,7 +85,7 @@ __all__ = ["ROLE_CATALOG", "RoleDefinition", "ROLES", "copy"]
 
 import sys  # noqa: E402
 
-_ROLES_DIR = Path(__file__).parent
+_ROLES_DIR = Path(__file__).parent / "templates"
 
 
 def copy(dst: Path, spec: str | list, model: str, small_model: str, *, force: bool = False) -> None:

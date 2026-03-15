@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-_TEMPLATES = Path(__file__).parent
+_TEMPLATES = Path(__file__).parent / "templates"
 
 
 @dataclass(frozen=True)
