@@ -87,6 +87,29 @@ def load_config(path: str | Path) -> dict[str, Any]:
     mcp_cfg.setdefault("extra", {})
     raw.setdefault("force", False)
 
+    raw.setdefault("default_mode", "acceptEdits")
+    s = raw.setdefault("settings", {})
+    s.setdefault("permissions_allow", [
+        "Bash(uv *)",
+        "Bash(python *)", "Bash(python3 *)",
+        "Bash(ls *)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)",
+        "Bash(grep *)", "Bash(find *)", "Bash(wc *)", "Bash(sort *)", "Bash(unzip *)",
+        "Bash(nohup *)", "Bash(ps *)", "Bash(kill *)", "Bash(wait *)",
+        "Bash(mkdir *)", "Bash(cp *)", "Bash(mv *)", "Bash(touch *)", "Bash(chmod +x *)",
+        "Bash(git status)", "Bash(git diff *)", "Bash(git log *)",
+        "Bash(git add *)", "Bash(git commit *)",
+        "Bash(echo *)", "Bash(which *)", "Bash(pwd)", "Bash(source *)",
+        "Bash(* --help *)", "Bash(* --version)",
+    ])
+    s.setdefault("permissions_deny", [
+        "Bash(rm *)",
+        "Bash(sudo *)",
+        "Bash(git push *)", "Bash(git reset --hard *)", "Bash(git clean *)",
+        "Bash(pip *)", "Bash(pip3 *)",
+        "Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(~/.gnupg/**)", "Read(~/.env)",
+    ])
+    s.setdefault("additional_directories", [])
+
     return raw
 
 
@@ -126,15 +149,26 @@ def _copy_hooks(root: Path, *, force: bool) -> None:
 
 def _write_settings(root: Path, cfg: dict) -> None:
     import json
+    s = cfg["settings"]
+    extra_dirs = list(s["additional_directories"] or [])
+    if cfg["data_dir"] not in extra_dirs:
+        extra_dirs = [cfg["data_dir"]] + extra_dirs
     settings = {
         "model": cfg["model"],
+        "defaultMode": cfg["default_mode"],
         "env": {
             "COMPETITION_ID": cfg["competition_id"],
             "TARGET_METRIC": cfg["metric"] or "",
             "METRIC_DIRECTION": cfg["direction"] or "",
             "DATA_DIR": cfg["data_dir"],
             "TOPOLOGY": cfg["topology"],
+            "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
         },
+        "permissions": {
+            "allow": s["permissions_allow"],
+            "deny": s["permissions_deny"],
+        },
+        "additionalDirectories": extra_dirs,
         "hooks": {
             "PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "scripts/after_edit.sh"}]}],
             "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "scripts/validate_bash.sh"}]}],

@@ -85,6 +85,60 @@ mcp:
   #     env:
   #       MY_VAR: value
 
+# ── Claude Code settings ─────────────────────────────────────────────────────
+
+default_mode: acceptEdits         # acceptEdits | bypassPermissions | plan | dontAsk
+
+settings:
+  additional_directories: []      # extra dirs the agent can read (data_dir always added)
+
+  permissions_allow:
+    - "Bash(uv *)"
+    - "Bash(python *)"
+    - "Bash(python3 *)"
+    - "Bash(ls *)"
+    - "Bash(cat *)"
+    - "Bash(head *)"
+    - "Bash(tail *)"
+    - "Bash(grep *)"
+    - "Bash(find *)"
+    - "Bash(wc *)"
+    - "Bash(sort *)"
+    - "Bash(unzip *)"
+    - "Bash(nohup *)"
+    - "Bash(ps *)"
+    - "Bash(kill *)"
+    - "Bash(wait *)"
+    - "Bash(mkdir *)"
+    - "Bash(cp *)"
+    - "Bash(mv *)"
+    - "Bash(touch *)"
+    - "Bash(chmod +x *)"
+    - "Bash(git status)"
+    - "Bash(git diff *)"
+    - "Bash(git log *)"
+    - "Bash(git add *)"
+    - "Bash(git commit *)"
+    - "Bash(echo *)"
+    - "Bash(which *)"
+    - "Bash(pwd)"
+    - "Bash(source *)"
+    - "Bash(* --help *)"
+    - "Bash(* --version)"
+
+  permissions_deny:
+    - "Bash(rm *)"
+    - "Bash(sudo *)"
+    - "Bash(git push *)"
+    - "Bash(git reset --hard *)"
+    - "Bash(git clean *)"
+    - "Bash(pip *)"
+    - "Bash(pip3 *)"
+    - "Read(~/.ssh/**)"
+    - "Read(~/.aws/**)"
+    - "Read(~/.gnupg/**)"
+    - "Read(~/.env)"
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 
 force: false                                   # true = overwrite all existing files
