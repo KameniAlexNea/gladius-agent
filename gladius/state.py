@@ -2,7 +2,7 @@
 Competition state data model.
 
 CompetitionState is the single source of truth passed between the orchestrator
-and all agents.  Persistence is handled by StateStore (gladius.db.store).
+and all agents.  Persistence is handled by StateStore (src.db.store).
 """
 
 from __future__ import annotations
@@ -10,10 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-# Re-export so existing imports (`from gladius.state import StateStore`) keep working.
-from gladius.db.store import StateStore  # noqa: F401
-
-__all__ = ["CompetitionState", "StateStore"]
+__all__ = ["CompetitionState",]
 
 
 @dataclass
