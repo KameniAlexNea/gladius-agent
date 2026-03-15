@@ -194,7 +194,6 @@ class FunctionalTopology(BaseTopology):
                     "Glob",
                     "TodoWrite",
                     "mcp__skills-on-demand__search_skills",
-                    "mcp__skills-on-demand__list_skills",
                 ],
                 output_schema=ITERATION_RESULT_SCHEMA,
                 cwd=project_dir,

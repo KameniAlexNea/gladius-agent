@@ -23,7 +23,7 @@ direction: maximize                            # maximize | minimize
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 
-data_dir: data                                 # relative to project_dir, or absolute path
+data_dir: dataorg-financial-health-prediction-challenge                                 # relative to project_dir, or absolute path
 
 # ── Agent topology ────────────────────────────────────────────────────────────
 # Controls which management hierarchy the agents operate under:
