@@ -73,4 +73,38 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
     for r in (_parse(_TEMPLATES / f"{name}.md") for name in ROLES)
 }
 
-__all__ = ["ROLE_CATALOG", "RoleDefinition", "ROLES"]
+__all__ = ["ROLE_CATALOG", "RoleDefinition", "ROLES", "copy"]
+
+
+import sys  # noqa: E402
+
+_ROLES_DIR = Path(__file__).parent
+
+
+def copy(dst: Path, spec: str | list, model: str, small_model: str, *, force: bool = False) -> None:
+    """Copy role .md files into dst (.claude/agents/), substituting model placeholders."""
+    dst.mkdir(parents=True, exist_ok=True)
+
+    if spec == "all":
+        candidates = sorted(_ROLES_DIR.glob("*.md"))
+    else:
+        names = [spec] if isinstance(spec, str) else list(spec)
+        candidates = []
+        for name in names:
+            p = _ROLES_DIR / f"{name}.md"
+            if p.is_file():
+                candidates.append(p)
+            else:
+                print(f"  [warn] role not found: {name!r} — skipped", file=sys.stderr)
+
+    for src in candidates:
+        dest = dst / src.name
+        if dest.exists() and not force:
+            continue
+        content = (
+            src.read_text(encoding="utf-8")
+            .replace("{{GLADIUS_MODEL}}", model)
+            .replace("{{GLADIUS_SMALL_MODEL}}", small_model)
+        )
+        dest.write_text(content, encoding="utf-8")
+        print(f"  agent  → .claude/agents/{src.name}")

@@ -15,6 +15,10 @@ from typing import TYPE_CHECKING
 
 from src.topologies import TOPOLOGY_CATALOG
 
+import re
+
+import yaml
+
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
@@ -204,3 +208,48 @@ def write(state: "CompetitionState", project_dir: str) -> None:
     """Render and write CLAUDE.md to project_dir."""
     path = Path(project_dir) / "CLAUDE.md"
     path.write_text(render(state, project_dir), encoding="utf-8")
+
+
+def _parse_readme(root: Path) -> tuple[dict, str]:
+    """Parse README.md frontmatter (YAML between ---) and body text."""
+    readme = root / "README.md"
+    if not readme.is_file():
+        return {}, ""
+    text = readme.read_text(encoding="utf-8")
+    m = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
+    if m:
+        front = yaml.safe_load(m.group(1)) or {}
+        body = m.group(2).strip()
+    else:
+        front, body = {}, text.strip()
+    return front, body
+
+
+def write_from_project(root: Path, cfg: dict) -> None:
+    """Build CompetitionState from config + README.md and write CLAUDE.md."""
+    from src.state import CompetitionState
+
+    front, _body = _parse_readme(root)
+
+    # README frontmatter can override/supplement cfg (e.g. submission_threshold)
+    metric = cfg.get("metric") or front.get("metric") or None
+    direction = cfg.get("direction") or front.get("direction") or None
+    data_dir = cfg.get("data_dir") or str(root / front.get("data_dir", "data"))
+    topology = cfg.get("topology", "functional")
+    submission_threshold = front.get("submission_threshold") or cfg.get("submission_threshold")
+    max_sub_day = int(front.get("max_submissions_per_day", cfg.get("max_submissions_per_day", 5)))
+
+    state = CompetitionState(
+        competition_id=cfg["competition_id"],
+        data_dir=data_dir,
+        output_dir=str(root / "artifacts"),
+        target_metric=metric,
+        metric_direction=direction,
+        topology=topology,
+        submission_threshold=submission_threshold,
+        max_submissions_per_day=max_sub_day,
+    )
+    write(state, str(root))
+    print("  claude → CLAUDE.md")
+
+
