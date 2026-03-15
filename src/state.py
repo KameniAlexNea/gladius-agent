@@ -2,7 +2,7 @@
 Competition state data model.
 
 CompetitionState is the single source of truth passed between the orchestrator
-and all agents.  Persistence is handled by StateStore (gladius.db.store).
+and all agents.  Persistence is handled by StateStore (src.db.store).
 """
 
 from __future__ import annotations

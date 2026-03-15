@@ -2,7 +2,7 @@
 Kaggle API tools exposed as an MCP server for Claude agents.
 
 Usage:
-    from gladius.tools.kaggle_tools import kaggle_server
+    from src.tools.kaggle_tools import kaggle_server
     options = ClaudeAgentOptions(mcp_servers={"kaggle": kaggle_server}, ...)
 """
 
@@ -11,8 +11,8 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from gladius.tools._response import err as _err
-from gladius.tools._response import ok as _ok
+from src.tools._response import err as _err
+from src.tools._response import ok as _ok
 
 
 @tool(

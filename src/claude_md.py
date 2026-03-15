@@ -5,7 +5,7 @@ Loads src/CLAUDE.md.template, fills every {{placeholder}} with live competition
 state, and writes the result to <project_dir>/CLAUDE.md.
 
 Called once per iteration by the orchestrator (replaces the inline f-string in
-gladius/utils/project_setup.py).
+src/utils/project_setup.py).
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import re
 import yaml
 
 if TYPE_CHECKING:
-    from gladius.state import CompetitionState
+    from src.state import CompetitionState
 
 _TEMPLATE = Path(__file__).parent / "CLAUDE.md.template"
 

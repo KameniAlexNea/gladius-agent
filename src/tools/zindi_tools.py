@@ -19,9 +19,9 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from gladius.tools._response import err as _err
-from gladius.tools._response import ok as _ok
-from gladius.tools.zindi_common import (
+from src.tools._response import err as _err
+from src.tools._response import ok as _ok
+from src.tools.zindi_common import (
     create_zindi_user_from_env,
     select_zindi_challenge,
 )
