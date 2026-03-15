@@ -24,6 +24,7 @@ direction: maximize                            # maximize | minimize
 # ── Data ──────────────────────────────────────────────────────────────────────
 
 data_dir: dataorg-financial-health-prediction-challenge                                 # relative to project_dir, or absolute path
+max_submissions_per_day: 10
 
 # ── Agent topology ────────────────────────────────────────────────────────────
 # Controls which management hierarchy the agents operate under:
