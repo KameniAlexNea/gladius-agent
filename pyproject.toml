@@ -42,12 +42,10 @@ jupyter = [
 
 [project.scripts]
 gladius = "gladius.cli:main"
-gladius-setup = "gladius.cli:setup_main"
-gladius-run = "gladius.cli:run_main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["gladius*"]
 
 [tool.setuptools.package-data]
-"gladius" = ["**/*.md", "**/*.sh", "**/*.json"]
+"gladius" = ["**/*.md", "**/*.sh", "**/*.json", "**/*.template"]
