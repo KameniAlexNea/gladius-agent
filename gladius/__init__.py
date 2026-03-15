@@ -1,5 +1,10 @@
-"""Gladius — autonomous ML competition agent (Claude Agent SDK)."""
+# Gladius Improved Architecture
 
-from gladius.orchestrator import run_competition
+from pathlib import Path
+from dotenv import load_dotenv
 
-__all__ = ["run_competition"]
+load_dotenv()
+
+
+def team_lead_memory_path(project_dir: str | Path) -> Path:
+    return Path(project_dir) / ".claude" / "agent-memory" / "team-lead" / "MEMORY.md"

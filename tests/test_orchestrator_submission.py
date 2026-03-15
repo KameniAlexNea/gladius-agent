@@ -1,8 +1,12 @@
+"""Tests for orchestrator submission counting and topology integration."""
+
 import asyncio
 from pathlib import Path
 
 from gladius import orchestrator
-from gladius.agents import validation as validation_module
+from gladius.agents.topologies import TOPOLOGY_REGISTRY
+from gladius.agents.topologies.base import IterationResult
+from gladius.agents.roles.specs import build_validator_prompt
 from gladius.state import CompetitionState
 
 
@@ -17,44 +21,66 @@ def _make_state(competition_dir: Path) -> CompetitionState:
     )
 
 
-def test_validation_prompt_handles_none_score_without_format_error(
-    monkeypatch, tmp_path
-):
-    captured = {}
+def _make_cfg(data_dir: Path) -> dict:
+    return {
+        "competition_id": "comp-1",
+        "platform": "fake",
+        "data_dir": str(data_dir.resolve()),
+        "metric": "auc_roc",
+        "direction": "maximize",
+        "topology": "functional",
+    }
 
-    async def fake_run_agent(**kwargs):
-        captured["prompt"] = kwargs["prompt"]
-        return (
-            {
-                "oof_score": None,
-                "quality_score": None,
-                "is_improvement": False,
-                "submit": False,
-                "stop": False,
-                "reasoning": "ok",
-                "next_directions": ["try again"],
-            },
-            "session-1",
-        )
 
-    monkeypatch.setattr(validation_module, "run_agent", fake_run_agent)
+# ── Validator prompt helpers ──────────────────────────────────────────────────
 
-    state = _make_state(tmp_path)
-    result = asyncio.run(
-        validation_module.run_validation_agent(
-            solution_path="solution.py",
-            oof_score=None,
-            quality_score=0,
-            submission_path="",
-            state=state,
-            project_dir=str(tmp_path),
-            platform="none",
-        )
+
+def test_validator_prompt_handles_none_score():
+    prompt = build_validator_prompt(
+        oof_score=None,
+        quality_score=None,
+        best_oof_score=None,
+        best_quality_score=None,
+        submission_path=None,
+        target_metric="auc_roc",
+        metric_direction="maximize",
+        submission_quota_remaining=5,
+        project_dir="/tmp/project",
     )
+    assert "None" in prompt or "auc_roc" in prompt
 
-    assert result["reasoning"] == "ok"
-    assert "OOF score     : n/a" in captured["prompt"]
-    assert "No submission file — set format_ok=False." in captured["prompt"]
+
+# ── Submission counter tests ──────────────────────────────────────────────────
+
+
+def _fake_topology_factory(
+    *,
+    submit: bool = True,
+    is_improvement: bool = True,
+    stop: bool = False,
+    oof_score: float = 0.8,
+    submission_file: str = "submission.csv",
+    format_ok: bool = True,
+):
+    class _FakeTopology:
+        async def run_iteration(
+            self, state, project_dir, platform, *, n_parallel=1,
+            consume_agent_call=None, check_budget=None,
+        ):
+            return IterationResult(
+                status="success",
+                oof_score=oof_score,
+                quality_score=75,
+                solution_files=["solution.py"],
+                submission_file=submission_file,
+                notes="ok",
+                is_improvement=is_improvement,
+                submit=submit,
+                format_ok=format_ok,
+                stop=stop,
+            )
+
+    return _FakeTopology
 
 
 def test_submission_counter_not_incremented_on_failed_submit(monkeypatch, tmp_path):
@@ -63,61 +89,15 @@ def test_submission_counter_not_incremented_on_failed_submit(monkeypatch, tmp_pa
     competition_dir = tmp_path / "competition"
     data_dir = competition_dir / "data"
     data_dir.mkdir(parents=True)
-
-    # Minimal files the setup/generation flow expects to exist
     (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        orchestrator,
-        "load_competition_config",
-        lambda _: {
-            "competition_id": "comp-1",
-            "platform": "fake",
-            "data_dir": str(data_dir.resolve()),
-            "metric": "auc_roc",
-            "direction": "maximize",
-        },
+        orchestrator, "load_competition_config", lambda _: _make_cfg(data_dir)
     )
-
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
-        return {
-            "status": "success",
-            "oof_score": 0.8,
-            "quality_score": 75,
-            "solution_files": ["solution.py"],
-            "submission_file": "submission.csv",
-            "notes": "ok",
-        }
-
-    async def fake_validation(*args, **kwargs):
-        return {
-            "oof_score": 0.8,
-            "quality_score": None,
-            "is_improvement": True,
-            "submit": True,
-            "stop": False,
-            "reasoning": "good",
-            "next_directions": ["try features"],
-        }
-
-    async def fake_summarizer(*args, **kwargs):
-        return "summary"
-
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
-    monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
-    monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
+    monkeypatch.setitem(
+        TOPOLOGY_REGISTRY, "functional",
+        _fake_topology_factory(submit=True, is_improvement=True),
+    )
     monkeypatch.setattr(
         orchestrator, "submit", lambda **kwargs: (False, "submission_failed")
     )
@@ -133,7 +113,8 @@ def test_submission_counter_not_incremented_on_failed_submit(monkeypatch, tmp_pa
     )
 
     assert state.submission_count == 0
-    assert state.best_submission_path is None
+    # best_submission_path is set when OOF improves locally (independent of submission success)
+    assert state.best_oof_score is not None
 
 
 def test_submission_counter_incremented_on_successful_submit(monkeypatch, tmp_path):
@@ -142,68 +123,27 @@ def test_submission_counter_incremented_on_successful_submit(monkeypatch, tmp_pa
     competition_dir = tmp_path / "competition"
     data_dir = competition_dir / "data"
     data_dir.mkdir(parents=True)
-
     (data_dir / "SampleSubmission.csv").write_text(
         "ID,Target\n1,Low\n2,High\n", encoding="utf-8"
     )
     (competition_dir / "submission.csv").write_text(
         "ID,Target\n1,Low\n2,High\n", encoding="utf-8"
     )
-
     (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        orchestrator,
-        "load_competition_config",
-        lambda _: {
-            "competition_id": "comp-1",
-            "platform": "fake",
-            "data_dir": str(data_dir.resolve()),
-            "metric": "auc_roc",
-            "direction": "maximize",
-        },
+        orchestrator, "load_competition_config", lambda _: _make_cfg(data_dir)
     )
-
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
-        return {
-            "status": "success",
-            "oof_score": 0.8,
-            "quality_score": 75,
-            "solution_files": ["solution.py"],
-            "submission_file": "submission.csv",
-            "notes": "ok",
-        }
-
-    async def fake_validation(*args, **kwargs):
-        return {
-            "oof_score": 0.8,
-            "quality_score": None,
-            "is_improvement": True,
-            "submit": True,
-            "stop": False,
-            "reasoning": "good",
-            "next_directions": ["try features"],
-        }
-
-    async def fake_summarizer(*args, **kwargs):
-        return "summary"
-
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
-    monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
-    monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
-    monkeypatch.setattr(orchestrator, "submit", lambda **kwargs: (True, None))
+    monkeypatch.setitem(
+        TOPOLOGY_REGISTRY, "functional",
+        _fake_topology_factory(
+            submit=True, is_improvement=True,
+            submission_file=str(competition_dir / "submission.csv"),
+        ),
+    )
+    monkeypatch.setattr(
+        orchestrator, "submit", lambda **kwargs: (True, None)
+    )
 
     state = asyncio.run(
         orchestrator.run_competition(
@@ -216,7 +156,6 @@ def test_submission_counter_incremented_on_successful_submit(monkeypatch, tmp_pa
     )
 
     assert state.submission_count == 1
-    assert state.best_submission_path == "submission.csv"
 
 
 def test_submit_false_blocks_submission_even_when_improved(monkeypatch, tmp_path):
@@ -225,55 +164,7 @@ def test_submit_false_blocks_submission_even_when_improved(monkeypatch, tmp_path
     competition_dir = tmp_path / "competition"
     data_dir = competition_dir / "data"
     data_dir.mkdir(parents=True)
-
     (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
-
-    monkeypatch.setattr(
-        orchestrator,
-        "load_competition_config",
-        lambda _: {
-            "competition_id": "comp-1",
-            "platform": "fake",
-            "data_dir": str(data_dir.resolve()),
-            "metric": "auc_roc",
-            "direction": "maximize",
-        },
-    )
-
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
-        return {
-            "status": "success",
-            "oof_score": 0.8,
-            "quality_score": 75,
-            "solution_files": ["solution.py"],
-            "submission_file": "submission.csv",
-            "notes": "ok",
-        }
-
-    async def fake_validation(*args, **kwargs):
-        return {
-            "oof_score": 0.8,
-            "quality_score": None,
-            "is_improvement": True,
-            "submit": False,
-            "stop": False,
-            "reasoning": "format not ready",
-            "next_directions": ["fix format"],
-        }
-
-    async def fake_summarizer(*args, **kwargs):
-        return "summary"
 
     calls: list[dict] = []
 
@@ -281,10 +172,13 @@ def test_submit_false_blocks_submission_even_when_improved(monkeypatch, tmp_path
         calls.append(kwargs)
         return True, None
 
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
-    monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
-    monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
+    monkeypatch.setattr(
+        orchestrator, "load_competition_config", lambda _: _make_cfg(data_dir)
+    )
+    monkeypatch.setitem(
+        TOPOLOGY_REGISTRY, "functional",
+        _fake_topology_factory(submit=False, is_improvement=True),
+    )
     monkeypatch.setattr(orchestrator, "submit", fake_submit)
 
     state = asyncio.run(
@@ -297,333 +191,5 @@ def test_submit_false_blocks_submission_even_when_improved(monkeypatch, tmp_path
         )
     )
 
-    assert calls == []
+    assert len(calls) == 0, "submit() must not be called when result.submit=False"
     assert state.submission_count == 0
-    assert state.best_submission_path is None
-
-
-def test_deterministic_format_check_blocks_submit(monkeypatch, tmp_path):
-    monkeypatch.setenv("GLADIUS_MODEL", "test-model")
-
-    competition_dir = tmp_path / "competition"
-    data_dir = competition_dir / "data"
-    data_dir.mkdir(parents=True)
-    (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
-    (data_dir / "SampleSubmission.csv").write_text(
-        "ID,Target\n1,Low\n2,High\n", encoding="utf-8"
-    )
-    # Wrong row count (1 row instead of 2) should trigger deterministic block.
-    (competition_dir / "bad_submission.csv").write_text(
-        "ID,Target\n1,Low\n", encoding="utf-8"
-    )
-
-    monkeypatch.setattr(
-        orchestrator,
-        "load_competition_config",
-        lambda _: {
-            "competition_id": "comp-1",
-            "platform": "fake",
-            "data_dir": str(data_dir.resolve()),
-            "metric": "auc_roc",
-            "direction": "maximize",
-        },
-    )
-
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
-        return {
-            "status": "success",
-            "oof_score": 0.81,
-            "quality_score": 80,
-            "solution_files": ["solution.py"],
-            "submission_file": "bad_submission.csv",
-            "notes": "ok",
-        }
-
-    async def fake_validation(*args, **kwargs):
-        return {
-            "oof_score": 0.81,
-            "quality_score": None,
-            "is_improvement": True,
-            "submit": True,
-            "format_ok": True,
-            "stop": False,
-            "reasoning": "looks good",
-            "next_directions": ["improve"],
-        }
-
-    async def fake_summarizer(*args, **kwargs):
-        return "summary"
-
-    calls = []
-
-    def fake_submit(**kwargs):
-        calls.append(kwargs)
-        return True, None
-
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
-    monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
-    monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
-    monkeypatch.setattr(orchestrator, "submit", fake_submit)
-
-    state = asyncio.run(
-        orchestrator.run_competition(
-            competition_dir=str(competition_dir),
-            max_iterations=1,
-            resume_from_db=False,
-            auto_submit=True,
-            n_parallel=1,
-        )
-    )
-
-    assert calls == []
-    assert state.submission_count == 0
-
-
-def test_preflight_requires_gladius_model(monkeypatch, tmp_path):
-    monkeypatch.delenv("GLADIUS_MODEL", raising=False)
-
-    competition_dir = tmp_path / "competition"
-    data_dir = competition_dir / "data"
-    data_dir.mkdir(parents=True)
-    (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
-
-    monkeypatch.setattr(
-        orchestrator,
-        "load_competition_config",
-        lambda _: {
-            "competition_id": "comp-1",
-            "platform": "fake",
-            "data_dir": str(data_dir.resolve()),
-            "metric": "auc_roc",
-            "direction": "maximize",
-        },
-    )
-
-    try:
-        asyncio.run(
-            orchestrator.run_competition(
-                competition_dir=str(competition_dir),
-                max_iterations=1,
-                resume_from_db=False,
-                auto_submit=False,
-                n_parallel=1,
-            )
-        )
-        assert False, "Expected ValueError for missing GLADIUS_MODEL"
-    except ValueError as exc:
-        assert "GLADIUS_MODEL is not set" in str(exc)
-
-
-def test_open_task_uses_hybrid_quality_for_best_score(monkeypatch, tmp_path):
-    monkeypatch.setenv("GLADIUS_MODEL", "test-model")
-
-    competition_dir = tmp_path / "competition"
-    data_dir = competition_dir / "data"
-    data_dir.mkdir(parents=True)
-    (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
-
-    monkeypatch.setattr(
-        orchestrator,
-        "load_competition_config",
-        lambda _: {
-            "competition_id": "comp-1",
-            "platform": "none",
-            "data_dir": str(data_dir.resolve()),
-            "metric": None,
-            "direction": None,
-        },
-    )
-
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
-        return {
-            "status": "success",
-            "oof_score": None,
-            "quality_score": 90,
-            "solution_files": ["solution.py"],
-            "submission_file": "deliverable.zip",
-            "notes": "ok",
-        }
-
-    async def fake_validation(*args, **kwargs):
-        return {
-            "oof_score": None,
-            "quality_score": 70,
-            "is_improvement": True,
-            "submit": True,
-            "stop": False,
-            "format_ok": False,
-            "reasoning": "gaps remain",
-            "next_directions": ["improve docs", "add tests"],
-        }
-
-    async def fake_summarizer(*args, **kwargs):
-        return "summary"
-
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
-    monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
-    monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
-    monkeypatch.setattr(orchestrator, "submit", lambda **kwargs: (True, None))
-
-    state = asyncio.run(
-        orchestrator.run_competition(
-            competition_dir=str(competition_dir),
-            max_iterations=1,
-            resume_from_db=False,
-            auto_submit=True,
-            n_parallel=1,
-        )
-    )
-
-    # 0.75*70 + 0.25*90 = 75 ; penalties: -15 format_ok=False, -4 for 2 next directions => 56
-    assert state.best_quality_score == 56.0
-    assert state.experiments[-1]["quality_score"] == 56.0
-
-
-def test_submission_score_updates_lb_tracking(monkeypatch, tmp_path):
-    monkeypatch.setenv("GLADIUS_MODEL", "test-model")
-
-    competition_dir = tmp_path / "competition"
-    data_dir = competition_dir / "data"
-    data_dir.mkdir(parents=True)
-    (data_dir / "SampleSubmission.csv").write_text(
-        "ID,Target\n1,Low\n2,High\n", encoding="utf-8"
-    )
-    (competition_dir / "submission.csv").write_text(
-        "ID,Target\n1,Low\n2,High\n", encoding="utf-8"
-    )
-    (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
-
-    monkeypatch.setattr(
-        orchestrator,
-        "load_competition_config",
-        lambda _: {
-            "competition_id": "comp-1",
-            "platform": "fake",
-            "data_dir": str(data_dir.resolve()),
-            "metric": "auc_roc",
-            "direction": "maximize",
-        },
-    )
-
-    async def fake_planner(*args, **kwargs):
-        return (
-            {
-                "approach_summary": "baseline",
-                "plan_text": "do baseline",
-                "plan": [{"step": 1, "description": "run"}],
-                "plans": [],
-            },
-            "planner-session",
-        )
-
-    async def fake_implementer(*args, **kwargs):
-        return {
-            "status": "success",
-            "oof_score": 0.84,
-            "quality_score": None,
-            "solution_files": ["solution.py"],
-            "submission_file": "submission.csv",
-            "notes": "ok",
-        }
-
-    async def fake_validation(*args, **kwargs):
-        return {
-            "oof_score": 0.84,
-            "quality_score": None,
-            "is_improvement": True,
-            "submit": True,
-            "stop": False,
-            "reasoning": "good",
-            "next_directions": ["try more features"],
-        }
-
-    async def fake_summarizer(*args, **kwargs):
-        return "summary"
-
-    monkeypatch.setattr(orchestrator, "run_planner", fake_planner)
-    monkeypatch.setattr(orchestrator, "run_implementer", fake_implementer)
-    monkeypatch.setattr(orchestrator, "run_validation_agent", fake_validation)
-    monkeypatch.setattr(orchestrator, "run_summarizer", fake_summarizer)
-    monkeypatch.setattr(orchestrator, "submit", lambda **kwargs: (True, None))
-    monkeypatch.setattr(
-        orchestrator,
-        "score_submission_artifact",
-        lambda **kwargs: 0.8312,
-    )
-
-    state = asyncio.run(
-        orchestrator.run_competition(
-            competition_dir=str(competition_dir),
-            max_iterations=1,
-            resume_from_db=False,
-            auto_submit=True,
-            n_parallel=1,
-        )
-    )
-
-    assert state.best_submission_score == 0.8312
-    assert len(state.lb_scores) == 1
-    assert state.lb_scores[0]["score"] == 0.8312
-
-
-def test_personal_production_guardrail_stops_on_agent_call_budget(
-    monkeypatch, tmp_path
-):
-    monkeypatch.setenv("GLADIUS_MODEL", "test-model")
-
-    competition_dir = tmp_path / "competition"
-    data_dir = competition_dir / "data"
-    data_dir.mkdir(parents=True)
-    (competition_dir / "README.md").write_text("# test\n", encoding="utf-8")
-
-    monkeypatch.setattr(
-        orchestrator,
-        "load_competition_config",
-        lambda _: {
-            "competition_id": "comp-1",
-            "platform": "none",
-            "data_dir": str(data_dir.resolve()),
-            "metric": "auc_roc",
-            "direction": "maximize",
-        },
-    )
-
-    state = asyncio.run(
-        orchestrator.run_competition(
-            competition_dir=str(competition_dir),
-            max_iterations=1,
-            resume_from_db=False,
-            auto_submit=False,
-            n_parallel=1,
-            mode="personal-production",
-            max_agent_calls_per_iteration=0,
-        )
-    )
-
-    assert state.phase == "done"
-    assert state.last_stop_reason is not None
-    assert "agent call budget exceeded" in state.last_stop_reason

@@ -1,17 +1,6 @@
-import asyncio
+"""Tests for parallel plan extraction (autonomous topology)."""
 
-from gladius.agents import planner as planner_module
-from gladius.state import CompetitionState
-
-
-def _state() -> CompetitionState:
-    return CompetitionState(
-        competition_id="comp-1",
-        data_dir="/tmp/data",
-        output_dir="/tmp/out",
-        target_metric="auc_roc",
-        metric_direction="maximize",
-    )
+from gladius.agents.topologies.autonomous import _extract_parallel_plans
 
 
 def test_extract_parallel_plans_from_structured_markdown():
@@ -27,51 +16,59 @@ Use CatBoost with categorical features.
 2. Train CV
 """.strip()
 
-    plans = planner_module._extract_parallel_plans(plan_text, n_parallel=2)
+    plans = _extract_parallel_plans(plan_text, n_parallel=2)
 
     assert len(plans) == 2
-    assert "Approach 1" in plans[0]["plan_text"]
-    assert "Approach 2" in plans[1]["plan_text"]
-    assert plans[0]["approach_summary"]
-    assert plans[1]["approach_summary"]
+    assert "Approach 1" in plans[0]
+    assert "Approach 2" in plans[1]
+    assert "LightGBM" in plans[0]
+    assert "CatBoost" in plans[1]
 
 
-def test_run_planner_generates_alternative_when_structured_sections_missing(
-    monkeypatch,
-):
-    calls = []
+def test_extract_parallel_plans_falls_back_to_single_when_no_headings():
+    plan_text = "Just a single plan with no Approach headings."
+    plans = _extract_parallel_plans(plan_text, n_parallel=2)
+    assert len(plans) == 1
+    assert plans[0] == plan_text
 
-    async def fake_run_planning_agent(**kwargs):
-        calls.append(kwargs)
-        # First call: primary plan only (no Approach headings)
-        if len(calls) == 1:
-            return (
-                "Primary baseline plan\n1. train xgboost\n2. submit",
-                "planner-session-1",
-            )
-        # Second call: explicit alternative response
-        return (
-            "Alternative plan with neural net\n1. prepare embeddings\n2. train model",
-            "planner-session-1",
-        )
 
-    monkeypatch.setattr(planner_module, "run_planning_agent", fake_run_planning_agent)
+def test_extract_parallel_plans_caps_at_n_parallel():
+    plan_text = """
+## Approach 1
+First plan
 
-    plan_dict, session_id = asyncio.run(
-        planner_module.run_planner(
-            state=_state(),
-            data_dir="/tmp/data",
-            project_dir="/tmp/project",
-            platform="fake",
-            n_parallel=2,
-        )
-    )
+## Approach 2
+Second plan
 
-    assert session_id == "planner-session-1"
-    assert plan_dict["plan_text"].startswith("Primary baseline plan")
-    assert len(plan_dict["plans"]) == 2
-    assert "Primary baseline plan" in plan_dict["plans"][0]["plan_text"]
-    assert "Alternative plan" in plan_dict["plans"][1]["plan_text"]
+## Approach 3
+Third plan
+""".strip()
 
-    # Ensure the alternative call resumed from the primary planner session.
-    assert calls[1]["resume"] == "planner-session-1"
+    plans = _extract_parallel_plans(plan_text, n_parallel=2)
+    assert len(plans) == 2
+
+
+def test_extract_parallel_plans_deduplicates_identical_sections():
+    plan_text = """
+## Approach 1
+Identical content here
+
+## Approach 1
+Identical content here
+""".strip()
+
+    plans = _extract_parallel_plans(plan_text, n_parallel=3)
+    assert len(plans) == 1
+
+
+def test_extract_parallel_plans_handles_case_insensitive_headings():
+    plan_text = """
+## APPROACH 1
+Upper case heading
+
+## approach 2
+Lower case heading
+""".strip()
+
+    plans = _extract_parallel_plans(plan_text, n_parallel=2)
+    assert len(plans) == 2

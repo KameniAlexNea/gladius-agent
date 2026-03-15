@@ -1,0 +1,159 @@
+# Gladius project configuration — annotated reference
+# Run: python -m src.project_setup --config examples/project.yaml
+#
+# This file drives the execution-phase project setup:
+#   1. Creates .claude/agents/    from src/roles/  (+ builtin templates as fallback)
+#   2. Creates .claude/skills/    from src/skills/ + gladius templates + upstream catalog
+#   3. Writes  .claude/settings.json  (model, env vars, hooks)
+#   4. Writes  .mcp.json              (skills-on-demand + platform MCP servers)
+#   5. Writes  CLAUDE.md              (static competition context for agents)
+#   6. Creates scripts/               (after_edit.sh + validate_bash.sh hooks)
+#   7. Creates artifacts/ submissions/ (output dirs)
+
+# ── Required ──────────────────────────────────────────────────────────────────
+
+competition_id: dataorg-financial-health-prediction-challenge                    # slug used for logging + platform API
+project_dir: /data/home/eak/learning/competitions/gladius/gladius-agent/examples/data_dog              # target directory (created if absent)
+
+# ── Competition type ──────────────────────────────────────────────────────────
+
+platform: zindi                                 # kaggle | zindi | fake | none
+metric: f1_score                                # omit for open-ended / app tasks
+direction: maximize                            # maximize | minimize
+
+# ── Data ──────────────────────────────────────────────────────────────────────
+
+data_dir: dataorg-financial-health-prediction-challenge                                 # relative to project_dir, or absolute path
+max_submissions_per_day: 10
+
+# ── Agent topology ────────────────────────────────────────────────────────────
+# Controls which management hierarchy the agents operate under:
+#   functional  — Apple-style DRI pipeline (default)
+#   two-pizza   — Amazon-style: full-stack-coordinator owns delivery
+#   platform    — Google-style: platform layer builds tooling, product layer builds model
+#   autonomous  — Meta-style: N mini-teams in parallel, validator picks winner
+#   matrix      — Microsoft-style: team-lead + domain-expert dual approval
+
+topology: functional
+
+# ── Model selection ───────────────────────────────────────────────────────────
+# Defaults to env vars GLADIUS_MODEL / GLADIUS_SMALL_MODEL if not set here.
+
+model: qwen3.5:35b
+small_model: qwen3.5                           # "inherit" = use the same model as above
+
+# ── Skills ────────────────────────────────────────────────────────────────────
+# gladius_skills:     skills that ship with gladius (src/skills/ + gladius/utils/templates/skills/)
+#                     src/skills/ takes precedence when both have the same name
+# scientific_skills:  170+ upstream claude-scientific-skills catalog
+# custom_skills_dir:  YOUR folder of extra skills — any subdirectory with a SKILL.md is copied
+#                     Custom skills always override gladius skills of the same name.
+
+gladius_skills: all                            # "all" or list, e.g. [validation, hpo, ml-setup]
+scientific_skills: true
+scientific_skills_path: ""                     # override; defaults to GLADIUS_SCIENTIFIC_SKILLS_PATH env var
+custom_skills_dir: ""                          # e.g. /home/you/my-skills/
+
+# Selective gladius_skills example (uncomment to use):
+# gladius_skills:
+#   - validation
+#   - feature-engineering
+#   - hpo
+#   - ensembling
+#   - ml-setup
+#   - code-review
+#   - adversarial-validation
+#   - submit-check
+#   - git-workflow
+#   - uv-venv
+
+# ── Roles (agent subagents) ───────────────────────────────────────────────────
+# Copied from src/roles/ into .claude/agents/.
+# Falls back to gladius/utils/templates/agents/ for any name not found in src/roles/.
+
+roles: all                                     # "all" or list, e.g. [team-lead, ml-engineer]
+
+# ── MCP servers ───────────────────────────────────────────────────────────────
+
+mcp:
+  platform_server: true                        # register platform MCP server (if platform != none)
+  extra: {}                                    # additional mcpServers to merge into .mcp.json
+  # extra:
+  #   my-custom-server:
+  #     type: stdio
+  #     command: python
+  #     args: [-m, my_mcp_module]
+  #     env:
+  #       MY_VAR: value
+
+# ── Claude Code settings ─────────────────────────────────────────────────────
+
+default_mode: acceptEdits         # acceptEdits | bypassPermissions | plan | dontAsk
+
+settings:
+  additional_directories: []      # extra dirs the agent can read (data_dir always added)
+
+  permissions_allow:
+    - "Bash(uv *)"
+    - "Bash(python *)"
+    - "Bash(python3 *)"
+    - "Bash(ls *)"
+    - "Bash(cat *)"
+    - "Bash(head *)"
+    - "Bash(tail *)"
+    - "Bash(grep *)"
+    - "Bash(find *)"
+    - "Bash(wc *)"
+    - "Bash(sort *)"
+    - "Bash(unzip *)"
+    - "Bash(nohup *)"
+    - "Bash(ps *)"
+    - "Bash(kill *)"
+    - "Bash(wait *)"
+    - "Bash(mkdir *)"
+    - "Bash(cp *)"
+    - "Bash(mv *)"
+    - "Bash(touch *)"
+    - "Bash(chmod +x *)"
+    - "Bash(git status)"
+    - "Bash(git diff *)"
+    - "Bash(git log *)"
+    - "Bash(git add *)"
+    - "Bash(git commit *)"
+    - "Bash(echo *)"
+    - "Bash(which *)"
+    - "Bash(pwd)"
+    - "Bash(source *)"
+    - "Bash(* --help *)"
+    - "Bash(* --version)"
+
+  permissions_deny:
+    - "Bash(rm *)"
+    - "Bash(sudo *)"
+    - "Bash(git push *)"
+    - "Bash(git reset --hard *)"
+    - "Bash(git clean *)"
+    - "Bash(pip *)"
+    - "Bash(pip3 *)"
+    - "Read(~/.ssh/**)"
+    - "Read(~/.aws/**)"
+    - "Read(~/.gnupg/**)"
+    - "Read(~/.env)"
+
+# ── Agent turn limits ────────────────────────────────────────────────────────
+# Maximum number of agent turns (round-trips) for each role type.
+# Increase if agents run out of turns mid-task; decrease to cut costs.
+
+max_turns:
+  coordinator: 40    # pipeline coordinator (functional / matrix / autonomous branches)
+  full_stack: 40     # two-pizza: full-stack agent
+  platform_layer: 20 # platform topology: infrastructure agent
+  product_layer: 40  # platform topology: experiment agent
+  validator: 20      # validator
+  memory_keeper: 15  # memory-keeper
+  reviewer: 10       # matrix: technical-review / domain-review
+  domain_fix: 15     # matrix: domain-fix agent after reviewer rejection
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+
+force: true                                   # true = overwrite all existing files

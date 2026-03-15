@@ -29,10 +29,11 @@ def test_save_and_load_scalars(db_path):
     store = StateStore(db_path)
     state = make_state()
     state.iteration = 3
-    state.phase = "implementing"
+    state.topology = "two-pizza"
+    state.done = True
     state.best_oof_score = 0.87654
     state.submission_count = 2
-    state.planner_session_id = "sess-abc-123"
+    state.team_session_ids = {"team-lead": "sess-abc-123"}
     store.save(state)
     loaded = store.load()
     store.close()
@@ -40,10 +41,11 @@ def test_save_and_load_scalars(db_path):
     assert loaded is not None
     assert loaded.competition_id == "test-comp"
     assert loaded.iteration == 3
-    assert loaded.phase == "implementing"
+    assert loaded.topology == "two-pizza"
+    assert loaded.done is True
     assert abs(loaded.best_oof_score - 0.87654) < 1e-9
     assert loaded.submission_count == 2
-    assert loaded.planner_session_id == "sess-abc-123"
+    assert loaded.team_session_ids == {"team-lead": "sess-abc-123"}
     assert loaded.target_metric == "auc_roc"
     assert loaded.metric_direction == "maximize"
 
@@ -193,7 +195,7 @@ def test_resume_after_save(db_path):
 def test_last_stop_reason_roundtrip(db_path):
     store = StateStore(db_path)
     state = make_state()
-    state.phase = "done"
+    state.done = True
     state.last_stop_reason = "agent call budget exceeded (6/5)"
     store.save(state)
     loaded = store.load()
