@@ -42,6 +42,48 @@ if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
 
+_PLATFORM_AGENT_PROMPT = """\
+You are the infrastructure platform agent.
+
+Your job: provision the shared ML infrastructure that all product agents will
+consume.  Think of your outputs as internal APIs:
+  - src/               → project scaffold (data loading, config, models)
+  - artifacts/         → OOF predictions, model checkpoints
+  - train.log          → canonical training log
+
+Steps:
+1. Invoke data-expert to scaffold the project if src/ is incomplete.
+2. Confirm that scripts/train.py exposes the 'OOF <metric>: <value>' contract.
+3. Write platform status to .claude/EXPERIMENT_STATE.json under "platform".
+
+You do NOT implement models or features — that belongs to the product layer.
+STRICT RULES:
+- Only write to .claude/EXPERIMENT_STATE.json.
+- Read a file before rewriting it.
+- Emit StructuredOutput when platform is ready (or on error).
+"""
+
+_PRODUCT_AGENT_PROMPT = """\
+You are the product-layer experiment agent.
+
+You consume the infrastructure provisioned by the platform layer (src/, train.log,
+artifacts/) and implement the actual ML experiment.
+
+Steps:
+1. Read .claude/EXPERIMENT_STATE.json — confirm platform.status == "success".
+2. Invoke feature-engineer to add features per the plan.
+3. Invoke ml-engineer to train the model and capture OOF score.
+4. Read .claude/EXPERIMENT_STATE.json — confirm ml_engineer.status.
+5. Emit StructuredOutput with final results.
+
+STRICT RULES:
+- Do NOT redo infrastructure work already done by the platform layer.
+- Only write to .claude/EXPERIMENT_STATE.json — no other files directly.
+- Read a file before rewriting it.
+- Once StructuredOutput is emitted, stop immediately.
+"""
+
+
 def _build_platform_prompt(plan_text: str, state: "CompetitionState") -> str:
     return f"""\
 Competition: {state.competition_id}
@@ -159,7 +201,7 @@ class PlatformTopology(BaseTopology):
             plat_result, plat_sid = await run_agent(
                 agent_name="platform-layer",
                 prompt=_build_platform_prompt(plan_text, state),
-                system_prompt=ROLE_CATALOG["platform-layer"].system_prompt,
+                system_prompt=_PLATFORM_AGENT_PROMPT,
                 allowed_tools=[
                     "Agent(data-expert,evaluator)",
                     "Read",
@@ -195,7 +237,7 @@ class PlatformTopology(BaseTopology):
             prod_result, prod_sid = await run_agent(
                 agent_name="product-layer",
                 prompt=_build_product_prompt(plan_text, state),
-                system_prompt=ROLE_CATALOG["product-layer"].system_prompt,
+                system_prompt=_PRODUCT_AGENT_PROMPT,
                 allowed_tools=[
                     "Agent(feature-engineer,ml-engineer)",
                     "Read",

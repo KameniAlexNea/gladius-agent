@@ -33,6 +33,7 @@ from gladius.roles.specs import (
 from gladius.topologies.base import BaseTopology, IterationResult
 from gladius.topologies.functional import (
     FunctionalTopology,
+    _COORDINATOR_PROMPT,
     _build_coordinator_prompt,
     _build_pipeline_agent_defs,
     _first_nonblank_line,
@@ -114,7 +115,7 @@ async def _run_one_branch(
                 state=state,
                 pipeline_roles=("data-expert", "feature-engineer", "ml-engineer", "evaluator"),
             ),
-            system_prompt=ROLE_CATALOG["functional-coordinator"].system_prompt,
+            system_prompt=_COORDINATOR_PROMPT,
             allowed_tools=[
                 "Agent(data-expert,feature-engineer,ml-engineer,evaluator)",
                 "Read",

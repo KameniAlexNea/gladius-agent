@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gladius-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fully autonomous multi-agent ML competition system"
 requires-python = ">=3.10"
 dependencies = [
@@ -41,6 +41,7 @@ jupyter = [
 ]
 
 [project.scripts]
+gladius = "gladius.cli:main"
 gladius-setup = "gladius.cli:setup_main"
 gladius-run = "gladius.cli:run_main"
 
@@ -50,8 +51,3 @@ include = ["gladius*"]
 
 [tool.setuptools.package-data]
 "gladius" = ["**/*.md", "**/*.sh", "**/*.json"]
-
-[tool.uv.workspace]
-members = [
-    "examples/data_dog",
-]

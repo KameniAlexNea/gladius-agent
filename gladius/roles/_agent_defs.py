@@ -31,6 +31,7 @@ _WORKER_ROLES = (
     "evaluator",
     "validator",
     "memory-keeper",
+    "full-stack-coordinator",
 )
 
 SUBAGENT_DEFINITIONS: dict[str, AgentDefinition] = {

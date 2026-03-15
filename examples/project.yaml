@@ -12,13 +12,13 @@
 
 # ── Required ──────────────────────────────────────────────────────────────────
 
-competition_id: fake_binary                    # slug used for logging + platform API
-project_dir: /tmp/gladius-example              # target directory (created if absent)
+competition_id: dataorg-financial-health-prediction-challenge                    # slug used for logging + platform API
+project_dir: /data/home/eak/learning/competitions/gladius/gladius-agent/examples/data_dog              # target directory (created if absent)
 
 # ── Competition type ──────────────────────────────────────────────────────────
 
-platform: fake                                 # kaggle | zindi | fake | none
-metric: auc_roc                                # omit for open-ended / app tasks
+platform: zindi                                 # kaggle | zindi | fake | none
+metric: f1_score                                # omit for open-ended / app tasks
 direction: maximize                            # maximize | minimize
 
 # ── Data ──────────────────────────────────────────────────────────────────────
@@ -38,8 +38,8 @@ topology: functional
 # ── Model selection ───────────────────────────────────────────────────────────
 # Defaults to env vars GLADIUS_MODEL / GLADIUS_SMALL_MODEL if not set here.
 
-model: claude-opus-4-5
-small_model: inherit                           # "inherit" = use the same model as above
+model: qwen3.5:35b
+small_model: qwen3.5                           # "inherit" = use the same model as above
 
 # ── Skills ────────────────────────────────────────────────────────────────────
 # gladius_skills:     skills that ship with gladius (src/skills/ + gladius/utils/templates/skills/)
@@ -141,4 +141,4 @@ settings:
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 
-force: false                                   # true = overwrite all existing files
+force: true                                   # true = overwrite all existing files

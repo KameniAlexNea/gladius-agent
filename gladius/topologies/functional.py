@@ -47,6 +47,53 @@ def _mcp_servers(project_dir: str) -> dict:
     }
 
 
+_COORDINATOR_PROMPT = """\
+You are the functional pipeline coordinator.
+
+MANDATORY: you MUST spawn ALL four agents in sequence. Skipping any agent is an error.
+
+Sequence: data-expert → feature-engineer → ml-engineer → evaluator
+
+After EACH agent completes, you MUST:
+1. Read .claude/EXPERIMENT_STATE.json
+2. Check the returned status
+3. If status is "error": stop and emit StructuredOutput with status="error"
+4. If status is "success": immediately spawn the NEXT agent in the sequence
+
+DO NOT do any implementation work yourself. You only:
+- Spawn agents via Task tool
+- Read .claude/EXPERIMENT_STATE.json after each
+- Emit StructuredOutput at the very end
+
+AGENT SCOPES — pass these task descriptions exactly:
+
+data-expert task:
+  "SCOPE: EDA only. Profile the data (shape, types, missing values, target distribution,
+  correlation). Do NOT write model training code. Do NOT run training.
+  Write data_expert status to .claude/EXPERIMENT_STATE.json when done."
+
+feature-engineer task:
+  "SCOPE: Feature engineering only. Read src/ files. Add/transform features in
+  src/features.py. Do NOT train models. Do NOT modify src/models.py.
+  Write feature_engineer status to .claude/EXPERIMENT_STATE.json when done."
+
+ml-engineer task:
+  "SCOPE: Model training only. Run the training script. Fix import/runtime errors if any.
+  Save OOF predictions and the submission file to artifacts/.
+  Write ml_engineer status + oof_score to .claude/EXPERIMENT_STATE.json when done."
+
+evaluator task:
+  "SCOPE: Evaluation only. Load OOF predictions from artifacts/. Compute the competition
+  metric. Validate the submission file format against SampleSubmission.csv.
+  Write evaluator status + final oof_score to .claude/EXPERIMENT_STATE.json when done."
+
+STRICT RULES:
+- NEVER modify CLAUDE.md.
+- You only write to .claude/EXPERIMENT_STATE.json — no other files directly.
+- Once StructuredOutput is emitted, stop immediately.
+"""
+
+
 def _first_nonblank_line(text: str) -> str:
     lines = [ln.lstrip("#").strip() for ln in text.splitlines() if ln.strip()]
     return lines[0][:300] if lines else text[:300]
@@ -139,7 +186,7 @@ class FunctionalTopology(BaseTopology):
             impl_result, impl_session = await run_agent(
                 agent_name="functional-coordinator",
                 prompt=coordinator_prompt,
-                system_prompt=ROLE_CATALOG["functional-coordinator"].system_prompt,
+                system_prompt=_COORDINATOR_PROMPT,
                 allowed_tools=[
                     f"Agent({','.join(self.PIPELINE)})",
                     "Read",

@@ -23,13 +23,6 @@ ROLES = (
     "validator",
     "memory-keeper",
     "full-stack-coordinator",
-    # Topology-specific coordinator/specialist roles
-    "functional-coordinator",
-    "two-pizza-agent",
-    "technical-review",
-    "domain-review",
-    "platform-layer",
-    "product-layer",
 )
 
 
