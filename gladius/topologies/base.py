@@ -81,6 +81,7 @@ class BaseTopology(ABC):
         platform: str,
         *,
         n_parallel: int = 1,
+        max_turns: dict | None = None,
         consume_agent_call: object | None = None,
         check_budget: object | None = None,
     ) -> IterationResult:

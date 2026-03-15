@@ -139,6 +139,20 @@ settings:
     - "Read(~/.gnupg/**)"
     - "Read(~/.env)"
 
+# ── Agent turn limits ────────────────────────────────────────────────────────
+# Maximum number of agent turns (round-trips) for each role type.
+# Increase if agents run out of turns mid-task; decrease to cut costs.
+
+max_turns:
+  coordinator: 40    # pipeline coordinator (functional / matrix / autonomous branches)
+  full_stack: 40     # two-pizza: full-stack agent
+  platform_layer: 20 # platform topology: infrastructure agent
+  product_layer: 40  # platform topology: experiment agent
+  validator: 20      # validator
+  memory_keeper: 15  # memory-keeper
+  reviewer: 10       # matrix: technical-review / domain-review
+  domain_fix: 15     # matrix: domain-fix agent after reviewer rejection
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 
 force: true                                   # true = overwrite all existing files

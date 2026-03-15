@@ -98,6 +98,7 @@ async def _run_one_branch(
     state: "CompetitionState",
     project_dir: str,
     mcp: dict,
+    max_turns: dict,
 ) -> tuple[int, IterationResult]:
     """Run a single autonomous mini-team branch."""
     branch_state_path = (
@@ -127,7 +128,7 @@ async def _run_one_branch(
             output_schema=ITERATION_RESULT_SCHEMA,
             cwd=project_dir,
             mcp_servers=mcp,
-            max_turns=40,
+            max_turns=max_turns.get("coordinator", 40),
         )
         ir = IterationResult(
             status=result.get("status", "error"),
@@ -164,6 +165,7 @@ class AutonomousTopology(BaseTopology):
         platform: str,
         *,
         n_parallel: int = 2,
+        max_turns: dict | None = None,
         consume_agent_call=None,
         check_budget=None,
     ) -> IterationResult:
@@ -230,7 +232,7 @@ class AutonomousTopology(BaseTopology):
 
         # ── 3. Run all branches concurrently ─────────────────────────────────
         branch_tasks = [
-            _run_one_branch(i, plan, state, project_dir, mcp)
+            _run_one_branch(i, plan, state, project_dir, mcp, max_turns or {})
             for i, plan in enumerate(plans)
         ]
         branch_results: list[tuple[int, IterationResult]] = await asyncio.gather(
@@ -262,8 +264,7 @@ class AutonomousTopology(BaseTopology):
                 platform=platform,
                 oof_score=result.oof_score,
                 quality_score=result.quality_score,
-                submission_path=result.submission_file or None,
-            )
+                submission_path=result.submission_file or None,                max_turns=max_turns,            )
             result.is_improvement = val_result.get("is_improvement", False)
             result.submit = val_result.get("submit", False)
             result.format_ok = val_result.get("format_ok", True)
@@ -284,6 +285,7 @@ class AutonomousTopology(BaseTopology):
                         "branches_run": len(plans),
                     },
                     validator_notes=validator_notes,
+                    max_turns=max_turns,
                 )
                 result.memory_content = mem_result.get("memory_content")
                 result.memory_summary = mem_result.get("summary")

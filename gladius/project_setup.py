@@ -86,6 +86,16 @@ def load_config(path: str | Path) -> dict[str, Any]:
     mcp_cfg.setdefault("extra", {})
     raw.setdefault("force", False)
 
+    mt = raw.setdefault("max_turns", {})
+    mt.setdefault("coordinator", 40)
+    mt.setdefault("full_stack", 40)
+    mt.setdefault("platform_layer", 20)
+    mt.setdefault("product_layer", 40)
+    mt.setdefault("validator", 20)
+    mt.setdefault("memory_keeper", 15)
+    mt.setdefault("reviewer", 10)
+    mt.setdefault("domain_fix", 15)
+
     raw.setdefault("default_mode", "acceptEdits")
     s = raw.setdefault("settings", {})
     s.setdefault("permissions_allow", [

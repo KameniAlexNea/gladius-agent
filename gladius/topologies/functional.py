@@ -121,9 +121,11 @@ class FunctionalTopology(BaseTopology):
         platform: str,
         *,
         n_parallel: int = 1,
+        max_turns: dict | None = None,
         consume_agent_call=None,
         check_budget=None,
     ) -> IterationResult:
+        mt = max_turns or {}
         result = IterationResult(status="error")
         team_session_ids: dict[str, str] = dict(state.team_session_ids or {})
         mcp = _mcp_servers(project_dir)
@@ -201,7 +203,7 @@ class FunctionalTopology(BaseTopology):
                     **mcp,
                     **_build_agent_defs_mcp(agent_defs),
                 },
-                max_turns=40,
+                max_turns=mt.get("coordinator", 40),
             )
         except Exception as exc:
             logger.error(f"[functional-coordinator] failed: {exc}", exc_info=True)
@@ -272,8 +274,7 @@ class FunctionalTopology(BaseTopology):
         platform: str,
         oof_score: float | None,
         quality_score: float | None,
-        submission_path: str | None,
-    ) -> dict:
+        submission_path: str | None,        max_turns: dict | None = None,    ) -> dict:
         quota = state.max_submissions_per_day - state.submission_count
         prompt = build_validator_prompt(
             oof_score=oof_score,
@@ -297,7 +298,7 @@ class FunctionalTopology(BaseTopology):
                 output_schema=VALIDATOR_OUTPUT_SCHEMA,
                 cwd=project_dir,
                 mcp_servers=mcp,
-                max_turns=20,
+                max_turns=(max_turns or {}).get("validator", 20),
             )
             return val_out
         except Exception as exc:
@@ -318,6 +319,7 @@ class FunctionalTopology(BaseTopology):
         project_dir: str,
         latest_result: dict,
         validator_notes: str,
+        max_turns: dict | None = None,
     ) -> dict:
         role = ROLE_CATALOG["memory-keeper"]
         prompt = build_memory_keeper_prompt(
@@ -338,7 +340,7 @@ class FunctionalTopology(BaseTopology):
                 allowed_tools=list(role.tools),
                 output_schema=MEMORY_KEEPER_OUTPUT_SCHEMA,
                 cwd=project_dir,
-                max_turns=15,
+                max_turns=(max_turns or {}).get("memory_keeper", 15),
             )
             mem_path = (
                 Path(project_dir) / ".claude" / "agent-memory" / "team-lead" / "MEMORY.md"

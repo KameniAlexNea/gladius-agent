@@ -294,6 +294,7 @@ async def run_competition(
     max_iteration_seconds: int | None = None,
     max_agent_calls_per_iteration: int | None = None,
     max_failed_runs_total: int | None = None,
+    max_turns: dict | None = None,
 ) -> CompetitionState:
     cfg = load_competition_config(competition_dir)
     competition_id = cfg["competition_id"]
@@ -408,6 +409,7 @@ async def run_competition(
                 project_dir,
                 platform,
                 n_parallel=n_parallel,
+                max_turns=max_turns or {},
                 consume_agent_call=_consume_agent_call,
                 check_budget=_check_iteration_runtime_budget,
             )

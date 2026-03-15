@@ -101,9 +101,11 @@ class TwoPizzaTopology(BaseTopology):
         platform: str,
         *,
         n_parallel: int = 1,
+        max_turns: dict | None = None,
         consume_agent_call=None,
         check_budget=None,
     ) -> IterationResult:
+        mt = max_turns or {}
         result = IterationResult(status="error")
         team_session_ids: dict[str, str] = dict(state.team_session_ids or {})
         mcp = _mcp_servers(project_dir)
@@ -177,7 +179,7 @@ class TwoPizzaTopology(BaseTopology):
                 output_schema=ITERATION_RESULT_SCHEMA,
                 cwd=project_dir,
                 mcp_servers=mcp,
-                max_turns=40,
+                max_turns=mt.get("full_stack", 40),
             )
         except Exception as exc:
             logger.error(f"[two-pizza-agent] failed: {exc}", exc_info=True)
@@ -211,6 +213,7 @@ class TwoPizzaTopology(BaseTopology):
             oof_score=result.oof_score,
             quality_score=result.quality_score,
             submission_path=result.submission_file or None,
+            max_turns=max_turns,
         )
         result.is_improvement = val_result.get("is_improvement", False)
         result.submit = val_result.get("submit", False)
@@ -232,6 +235,7 @@ class TwoPizzaTopology(BaseTopology):
                     "approach_summary": result.approach_summary,
                 },
                 validator_notes=validator_notes,
+                max_turns=max_turns,
             )
             result.memory_content = mem_result.get("memory_content")
             result.memory_summary = mem_result.get("summary")

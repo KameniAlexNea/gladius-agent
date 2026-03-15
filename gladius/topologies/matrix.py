@@ -123,9 +123,11 @@ class MatrixTopology(BaseTopology):
         platform: str,
         *,
         n_parallel: int = 1,
+        max_turns: dict | None = None,
         consume_agent_call=None,
         check_budget=None,
     ) -> IterationResult:
+        mt = max_turns or {}
         result = IterationResult(status="error")
         team_session_ids: dict[str, str] = dict(state.team_session_ids or {})
         mcp = _mcp_servers(project_dir)
@@ -210,7 +212,7 @@ class MatrixTopology(BaseTopology):
                     output_schema=ITERATION_RESULT_SCHEMA,
                     cwd=project_dir,
                     mcp_servers=mcp,
-                    max_turns=40,
+                    max_turns=mt.get("coordinator", 40),
                 )
             except Exception as exc:
                 logger.error(f"[matrix-impl-{review_round}] failed: {exc}", exc_info=True)
@@ -247,7 +249,7 @@ class MatrixTopology(BaseTopology):
                         allowed_tools=["Read", "Glob", "Grep", "Bash"],
                         output_schema=_TECHNICAL_REVIEW_SCHEMA,
                         cwd=project_dir,
-                        max_turns=10,
+                        max_turns=mt.get("reviewer", 10),
                     )
                     tech_decision = tech_out.get("decision", "approve")
                     tech_issues = tech_out.get("critical_issues") or []
@@ -274,7 +276,7 @@ class MatrixTopology(BaseTopology):
                         output_schema=_TECHNICAL_REVIEW_SCHEMA,
                         cwd=project_dir,
                         mcp_servers=mcp,
-                        max_turns=10,
+                        max_turns=mt.get("reviewer", 10),
                     )
                     domain_decision = dom_out.get("decision", "approve")
                     domain_issues = dom_out.get("critical_issues") or []
@@ -321,7 +323,7 @@ class MatrixTopology(BaseTopology):
                         output_schema=_DOMAIN_FIX_SCHEMA,
                         cwd=project_dir,
                         mcp_servers=mcp,
-                        max_turns=15,
+                        max_turns=mt.get("domain_fix", 15),
                     )
                 except Exception as exc:
                     logger.warning(f"[domain-fix] failed: {exc}")
@@ -350,6 +352,7 @@ class MatrixTopology(BaseTopology):
                 oof_score=result.oof_score,
                 quality_score=result.quality_score,
                 submission_path=result.submission_file or None,
+                max_turns=max_turns,
             )
             result.is_improvement = val_result.get("is_improvement", False)
             result.submit = val_result.get("submit", False)
@@ -371,6 +374,7 @@ class MatrixTopology(BaseTopology):
                         "approach_summary": result.approach_summary,
                     },
                     validator_notes=validator_notes,
+                    max_turns=max_turns,
                 )
                 result.memory_content = mem_result.get("memory_content")
                 result.memory_summary = mem_result.get("summary")

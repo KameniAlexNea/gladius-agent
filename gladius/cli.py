@@ -88,6 +88,7 @@ def _run_competition(args: argparse.Namespace) -> None:
                 max_iteration_seconds=args.max_seconds,
                 max_agent_calls_per_iteration=args.max_agent_calls,
                 max_failed_runs_total=args.max_failures,
+                max_turns=cfg.get("max_turns") or {},
             )
         )
     except KeyboardInterrupt:

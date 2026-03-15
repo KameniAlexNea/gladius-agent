@@ -128,6 +128,7 @@ class PlatformTopology(BaseTopology):
         platform: str,
         *,
         n_parallel: int = 1,
+        max_turns: dict | None = None,
         consume_agent_call=None,
         check_budget=None,
     ) -> IterationResult:
@@ -213,7 +214,7 @@ class PlatformTopology(BaseTopology):
                 output_schema=_PLATFORM_SCHEMA,
                 cwd=project_dir,
                 mcp_servers=mcp,
-                max_turns=20,
+                max_turns=(max_turns or {}).get("platform_layer", 20),
             )
         except Exception as exc:
             logger.error(f"[platform-layer] failed: {exc}", exc_info=True)
@@ -249,7 +250,7 @@ class PlatformTopology(BaseTopology):
                 output_schema=ITERATION_RESULT_SCHEMA,
                 cwd=project_dir,
                 mcp_servers=mcp,
-                max_turns=40,
+                max_turns=(max_turns or {}).get("product_layer", 40),
             )
         except Exception as exc:
             logger.error(f"[product-layer] failed: {exc}", exc_info=True)
@@ -279,6 +280,7 @@ class PlatformTopology(BaseTopology):
                 oof_score=result.oof_score,
                 quality_score=result.quality_score,
                 submission_path=result.submission_file or None,
+                max_turns=max_turns,
             )
             result.is_improvement = val_result.get("is_improvement", False)
             result.submit = val_result.get("submit", False)
@@ -299,6 +301,7 @@ class PlatformTopology(BaseTopology):
                         "approach_summary": result.approach_summary,
                     },
                     validator_notes=validator_notes,
+                    max_turns=max_turns,
                 )
                 result.memory_content = mem_result.get("memory_content")
                 result.memory_summary = mem_result.get("summary")
