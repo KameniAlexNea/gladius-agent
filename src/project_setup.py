@@ -225,6 +225,120 @@ def setup(config_path: str | Path, *, force: bool = False) -> Path:
     return root
 
 
+# ── Runtime competition config (reads README.md frontmatter) ─────────────────
+
+
+class CompetitionConfigError(ValueError):
+    pass
+
+
+def _parse_frontmatter(readme: Path) -> dict:
+    """Parse YAML frontmatter from README.md."""
+    text = readme.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        raise CompetitionConfigError(
+            f"{readme}: must start with '---' to open the YAML frontmatter block."
+        )
+    end = text.find("\n---", 3)
+    if end == -1:
+        raise CompetitionConfigError(
+            f"{readme}: frontmatter block never closed with '---'."
+        )
+    frontmatter_text = text[3:end]
+    try:
+        cfg = yaml.safe_load(frontmatter_text) or {}
+    except yaml.YAMLError as exc:
+        raise CompetitionConfigError(
+            f"{readme}: invalid YAML frontmatter: {exc}"
+        ) from exc
+    if not isinstance(cfg, dict):
+        raise CompetitionConfigError(f"{readme}: frontmatter must be a YAML mapping.")
+    return {k: v if isinstance(v, (int, float, bool)) else str(v) for k, v in cfg.items()}
+
+
+def load_competition_config(competition_dir: str) -> dict:
+    """
+    Parse README.md frontmatter in competition_dir.
+
+    Returns dict with keys:
+        competition_id, platform, metric (may be None), direction (may be None),
+        data_dir (absolute path), topology, submission_threshold (may be None)
+
+    Raises CompetitionConfigError if README.md is missing, has no frontmatter,
+    is missing competition_id, or provides metric without direction (or vice-versa).
+    """
+    readme = Path(competition_dir) / "README.md"
+    if not readme.exists():
+        raise CompetitionConfigError(
+            f"No README.md in {competition_dir!r}. "
+            "Add one with a YAML frontmatter block:\n\n"
+            "    ---\n"
+            "    competition_id: my-competition\n"
+            "    platform: kaggle\n"
+            "    metric: auc_roc\n"
+            "    direction: maximize\n"
+            "    data_dir: data\n"
+            "    ---\n"
+        )
+
+    cfg = _parse_frontmatter(readme)
+
+    if not cfg.get("competition_id"):
+        raise CompetitionConfigError(
+            "README.md frontmatter missing required field: competition_id"
+        )
+
+    platform = cfg.get("platform") or "none"
+    if platform not in ("kaggle", "zindi", "fake", "none"):
+        raise CompetitionConfigError(
+            f"platform must be kaggle | zindi | fake | none, got {platform!r}"
+        )
+    cfg["platform"] = platform
+
+    has_metric = bool(cfg.get("metric"))
+    has_direction = bool(cfg.get("direction"))
+    if has_metric != has_direction:
+        raise CompetitionConfigError(
+            "'metric' and 'direction' must both be provided or both omitted."
+        )
+    if has_direction and cfg["direction"] not in ("maximize", "minimize"):
+        raise CompetitionConfigError(
+            f"direction must be maximize | minimize, got {cfg['direction']!r}"
+        )
+
+    cfg["metric"] = cfg.get("metric") or None
+    cfg["direction"] = cfg.get("direction") or None
+
+    _VALID_TOPOLOGIES = ("functional", "two-pizza", "platform", "autonomous", "matrix")
+    topology = cfg.get("topology") or "functional"
+    if topology not in _VALID_TOPOLOGIES:
+        raise CompetitionConfigError(
+            f"topology must be one of {' | '.join(_VALID_TOPOLOGIES)}, got {topology!r}"
+        )
+    cfg["topology"] = topology
+
+    raw_threshold = cfg.get("submission_threshold")
+    if raw_threshold is not None:
+        try:
+            cfg["submission_threshold"] = float(raw_threshold)
+        except (ValueError, TypeError):
+            raise CompetitionConfigError(
+                f"submission_threshold must be a number, got {raw_threshold!r}"
+            )
+    else:
+        cfg["submission_threshold"] = None
+
+    p = Path(cfg.get("data_dir") or "data")
+    if not p.is_absolute():
+        p = Path(competition_dir) / p
+    cfg["data_dir"] = str(p.resolve())
+
+    return cfg
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="python -m src.project_setup",

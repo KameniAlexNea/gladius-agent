@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from src.topologies import TOPOLOGY_CATALOG
+from src.topologies._catalog import TOPOLOGY_CATALOG
 from src import team_lead_memory_path
 
 import re

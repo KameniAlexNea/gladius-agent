@@ -8,7 +8,7 @@ Credentials are read from environment variables:
     ZINDI_CHALLENGE_INDEX  — 0-based fallback index when challenge_id is not set
 
 Usage:
-    from gladius.tools.zindi_tools import zindi_server
+    from src.tools.zindi_tools import zindi_server
     options = ClaudeAgentOptions(mcp_servers={"zindi": zindi_server}, ...)
 """
 

@@ -1,52 +1,48 @@
 """
-Topology catalog — loads all topology definitions from src/topologies/*.md.
+Topology catalog + runtime registry.
 
-Each file has YAML frontmatter (name, style, flow) and a body that becomes
-the claude_md_section rendered into CLAUDE.md per iteration.
+* TOPOLOGY_CATALOG (TopologyDefinition dicts) — parsed from *.md, no SDK deps.
+  Re-exported here for convenience; also importable directly from _catalog.py
+  when you want to avoid pulling in the SDK (e.g. project setup / CLAUDE.md
+  rendering paths).
+
+* TOPOLOGY_REGISTRY — maps topology name → runtime BaseTopology subclass.
+  Importing this module brings in all topology classes and their SDK deps.
 """
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
-from pathlib import Path
+from src.topologies._catalog import TOPOLOGY_CATALOG, TopologyDefinition
 
-_TEMPLATES = Path(__file__).parent
+# ── Runtime topology registry (Python implementations) ───────────────────────
+# These imports bring in the SDK and all topology classes.
+# Use src.topologies._catalog directly if you only need TOPOLOGY_CATALOG.
 
+from src.topologies.autonomous import AutonomousTopology
+from src.topologies.base import BaseTopology, IterationResult
+from src.topologies.functional import FunctionalTopology
+from src.topologies.matrix import MatrixTopology
+from src.topologies.platform import PlatformTopology
+from src.topologies.two_pizza import TwoPizzaTopology
 
-@dataclass(frozen=True)
-class TopologyDefinition:
-    name: str
-    style: str
-    flow: str
-    claude_md_section: str
-
-
-def _parse(path: Path) -> TopologyDefinition:
-    text = path.read_text(encoding="utf-8")
-    match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
-    if not match:
-        raise ValueError(f"No frontmatter in {path}")
-    front, body = match.group(1), match.group(2).strip()
-
-    def _get(key: str) -> str:
-        m = re.search(rf"^{key}:\s*(.+)$", front, re.MULTILINE)
-        return m.group(1).strip() if m else ""
-
-    return TopologyDefinition(
-        name=_get("name"),
-        style=_get("style"),
-        flow=_get("flow"),
-        claude_md_section=body,
-    )
-
-
-TOPOLOGY_CATALOG: dict[str, TopologyDefinition] = {
-    t.name: t
-    for t in (
-        _parse(_TEMPLATES / f"{name}.md")
-        for name in ("functional", "two-pizza", "platform", "autonomous", "matrix")
-    )
+TOPOLOGY_REGISTRY: dict[str, type[BaseTopology]] = {
+    "functional": FunctionalTopology,
+    "two-pizza": TwoPizzaTopology,
+    "platform": PlatformTopology,
+    "autonomous": AutonomousTopology,
+    "matrix": MatrixTopology,
 }
 
-__all__ = ["TOPOLOGY_CATALOG", "TopologyDefinition"]
+__all__ = [
+    "TOPOLOGY_CATALOG",
+    "TopologyDefinition",
+    "TOPOLOGY_REGISTRY",
+    "BaseTopology",
+    "IterationResult",
+    "FunctionalTopology",
+    "TwoPizzaTopology",
+    "PlatformTopology",
+    "AutonomousTopology",
+    "MatrixTopology",
+]
+

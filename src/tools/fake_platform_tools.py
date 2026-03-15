@@ -11,7 +11,7 @@ The submission CSV must have columns [id, target] where target is a probability
 (or a label; AUC-ROC is used for scoring).
 
 Usage:
-    from gladius.tools.fake_platform_tools import fake_server
+    from src.tools.fake_platform_tools import fake_server
     options = ClaudeAgentOptions(mcp_servers={"fake": fake_server}, ...)
 """
 
