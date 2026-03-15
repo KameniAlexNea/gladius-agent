@@ -22,6 +22,7 @@ from gladius.topologies.autonomous import AutonomousTopology
 from gladius.topologies.base import BaseTopology, IterationResult
 from gladius.topologies.functional import FunctionalTopology
 from gladius.topologies.matrix import MatrixTopology
+from gladius.topologies.mini_team import MiniTeamTopology
 from gladius.topologies.platform import PlatformTopology
 from gladius.topologies.two_pizza import TwoPizzaTopology
 
@@ -40,6 +41,7 @@ __all__ = [
     "BaseTopology",
     "IterationResult",
     "FunctionalTopology",
+    "MiniTeamTopology",
     "TwoPizzaTopology",
     "PlatformTopology",
     "AutonomousTopology",

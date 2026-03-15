@@ -24,7 +24,6 @@ from loguru import logger
 
 from gladius.roles import ROLE_CATALOG
 from gladius.roles.agent_runner import run_agent
-from gladius.roles.helpers import get_runtime_model
 from gladius.roles.specs import (
     ITERATION_RESULT_SCHEMA,
     TEAM_LEAD_OUTPUT_SCHEMA,
@@ -33,7 +32,6 @@ from gladius.roles.specs import (
 from gladius.topologies.base import BaseTopology, IterationResult
 from gladius.topologies.functional import (
     FunctionalTopology,
-    _build_pipeline_agent_defs,
     _first_nonblank_line,
     _mcp_servers,
 )
@@ -177,9 +175,6 @@ class PlatformTopology(BaseTopology):
         exp_state_path = Path(project_dir) / ".claude" / "EXPERIMENT_STATE.json"
         exp_state_path.parent.mkdir(parents=True, exist_ok=True)
         exp_state_path.write_text("{}")
-
-        runtime_model = get_runtime_model()
-        agent_defs_all = _build_pipeline_agent_defs(runtime_model)
 
         # ── 2. Platform layer ────────────────────────────────────────────────
         if not self._budget_ok("platform-layer", consume_agent_call, check_budget):

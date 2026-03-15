@@ -10,7 +10,7 @@ from pathlib import Path
 from claude_agent_sdk import AgentDefinition
 from loguru import logger
 
-from gladius.roles._agent_defs import SUBAGENT_DEFINITIONS as _SUBAGENT_DEFINITIONS
+from gladius.roles import ROLE_CATALOG as _ROLE_CATALOG
 
 
 def validate_runtime_invocation(
@@ -48,16 +48,16 @@ _SMALL_MODEL_AGENTS = frozenset({"evaluator", "memory-keeper"})
 
 
 def build_runtime_agents(model: str) -> dict[str, AgentDefinition]:
-    """Stamp the live model name into every entry in the registry."""
+    """Build AgentDefinition registry with live model names stamped in."""
     small_model = os.environ.get("GLADIUS_SMALL_MODEL") or model
     return {
-        k: AgentDefinition(
-            description=v.description,
-            prompt=v.prompt,
-            tools=v.tools,
-            model=small_model if k in _SMALL_MODEL_AGENTS else model,
+        name: AgentDefinition(
+            description=role.description,
+            prompt=role.system_prompt,
+            tools=list(role.tools),
+            model=small_model if name in _SMALL_MODEL_AGENTS else model,
         )
-        for k, v in _SUBAGENT_DEFINITIONS.items()
+        for name, role in _ROLE_CATALOG.items()
     }
 
 

@@ -22,7 +22,6 @@ from loguru import logger
 
 from gladius.roles import ROLE_CATALOG
 from gladius.roles.agent_runner import run_agent
-from gladius.roles.helpers import get_runtime_model
 from gladius.roles.specs import (
     ITERATION_RESULT_SCHEMA,
     TEAM_LEAD_OUTPUT_SCHEMA,
@@ -31,7 +30,6 @@ from gladius.roles.specs import (
 from gladius.topologies.base import BaseTopology, IterationResult
 from gladius.topologies.functional import (
     FunctionalTopology,
-    _build_pipeline_agent_defs,
     _build_platform_mcp,
     _first_nonblank_line,
     _mcp_servers,
@@ -156,9 +154,6 @@ class TwoPizzaTopology(BaseTopology):
             result.error_message = "budget exceeded before full-stack agent"
             result.team_session_ids = team_session_ids
             return result
-
-        runtime_model = get_runtime_model()
-        _agent_defs = _build_pipeline_agent_defs(runtime_model)
 
         full_stack_prompt = _build_full_stack_prompt(plan_text, state)
         specialists = ("data-expert", "feature-engineer", "ml-engineer", "evaluator")

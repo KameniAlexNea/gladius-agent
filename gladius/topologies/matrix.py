@@ -37,12 +37,53 @@ from gladius.roles.specs import (
 from gladius.topologies.base import BaseTopology, IterationResult
 from gladius.topologies.functional import (
     FunctionalTopology,
-    _COORDINATOR_PROMPT,
-    _build_coordinator_prompt,
-    _build_pipeline_agent_defs,
     _first_nonblank_line,
     _mcp_servers,
 )
+
+_COORDINATOR_PROMPT = """\
+You are the functional pipeline coordinator.
+
+MANDATORY: you MUST spawn ALL four agents in sequence. Skipping any agent is an error.
+
+Sequence: data-expert → feature-engineer → ml-engineer → evaluator
+
+After EACH agent completes, you MUST:
+1. Read .claude/EXPERIMENT_STATE.json
+2. Check the returned status
+3. If status is "error": stop and emit StructuredOutput with status="error"
+4. If status is "success": immediately spawn the NEXT agent in the sequence
+
+DO NOT do any implementation work yourself. You only:
+- Spawn agents via Task tool
+- Read .claude/EXPERIMENT_STATE.json after each
+- Emit StructuredOutput at the very end
+
+STRICT RULES:
+- NEVER modify CLAUDE.md.
+- You only write to .claude/EXPERIMENT_STATE.json — no other files directly.
+- Once StructuredOutput is emitted, stop immediately.
+"""
+
+
+def _build_coordinator_prompt(
+    plan_text: str,
+    state: "CompetitionState",
+    pipeline_roles: tuple[str, ...],
+) -> str:
+    return f"""\
+Competition: {state.competition_id}
+Metric: {state.target_metric or 'open-ended'}  Direction: {state.metric_direction or 'n/a'}
+Data dir: {state.data_dir}
+Best OOF so far: {state.best_oof_score}
+
+## Plan for this iteration
+{plan_text}
+
+Spawn agents in order: {' → '.join(pipeline_roles)}
+After each agent: read .claude/EXPERIMENT_STATE.json, check status, then spawn next.
+When evaluator finishes: emit StructuredOutput with the final oof_score.
+"""
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState

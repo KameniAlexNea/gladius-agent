@@ -23,7 +23,7 @@ from claude_agent_sdk.types import (
 from llm_output_parser import parse_json as _parse_json
 from loguru import logger
 
-from gladius.roles._agent_defs import SUBAGENT_DEFINITIONS
+from gladius.roles import ROLE_CATALOG
 from gladius.roles._console import _BLUE, _BOLD, _c, _log_message
 from gladius.roles.helpers import (
     build_runtime_agents,
@@ -110,10 +110,10 @@ async def run_agent(
                                 )
                                 if (
                                     subagent_type
-                                    and subagent_type in SUBAGENT_DEFINITIONS
+                                    and subagent_type in ROLE_CATALOG
                                 ):
                                     delegated_tool_policies[block.id] = list(
-                                        SUBAGENT_DEFINITIONS[subagent_type].tools
+                                        list(ROLE_CATALOG[subagent_type].tools)
                                     )
 
                             effective_allowed_tools = allowed_tools

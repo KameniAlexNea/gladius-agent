@@ -5,13 +5,11 @@ Sequential role pipeline:
   team-lead → data-expert → feature-engineer → ml-engineer
   → evaluator → validator → memory-keeper
 
-Each role hands off to the next via EXPERIMENT_STATE.json.  The team-lead is
-persistent (resumed).  All others are fresh per iteration.
+team-lead plans the iteration; MiniTeamTopology executes the pipeline.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,79 +17,15 @@ from loguru import logger
 
 from gladius.roles import ROLE_CATALOG
 from gladius.roles.agent_runner import run_agent
-from gladius.roles.helpers import build_runtime_agents, get_runtime_model
 from gladius.roles.specs import (
-    ITERATION_RESULT_SCHEMA,
-    MEMORY_KEEPER_OUTPUT_SCHEMA,
     TEAM_LEAD_OUTPUT_SCHEMA,
-    VALIDATOR_OUTPUT_SCHEMA,
-    build_memory_keeper_prompt,
     build_team_lead_prompt,
-    build_validator_prompt,
 )
-from gladius.topologies.base import BaseTopology, IterationResult
+from gladius.topologies.base import IterationResult
+from gladius.topologies.mini_team import MiniTeamTopology, _build_platform_mcp, _mcp_servers  # re-export for sibling topologies
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
-
-
-def _mcp_servers(project_dir: str) -> dict:
-    skills_dir = str(Path(project_dir) / ".claude" / "skills")
-    return {
-        "skills-on-demand": {
-            "type": "stdio",
-            "command": sys.executable,
-            "args": ["-m", "skills_on_demand.server"],
-            "env": {"SKILLS_DIR": skills_dir},
-        }
-    }
-
-
-_COORDINATOR_PROMPT = """\
-You are the functional pipeline coordinator.
-
-MANDATORY: you MUST spawn ALL four agents in sequence. Skipping any agent is an error.
-
-Sequence: data-expert → feature-engineer → ml-engineer → evaluator
-
-After EACH agent completes, you MUST:
-1. Read .claude/EXPERIMENT_STATE.json
-2. Check the returned status
-3. If status is "error": stop and emit StructuredOutput with status="error"
-4. If status is "success": immediately spawn the NEXT agent in the sequence
-
-DO NOT do any implementation work yourself. You only:
-- Spawn agents via Task tool
-- Read .claude/EXPERIMENT_STATE.json after each
-- Emit StructuredOutput at the very end
-
-AGENT SCOPES — pass these task descriptions exactly:
-
-data-expert task:
-  "SCOPE: EDA only. Profile the data (shape, types, missing values, target distribution,
-  correlation). Do NOT write model training code. Do NOT run training.
-  Write data_expert status to .claude/EXPERIMENT_STATE.json when done."
-
-feature-engineer task:
-  "SCOPE: Feature engineering only. Read src/ files. Add/transform features in
-  src/features.py. Do NOT train models. Do NOT modify src/models.py.
-  Write feature_engineer status to .claude/EXPERIMENT_STATE.json when done."
-
-ml-engineer task:
-  "SCOPE: Model training only. Run the training script. Fix import/runtime errors if any.
-  Save OOF predictions and the submission file to artifacts/.
-  Write ml_engineer status + oof_score to .claude/EXPERIMENT_STATE.json when done."
-
-evaluator task:
-  "SCOPE: Evaluation only. Load OOF predictions from artifacts/. Compute the competition
-  metric. Validate the submission file format against SampleSubmission.csv.
-  Write evaluator status + final oof_score to .claude/EXPERIMENT_STATE.json when done."
-
-STRICT RULES:
-- NEVER modify CLAUDE.md.
-- You only write to .claude/EXPERIMENT_STATE.json — no other files directly.
-- Once StructuredOutput is emitted, stop immediately.
-"""
 
 
 def _first_nonblank_line(text: str) -> str:
@@ -99,20 +33,10 @@ def _first_nonblank_line(text: str) -> str:
     return lines[0][:300] if lines else text[:300]
 
 
-class FunctionalTopology(BaseTopology):
+class FunctionalTopology(MiniTeamTopology):
     """
-    Apple-style deep-expertise pipeline.
-
-    Agents execute in strict sequence: each specialist hands off context
-    to the next via EXPERIMENT_STATE.json.
+    Adds a persistent team-lead planning phase on top of MiniTeamTopology.
     """
-
-    PIPELINE: tuple[str, ...] = (
-        "data-expert",
-        "feature-engineer",
-        "ml-engineer",
-        "evaluator",
-    )
 
     async def run_iteration(
         self,
@@ -164,7 +88,6 @@ class FunctionalTopology(BaseTopology):
         result.approach_summary = plan_result.get("approach_summary") or _first_nonblank_line(plan_text)
         result.team_session_ids = team_session_ids
 
-        # Save plan to .claude/plans/
         plans_dir = Path(project_dir) / ".claude" / "plans"
         plans_dir.mkdir(parents=True, exist_ok=True)
         (plans_dir / f"iter-{state.iteration:02d}.md").write_text(plan_text)
@@ -174,50 +97,22 @@ class FunctionalTopology(BaseTopology):
         exp_state_path.parent.mkdir(parents=True, exist_ok=True)
         exp_state_path.write_text("{}")
 
-        # ── 3. Pipeline roles ────────────────────────────────────────────────
-        coordinator_prompt = _build_coordinator_prompt(
+        # ── 3. Pipeline (MiniTeamTopology) ───────────────────────────────────
+        impl_status, impl_result = await self._run_pipeline(
             plan_text=plan_text,
-            state=state,
-            pipeline_roles=self.PIPELINE,
+            project_dir=project_dir,
+            mt=mt,
+            consume_agent_call=consume_agent_call,
+            check_budget=check_budget,
+            mcp=mcp,
         )
 
-        runtime_model = get_runtime_model()
-        agent_defs = _build_pipeline_agent_defs(runtime_model)
-
-        try:
-            impl_result, impl_session = await run_agent(
-                agent_name="functional-coordinator",
-                prompt=coordinator_prompt,
-                system_prompt=_COORDINATOR_PROMPT,
-                allowed_tools=[
-                    f"Agent({','.join(self.PIPELINE)})",
-                    "Read",
-                    "Write",
-                    "Glob",
-                    "TodoWrite",
-                    "mcp__skills-on-demand__search_skills",
-                ],
-                output_schema=ITERATION_RESULT_SCHEMA,
-                cwd=project_dir,
-                mcp_servers={
-                    **mcp,
-                    **_build_agent_defs_mcp(agent_defs),
-                },
-                max_turns=mt.get("coordinator", 40),
-            )
-        except Exception as exc:
-            logger.error(f"[functional-coordinator] failed: {exc}", exc_info=True)
-            result.error_message = str(exc)
-            result.team_session_ids = team_session_ids
-            return result
-
-        team_session_ids["functional-coordinator"] = impl_session
         result.oof_score = impl_result.get("oof_score")
         result.quality_score = float(impl_result.get("quality_score") or 0)
         result.solution_files = impl_result.get("solution_files") or []
         result.submission_file = impl_result.get("submission_file") or ""
         result.notes = impl_result.get("notes") or ""
-        result.status = impl_result.get("status", "error")
+        result.status = impl_status
 
         if result.status == "error":
             result.error_message = impl_result.get("error_message") or "unknown error"
@@ -264,164 +159,3 @@ class FunctionalTopology(BaseTopology):
         result.team_session_ids = team_session_ids
         return result
 
-    # ── Shared role runners ───────────────────────────────────────────────────
-
-    async def _run_validator(
-        self,
-        *,
-        state: "CompetitionState",
-        project_dir: str,
-        platform: str,
-        oof_score: float | None,
-        quality_score: float | None,
-        submission_path: str | None,        max_turns: dict | None = None,    ) -> dict:
-        quota = state.max_submissions_per_day - state.submission_count
-        prompt = build_validator_prompt(
-            oof_score=oof_score,
-            quality_score=quality_score,
-            best_oof_score=state.best_oof_score,
-            best_quality_score=state.best_quality_score,
-            submission_path=submission_path,
-            target_metric=state.target_metric,
-            metric_direction=state.metric_direction,
-            submission_quota_remaining=max(0, quota),
-            project_dir=project_dir,
-        )
-        role = ROLE_CATALOG["validator"]
-        mcp = _build_platform_mcp(platform)
-        try:
-            val_out, _ = await run_agent(
-                agent_name="validator",
-                prompt=prompt,
-                system_prompt=role.system_prompt,
-                allowed_tools=list(role.tools),
-                output_schema=VALIDATOR_OUTPUT_SCHEMA,
-                cwd=project_dir,
-                mcp_servers=mcp,
-                max_turns=(max_turns or {}).get("validator", 20),
-            )
-            return val_out
-        except Exception as exc:
-            logger.error(f"[validator] failed: {exc}", exc_info=True)
-            return {
-                "is_improvement": False,
-                "submit": False,
-                "format_ok": True,
-                "stop": False,
-                "reasoning": f"validator error: {exc}",
-                "next_directions": [],
-            }
-
-    async def _run_memory_keeper(
-        self,
-        *,
-        state: "CompetitionState",
-        project_dir: str,
-        latest_result: dict,
-        validator_notes: str,
-        max_turns: dict | None = None,
-    ) -> dict:
-        role = ROLE_CATALOG["memory-keeper"]
-        prompt = build_memory_keeper_prompt(
-            iteration=state.iteration,
-            competition_id=state.competition_id,
-            target_metric=state.target_metric,
-            metric_direction=state.metric_direction,
-            experiments=state.experiments,
-            failed_runs=state.failed_runs,
-            latest_result=latest_result,
-            validator_notes=validator_notes,
-        )
-        try:
-            mem_out, _ = await run_agent(
-                agent_name="memory-keeper",
-                prompt=prompt,
-                system_prompt=role.system_prompt,
-                allowed_tools=list(role.tools),
-                output_schema=MEMORY_KEEPER_OUTPUT_SCHEMA,
-                cwd=project_dir,
-                max_turns=(max_turns or {}).get("memory_keeper", 15),
-            )
-            mem_path = (
-                Path(project_dir) / ".claude" / "agent-memory" / "team-lead" / "MEMORY.md"
-            )
-            mem_path.parent.mkdir(parents=True, exist_ok=True)
-            content = mem_out.get("memory_content", "")
-            if content:
-                mem_path.write_text(content)
-            return mem_out
-        except Exception as exc:
-            logger.error(f"[memory-keeper] failed: {exc}", exc_info=True)
-            return {}
-
-
-# ── Coordinator agent (runs the pipeline via Agent() tool) ────────────────────
-
-
-def _build_coordinator_prompt(
-    plan_text: str,
-    state: "CompetitionState",
-    pipeline_roles: tuple[str, ...],
-) -> str:
-    return f"""\
-Competition: {state.competition_id}
-Metric: {state.target_metric or 'open-ended'}  Direction: {state.metric_direction or 'n/a'}
-Data dir: {state.data_dir}
-Best OOF so far: {state.best_oof_score}
-
-## Plan for this iteration
-{plan_text}
-
-Spawn agents in order: {' → '.join(pipeline_roles)}
-After each agent: read .claude/EXPERIMENT_STATE.json, check status, then spawn next.
-When evaluator finishes: emit StructuredOutput with the final oof_score.
-"""
-
-
-def _build_pipeline_agent_defs(runtime_model: str) -> dict:
-    """Build AgentDefinition objects from the role catalog for pipeline roles."""
-    from claude_agent_sdk import AgentDefinition
-
-    defs = {}
-    for name in ("data-expert", "feature-engineer", "ml-engineer", "evaluator"):
-        role = ROLE_CATALOG[name]
-        defs[name] = AgentDefinition(
-            description=role.description,
-            prompt=role.system_prompt,
-            tools=list(role.tools),
-            model=runtime_model,
-        )
-    return defs
-
-
-def _build_agent_defs_mcp(agent_defs: dict) -> dict:
-    """Placeholder — the SDK picks up agent defs from the options.agents dict."""
-    return {}
-
-
-def _build_platform_mcp(platform: str) -> dict:
-    if platform == "kaggle":
-        return {
-            "kaggle": {
-                "type": "stdio",
-                "command": sys.executable,
-                "args": ["-m", "gladius.tools.kaggle_tools"],
-            }
-        }
-    if platform == "zindi":
-        return {
-            "zindi": {
-                "type": "stdio",
-                "command": sys.executable,
-                "args": ["-m", "gladius.tools.zindi_tools"],
-            }
-        }
-    if platform == "fake":
-        return {
-            "fake": {
-                "type": "stdio",
-                "command": sys.executable,
-                "args": ["-m", "gladius.tools.fake_platform_tools"],
-            }
-        }
-    return {}
