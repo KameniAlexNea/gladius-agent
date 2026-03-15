@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import os
 import shutil
 import stat
@@ -334,33 +333,3 @@ def load_competition_config(competition_dir: str) -> dict:
     cfg["data_dir"] = str(p.resolve())
 
     return cfg
-
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
-
-
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(
-        prog="python -m src.project_setup",
-        description="Bootstrap a Gladius competition project from a YAML config.",
-    )
-
-    parser.add_argument("--config", "-c", metavar="FILE")
-    parser.add_argument("--force", "-f", action="store_true", default=False)
-
-    args = parser.parse_args(argv)
-
-    if args.config:
-        try:
-            setup(args.config, force=args.force)
-        except ConfigError as e:
-            print(f"Config error: {e}", file=sys.stderr)
-            sys.exit(1)
-    else:
-        parser.print_help()
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
-

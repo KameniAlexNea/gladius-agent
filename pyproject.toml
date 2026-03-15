@@ -42,10 +42,12 @@ jupyter = [
 
 [project.scripts]
 gladius = "gladius.orchestrator:main"
+gladius-setup = "src.cli:setup_main"
+gladius-run = "src.cli:run_main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["gladius*"]
+include = ["gladius*", "src*"]
 
 [tool.setuptools.package-data]
 "gladius.utils" = ["templates/**/*"]
