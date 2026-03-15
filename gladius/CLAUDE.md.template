@@ -91,6 +91,18 @@ uv add optuna catboost lightgbm   # install packages
 uv run python scripts/train.py    # run a script inside the venv
 ```
 
+## Context Management
+
+Your conversation has a fixed context window. Protect it:
+
+- **After completing a subtask**, record key findings in a compact note before moving on.
+  Discard verbatim tool output from memory once you have extracted what matters.
+- **If the conversation is becoming long**, summarise earlier exchanges into a concise
+  bullet-point block and continue from there — do not keep repeating raw tool outputs.
+- **When you are a pipeline agent** returning results to the orchestrator, your
+  StructuredOutput `summary` field must be ≤250 words. The orchestrator passes only
+  that summary to the next agent — make it information-dense and factual.
+
 ## Long-Running Scripts
 
 For training scripts that take more than a few seconds, use `nohup` and track the PID.
