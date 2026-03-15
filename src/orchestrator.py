@@ -57,6 +57,230 @@ def _reset_daily_submissions(state: CompetitionState) -> None:
         state.last_submission_date = today
 
 
+# ── Private helpers ────────────────────────────────────────────────────────────
+
+
+def _apply_mode_defaults(
+    mode: str,
+    max_iteration_seconds: int | None,
+    max_agent_calls_per_iteration: int | None,
+    max_failed_runs_total: int | None,
+    n_parallel: int,
+) -> tuple[int | None, int | None, int | None, int]:
+    if mode == "personal-production":
+        if max_iteration_seconds is None:
+            max_iteration_seconds = 1800
+        if max_agent_calls_per_iteration is None:
+            max_agent_calls_per_iteration = 5
+        if max_failed_runs_total is None:
+            max_failed_runs_total = 20
+        n_parallel = 1
+    return max_iteration_seconds, max_agent_calls_per_iteration, max_failed_runs_total, n_parallel
+
+
+def _init_or_resume_state(
+    store: StateStore,
+    cfg: dict,
+    gladius_dir: Path,
+    resume_from_db: bool,
+    max_iterations: int,
+) -> CompetitionState:
+    """Load existing state from DB, or create a fresh one from cfg."""
+    state: CompetitionState | None = store.load() if resume_from_db else None
+    if state is None:
+        logger.info("Initialising new competition state")
+        return CompetitionState(
+            competition_id=cfg["competition_id"],
+            data_dir=str(Path(cfg["data_dir"]).resolve()),
+            output_dir=str(gladius_dir.resolve()),
+            target_metric=cfg["metric"],
+            metric_direction=cfg["direction"],
+            topology=cfg["topology"],
+            max_iterations=max_iterations,
+            submission_threshold=cfg.get("submission_threshold"),
+        )
+
+    _best_str = (
+        f"{state.best_oof_score:.6f}" if state.best_oof_score is not None else "none"
+    )
+    logger.info(
+        f"Resuming from iteration {state.iteration}, "
+        f"topology={state.topology}, best={_best_str}"
+    )
+    if state.max_iterations != max_iterations:
+        logger.info(f"Updating max_iterations: {state.max_iterations} -> {max_iterations}")
+        state.max_iterations = max_iterations
+
+    # Recalibrate best scores if experiments exist but bests were never persisted.
+    if state.experiments:
+        target_metric = cfg["metric"]
+        metric_direction = cfg["direction"]
+        if target_metric and state.best_oof_score is None:
+            scored = [e["oof_score"] for e in state.experiments if e.get("oof_score") is not None]
+            if scored:
+                state.best_oof_score = max(scored) if metric_direction != "minimize" else min(scored)
+                logger.info(f"Recalibrated best_oof_score: {state.best_oof_score:.6f}")
+        elif not target_metric and state.best_quality_score is None:
+            scored = [e["quality_score"] for e in state.experiments if e.get("quality_score") is not None]
+            if scored:
+                state.best_quality_score = max(scored)
+
+    if state.done and state.iteration < state.max_iterations:
+        logger.info(
+            f"Resuming: done=True but only {state.iteration}/{state.max_iterations} "
+            "iterations used — resetting"
+        )
+        state.done = False
+        state.consecutive_errors = 0
+
+    return state
+
+
+def _process_iteration_result(
+    result: IterationResult,
+    state: CompetitionState,
+    store: StateStore,
+    project_dir: str,
+    platform: str,
+    competition_id: str,
+    target_metric: str | None,
+    metric_direction: str | None,
+    auto_submit: bool,
+) -> str:
+    """
+    Apply result to state and persist.
+
+    Returns the loop-control action for the caller:
+      ``"continue"``  — iteration errored; outer loop should continue
+      ``"stop"``      — validator stop signal; outer loop should break
+      ``"ok"``        — normal completion; outer loop advances naturally
+    """
+    state.consecutive_errors = 0
+
+    if result.team_session_ids:
+        state.team_session_ids.update(result.team_session_ids)
+
+    if result.plan_text:
+        store.record_plan(
+            iteration=state.iteration,
+            approach_summary=result.approach_summary,
+            plan_text=result.plan_text,
+            session_id=result.team_session_ids.get("team-lead"),
+        )
+        state.current_plan = {
+            "approach_summary": result.approach_summary,
+            "plan_text": result.plan_text,
+        }
+
+    if result.memory_content:
+        mem_path = (
+            Path(project_dir) / ".claude" / "agent-memory" / "team-lead" / "MEMORY.md"
+        )
+        mem_path.parent.mkdir(parents=True, exist_ok=True)
+        mem_path.write_text(result.memory_content)
+
+    if result.status == "error":
+        state.failed_runs.append(
+            {
+                "iteration": state.iteration,
+                "status": "error",
+                "error": result.error_message,
+                "approach": result.approach_summary,
+            }
+        )
+        store.record_event(
+            iteration=state.iteration,
+            topology=state.topology,
+            event="iteration_error",
+            detail=result.error_message[:200],
+        )
+        state.iteration += 1
+        store.save(state)
+        return "continue"
+
+    # Successful experiment
+    state.experiments.append(
+        {
+            "iteration": state.iteration,
+            "oof_score": result.oof_score,
+            "quality_score": result.quality_score,
+            "submission_file": result.submission_file,
+            "notes": result.notes,
+            "approach": result.approach_summary,
+            "solution_files": result.solution_files,
+        }
+    )
+
+    if target_metric and result.oof_score is not None:
+        if _is_better(result.oof_score, state.best_oof_score, metric_direction):
+            state.best_oof_score = result.oof_score
+            state.best_submission_path = result.submission_file or None
+    elif not target_metric and result.quality_score is not None:
+        if _is_better(result.quality_score, state.best_quality_score, "maximize"):
+            state.best_quality_score = result.quality_score
+            state.best_submission_path = result.submission_file or None
+
+    _reset_daily_submissions(state)
+    if (
+        auto_submit
+        and result.submit
+        and result.format_ok
+        and result.submission_file
+        and state.submission_count < state.max_submissions_per_day
+    ):
+        submitted, sub_err = submit(
+            platform=platform,
+            competition_id=competition_id,
+            submission_path=result.submission_file,
+            message=f"iter {state.iteration}: {result.approach_summary[:60]}",
+        )
+        if submitted:
+            state.submission_count += 1
+            lb_score = score_submission_artifact(
+                platform=platform, submission_path=result.submission_file
+            )
+            if lb_score is not None:
+                update_best_submission_score(state=state, new_score=lb_score)
+                state.lb_scores.append(
+                    {"score": lb_score, "timestamp": date.today().isoformat(), "public_lb": True}
+                )
+            store.record_event(
+                iteration=state.iteration,
+                topology=state.topology,
+                event="submission",
+                detail=f"count={state.submission_count} lb={lb_score}",
+            )
+        else:
+            logger.warning(f"Submission failed: {sub_err}")
+
+    if result.solution_files:
+        store.record_code_snapshots(state.iteration, result.solution_files, project_dir)
+
+    store.record_event(
+        iteration=state.iteration,
+        topology=state.topology,
+        event="iteration_complete",
+        detail=(
+            f"status={result.status} "
+            f"oof={result.oof_score} "
+            f"improvement={result.is_improvement} "
+            f"submit={result.submit}"
+        ),
+    )
+
+    if result.stop:
+        logger.info(f"Validator signalled stop at iteration {state.iteration}")
+        state.last_stop_reason = "validator stop signal"
+        state.done = True
+        state.iteration += 1
+        store.save(state)
+        return "stop"
+
+    state.iteration += 1
+    store.save(state)
+    return "ok"
+
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 
@@ -74,24 +298,23 @@ async def run_competition(
     cfg = load_competition_config(competition_dir)
     competition_id = cfg["competition_id"]
     platform = cfg["platform"]
-    data_dir = cfg["data_dir"]
     target_metric = cfg["metric"]
     metric_direction = cfg["direction"]
     topology_name = cfg["topology"]
 
-    if mode == "personal-production":
-        if max_iteration_seconds is None:
-            max_iteration_seconds = 1800
-        if max_agent_calls_per_iteration is None:
-            max_agent_calls_per_iteration = 5
-        if max_failed_runs_total is None:
-            max_failed_runs_total = 20
-        n_parallel = 1
+    (
+        max_iteration_seconds,
+        max_agent_calls_per_iteration,
+        max_failed_runs_total,
+        n_parallel,
+    ) = _apply_mode_defaults(
+        mode, max_iteration_seconds, max_agent_calls_per_iteration, max_failed_runs_total, n_parallel
+    )
 
     run_preflight_or_raise(
         competition_dir=competition_dir,
         platform=platform,
-        data_dir=data_dir,
+        data_dir=cfg["data_dir"],
         target_metric=target_metric,
         max_iterations=max_iterations,
         n_parallel=n_parallel,
@@ -102,76 +325,14 @@ async def run_competition(
     gladius_dir.mkdir(parents=True, exist_ok=True)
 
     store = StateStore(str(gladius_dir / "state.db"))
+    state = _init_or_resume_state(store, cfg, gladius_dir, resume_from_db, max_iterations)
 
-    state: CompetitionState | None = store.load() if resume_from_db else None
-    if state is None:
-        logger.info("Initialising new competition state")
-        state = CompetitionState(
-            competition_id=competition_id,
-            data_dir=str(Path(data_dir).resolve()),
-            output_dir=str(gladius_dir.resolve()),
-            target_metric=target_metric,
-            metric_direction=metric_direction,
-            topology=topology_name,
-            max_iterations=max_iterations,
-            submission_threshold=cfg.get("submission_threshold"),
-        )
-    else:
-        _best_str = (
-            f"{state.best_oof_score:.6f}"
-            if state.best_oof_score is not None
-            else "none"
-        )
-        logger.info(
-            f"Resuming from iteration {state.iteration}, "
-            f"topology={state.topology}, best={_best_str}"
-        )
-        if state.max_iterations != max_iterations:
-            logger.info(
-                f"Updating max_iterations: {state.max_iterations} -> {max_iterations}"
-            )
-            state.max_iterations = max_iterations
-
-        # Recalibrate best scores if experiments exist but bests were never persisted.
-        if state.experiments:
-            if target_metric and state.best_oof_score is None:
-                scored = [
-                    e["oof_score"]
-                    for e in state.experiments
-                    if e.get("oof_score") is not None
-                ]
-                if scored:
-                    state.best_oof_score = (
-                        max(scored) if metric_direction != "minimize" else min(scored)
-                    )
-                    logger.info(
-                        f"Recalibrated best_oof_score: {state.best_oof_score:.6f}"
-                    )
-            elif not target_metric and state.best_quality_score is None:
-                scored = [
-                    e["quality_score"]
-                    for e in state.experiments
-                    if e.get("quality_score") is not None
-                ]
-                if scored:
-                    state.best_quality_score = max(scored)
-
-        if state.done and state.iteration < state.max_iterations:
-            logger.info(
-                f"Resuming: done=True but only {state.iteration}/{state.max_iterations} "
-                "iterations used — resetting"
-            )
-            state.done = False
-            state.consecutive_errors = 0
-
-    # Resolve topology
     if topology_name not in TOPOLOGY_REGISTRY:
         raise ValueError(
             f"Unknown topology {topology_name!r}. "
             f"Valid: {list(TOPOLOGY_REGISTRY.keys())}"
         )
     topology = TOPOLOGY_REGISTRY[topology_name]()
-
     logger.info(f"Topology: {topology_name}")
 
     while state.iteration < state.max_iterations and not state.done:
@@ -241,7 +402,6 @@ async def run_competition(
         _reset_daily_submissions(state)
         claude_md.write(state, project_dir)
 
-        result: IterationResult | None = None
         try:
             result = await topology.run_iteration(
                 state,
@@ -268,138 +428,21 @@ async def run_competition(
             store.save(state)
             continue
 
-        # ── Process iteration result ──────────────────────────────────────────
-        state.consecutive_errors = 0
-
-        # Update session IDs for all roles used
-        if result.team_session_ids:
-            state.team_session_ids.update(result.team_session_ids)
-
-        # Record plan
-        if result.plan_text:
-            store.record_plan(
-                iteration=state.iteration,
-                approach_summary=result.approach_summary,
-                plan_text=result.plan_text,
-                session_id=result.team_session_ids.get("team-lead"),
-            )
-            state.current_plan = {
-                "approach_summary": result.approach_summary,
-                "plan_text": result.plan_text,
-            }
-
-        # Record memory
-        if result.memory_content:
-            mem_path = (
-                Path(project_dir) / ".claude" / "agent-memory" / "team-lead" / "MEMORY.md"
-            )
-            mem_path.parent.mkdir(parents=True, exist_ok=True)
-            mem_path.write_text(result.memory_content)
-
-        if result.status == "error":
-            state.failed_runs.append(
-                {
-                    "iteration": state.iteration,
-                    "status": "error",
-                    "error": result.error_message,
-                    "approach": result.approach_summary,
-                }
-            )
-            store.record_event(
-                iteration=state.iteration,
-                topology=state.topology,
-                event="iteration_error",
-                detail=result.error_message[:200],
-            )
-            state.iteration += 1
-            store.save(state)
-            continue
-
-        # Successful experiment
-        experiment = {
-            "iteration": state.iteration,
-            "oof_score": result.oof_score,
-            "quality_score": result.quality_score,
-            "submission_file": result.submission_file,
-            "notes": result.notes,
-            "approach": result.approach_summary,
-            "solution_files": result.solution_files,
-        }
-        state.experiments.append(experiment)
-
-        # Update best scores
-        if target_metric and result.oof_score is not None:
-            if _is_better(result.oof_score, state.best_oof_score, metric_direction):
-                state.best_oof_score = result.oof_score
-                state.best_submission_path = result.submission_file or None
-        elif not target_metric and result.quality_score is not None:
-            if _is_better(result.quality_score, state.best_quality_score, "maximize"):
-                state.best_quality_score = result.quality_score
-                state.best_submission_path = result.submission_file or None
-
-        # Submission
-        _reset_daily_submissions(state)
-        if (
-            auto_submit
-            and result.submit
-            and result.format_ok
-            and result.submission_file
-            and state.submission_count < state.max_submissions_per_day
-        ):
-            submitted, sub_err = submit(
-                platform=platform,
-                competition_id=competition_id,
-                submission_path=result.submission_file,
-                message=f"iter {state.iteration}: {result.approach_summary[:60]}",
-            )
-            if submitted:
-                state.submission_count += 1
-                lb_score = score_submission_artifact(
-                    platform=platform, submission_path=result.submission_file
-                )
-                if lb_score is not None:
-                    update_best_submission_score(state=state, new_score=lb_score)
-                    state.lb_scores.append(
-                        {"score": lb_score, "timestamp": date.today().isoformat(), "public_lb": True}
-                    )
-                store.record_event(
-                    iteration=state.iteration,
-                    topology=state.topology,
-                    event="submission",
-                    detail=f"count={state.submission_count} lb={lb_score}",
-                )
-            else:
-                logger.warning(f"Submission failed: {sub_err}")
-
-        # Code snapshots
-        if result.solution_files:
-            store.record_code_snapshots(
-                state.iteration, result.solution_files, project_dir
-            )
-
-        store.record_event(
-            iteration=state.iteration,
-            topology=state.topology,
-            event="iteration_complete",
-            detail=(
-                f"status={result.status} "
-                f"oof={result.oof_score} "
-                f"improvement={result.is_improvement} "
-                f"submit={result.submit}"
-            ),
+        action = _process_iteration_result(
+            result=result,
+            state=state,
+            store=store,
+            project_dir=project_dir,
+            platform=platform,
+            competition_id=competition_id,
+            target_metric=target_metric,
+            metric_direction=metric_direction,
+            auto_submit=auto_submit,
         )
-
-        # Stop condition
-        if result.stop:
-            logger.info(f"Validator signalled stop at iteration {state.iteration}")
-            state.last_stop_reason = "validator stop signal"
-            state.done = True
-            state.iteration += 1
-            store.save(state)
+        if action == "stop":
             break
-
-        state.iteration += 1
-        store.save(state)
+        elif action == "continue":
+            continue
 
     store.close()
 
