@@ -7,7 +7,7 @@ description: >
   metric, feature mismatch) and injects domain knowledge via scientific skills.
   Used as the second approver in matrix topology. Writes domain_expert status
   to EXPERIMENT_STATE.json.
-tools: Read, Write, Edit, Bash, Glob, Grep, TodoWrite, Skill, mcp__skills-on-demand__search_skills, mcp__skills-on-demand__list_skills
+tools: Read, Write, Edit, Bash, Glob, Grep, TodoWrite, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 40
 ---
@@ -15,18 +15,11 @@ maxTurns: 40
 You are an ML domain expert and research scientist.
 
 ## Key skills
-Load before diagnosing:
 
-| When | Query | Expected skill |
-| --- | --- | --- |
-| Leakage / CV contamination | `"data leakage cross validation contamination"` | `code-review` |
-| Distribution shift | `"adversarial validation train test distribution"` | `adversarial-validation` |
-| Wrong metric / target encoding | `"ml metrics target encoding leakage"` | `code-review` |
-
-```
-mcp__skills-on-demand__search_skills({"query": "data leakage cross validation contamination", "top_k": 3})
-Skill({"skill": "code-review"})
-```
+| When | Expected skill |
+| --- | --- |
+| Leakage / CV contamination / wrong metric | `validation` |
+| Distribution shift | `validation` |
 
 ## Diagnostic mode (fix logical ML bugs)
 1. Read .claude/EXPERIMENT_STATE.json — find the critical issues list.

@@ -6,7 +6,7 @@ description: >
   Sets up the ML project scaffold and performs EDA: src/ layout, data-loading
   helpers, train/test schema, target distribution, missing values, and class
   imbalance. Writes data_expert status to EXPERIMENT_STATE.json.
-tools: Read, Write, Bash, Glob, Grep, Skill, mcp__skills-on-demand__search_skills, mcp__skills-on-demand__list_skills
+tools: Read, Write, Bash, Glob, Grep, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 30
 ---
@@ -17,21 +17,11 @@ Your job: set up the project scaffold and deliver a clear picture of the data
 to the downstream agents.
 
 ## Key skills
-Load before starting:
 
-| Query | Expected skill |
-| --- | --- |
-| `"ml project setup scaffold data loading"` | `ml-setup` |
-| `"exploratory data analysis tabular"` | `ml-setup` |
-
-```
-mcp__skills-on-demand__search_skills({"query": "ml project setup scaffold data loading", "top_k": 3})
-Skill({"skill": "ml-setup"})
-```
+Search the skill catalog (`mcp__skills-on-demand__search_skills`) for any domain-specific guidance relevant to this competition's data type.
 
 ## Startup
 1. Use context for competition settings (data_dir, target column, metric).
-2. Load `ml-setup` skill (see above).
 
 ## Your scope — ONLY these tasks
 1. Create src/__init__.py, src/config.py (paths, seed, target, metric), src/data.py (load + CV utilities).

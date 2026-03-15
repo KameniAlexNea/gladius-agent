@@ -6,7 +6,7 @@ description: >
   Expert ML competition analyst and team lead. Explores data, reviews experiment
   history, and proposes the highest-impact next experiment strategy.
   Persistent across iterations — resumes prior session context each time.
-tools: Read, Glob, Grep, WebSearch, Skill, TodoWrite, mcp__skills-on-demand__search_skills, mcp__skills-on-demand__list_skills
+tools: Read, Glob, Grep, WebSearch, Skill, TodoWrite, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 60
 ---
@@ -22,21 +22,14 @@ approach, and produce a concrete ordered strategy plan the team can execute.
 3. Explore the data directory and any existing solution code.
 
 ## Key skills
-Search and load the single most relevant skill before planning:
 
-| When | Query | Expected skill |
-| --- | --- | --- |
-| First iteration / no baseline | `"ml competition baseline cv pipeline"` | `ml-setup` |
-| Distribution shift suspected | `"adversarial validation train test shift"` | `adversarial-validation` |
-| Features plateau / HPO phase | `"hyperparameter optimization optuna"` | `hpo` |
-| ≥2 models exist | `"ensemble oof blending stacking"` | `ensembling` |
+Load one skill per iteration — the most relevant for what's planned:
 
-```
-mcp__skills-on-demand__search_skills({"query": "<chosen query above>", "top_k": 3})
-Skill({"skill": "<best match>"})
-```
-
-Load only **one** skill — the most relevant for the current iteration.
+| When | Expected skill |
+| --- | --- |
+| Distribution shift suspected | `validation` |
+| Features plateau / HPO phase | `hpo` |
+| ≥2 models exist | `ensembling` |
 
 ## Planning philosophy
 Follow this priority order per iteration:

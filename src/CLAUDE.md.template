@@ -36,25 +36,22 @@
 
 ## Available Skills
 
-**No task starts without loading a skill. Search → load → execute is mandatory.**
+Search before every task — invoke the best match.
 
 ```
 mcp__skills-on-demand__search_skills({"query": "<what you need to do>", "top_k": 5})
 ```
 
-The catalog covers 170+ skills across ML/AI, bioinformatics, cheminformatics, clinical, financial, geospatial, and more. Always search — do not assume a skill doesn't exist. If your exact need isn't obvious, try synonyms.
+**Project-specific skills** (always available):
 
 | Skill | When to invoke |
 | --- | --- |
-| `ml-setup` | **First** — project layout, CV patterns, baselines, metric formulas |
-| `code-review` | **Before reporting results** — leakage, metric errors, submission bugs |
-| `adversarial-validation` | Train/test distribution shift; leaking features |
+| `validation` | Before reporting results — leakage, CV contamination, submission format, distribution shift |
 | `feature-engineering` | Feature recipes, SHAP importance, pruning |
 | `hpo` | Bayesian hyperparameter search with Optuna |
 | `ensembling` | OOF blending, rank averaging, stacking |
-| `submit-check` | Validate submission CSV format |
-| `uv-venv` | Installing packages and running scripts |
-| `git-workflow` | After each working solution |
+
+The broader catalog covers 170+ skills across ML/AI, bioinformatics, cheminformatics, clinical, financial, geospatial, and more. Always search — do not assume a skill doesn't exist.
 
 ## Agent Memory
 
