@@ -1,112 +1,152 @@
 ---
 name: validation
-description: >
-  Comprehensive validation before reporting results. Covers three areas:
-  (1) code quality — data leakage, CV contamination, metric formula errors;
-  (2) submission format — column names, row count, NaN/Inf, value ranges;
-  (3) distribution shift — adversarial train/test AUC, leaking feature removal,
-  adversarial sample weighting. Always invoke before finalising any iteration.
+description: Pre-submission quality gate for ML competition pipelines. Runs three checks before any result is reported: code review (data leakage, CV contamination, metric errors), submission CSV format validation, and adversarial train/test distribution shift detection. Invoke before reporting any OOF score or submitting predictions.
 ---
 
 # Validation
 
-## Overview
+Three mandatory checks before any iteration result is reported. Catches the most costly bugs in ML competitions: target leakage inflating OOF, submission CSV rejections, and CV-LB correlation collapse from distribution shift.
 
-Three checks in one skill. Run in order before reporting any iteration result.
-Catches the most common sources of wasted leaderboard submissions: data leakage,
-CV metric errors, submission format bugs, and distribution shift.
+## When to Use
 
-## When to Use This Skill
+- Before reporting any OOF score or submitting predictions — every single iteration.
+- When OOF looks suspiciously high relative to the task difficulty.
+- When LB score lags OOF by more than 0.01 (CV-LB gap).
+- After writing any new feature batch — verify no shift introduced.
+- At competition start — run adversarial AUC baseline to calibrate CV strategy.
 
-- Before reporting any OOF score or submitting predictions.
-- Whenever OOF looks suspiciously high or the LB-OOF gap widens.
-- After writing any new feature engineering code.
-- At competition start — run adversarial AUC baseline once.
+## Critical Rules
 
-## Core Capabilities
+### ✅ DO
 
-1. **Code & ML Quality Review** — data leakage, CV contamination, metric formula errors, robustness. Full checklist in `references/checklist.md`.
-2. **Submission File Validation** — column names, row count, NaN/Inf, value ranges vs `sample_submission.csv`.
-3. **Adversarial Validation** — train/test distribution shift via binary classifier: AUC, leaking feature ranking, sample weights. Standalone script: `scripts/adversarial_validation.py`.
+- **Always run all three checks** — skip one and you will submit a broken or leaky result.
+- **Fix CRITICAL items before reporting** — no OOF score is meaningful until leakage is ruled out.
+- **Run adversarial validation once at the start** — know your AUC baseline before adding any features.
+- **Check submission format programmatically** — never eyeball column names; trailing spaces and case differences cause silent rejections.
+- **Print OOF as `OOF {metric}: {value:.6f}`** — the evaluator agent parses this exact format.
 
----
+### ❌ DON'T
 
-## 1. Code & ML Quality Review
+- **Don't report OOF before running the leakage checklist** — a leaky 0.95 AUC is worthless.
+- **Don't skip submission validation** — wrong column order, NaN values, and mismatched row counts are silent failures on most platforms.
+- **Don't wait for LB feedback to detect shift** — adversarial AUC catches it before you waste submissions.
+- **Don't drop features just because adversarial AUC is high** — first confirm they hurt CV; sometimes shift is benign.
 
-Fix every CRITICAL item before reporting results.
+## Anti-Patterns (NEVER)
 
-### CRITICAL — data leakage
+```python
+# ❌ BAD: Computing OOF metric as average of fold scores
+fold_scores = []
+for tr, val in cv.split(X, y):
+    model.fit(X[tr], y[tr])
+    fold_scores.append(roc_auc_score(y[val], model.predict_proba(X[val])[:, 1]))
+oof_score = np.mean(fold_scores)  # WRONG — biased by unequal fold sizes
 
-- [ ] Target-based encodings (mean encoding, target encoding) computed **inside** each CV fold — never on full train.
-- [ ] Temporal features (lag, rolling stats) use only past data — no future leakage.
-- [ ] No test rows accidentally appear in any training fold.
-- [ ] StandardScaler / other transformers fit on train fold only, applied to val/test.
-- [ ] `train_test_split` is NOT used instead of proper k-fold CV.
+# ✅ GOOD: Compute on the full OOF array
+oof = np.zeros(len(y))
+for tr, val in cv.split(X, y):
+    model.fit(X[tr], y[tr])
+    oof[val] = model.predict_proba(X[val])[:, 1]
+oof_score = roc_auc_score(y, oof)  # correct
+```
 
-### CRITICAL — metric correctness
+```python
+# ❌ BAD: Submit without checking column names
+submission.to_csv("submission.csv", index=False)
 
-- [ ] OOF metric computed on the full OOF array, not fold-by-fold averages.
-- [ ] Metric function matches the competition definition exactly (`average='macro'` vs `'binary'` etc.).
-- [ ] For probability metrics (AUC, log-loss): predictions are probabilities, not class labels.
-- [ ] Metric direction (maximize/minimize) respected when comparing scores.
+# ✅ GOOD: Validate against sample before saving
+sample = pd.read_csv("data/sample_submission.csv")
+assert list(submission.columns) == list(sample.columns), \
+    f"Column mismatch: {submission.columns.tolist()}"
+assert len(submission) == len(sample), \
+    f"Row count mismatch: {len(submission)} vs {len(sample)}"
+assert submission.isnull().sum().sum() == 0, "NaN in submission"
+submission.to_csv("artifacts/submission.csv", index=False)
+```
 
-### CRITICAL — submission format
+## Reference
 
-- [ ] Submission CSV column names match `sample_submission.csv` exactly.
-- [ ] Submission row count matches `sample_submission.csv` exactly.
-- [ ] No NaN or Inf in prediction column.
-- [ ] File saved to the path reported in `submission_file`.
-
-### Important — robustness
-
-- [ ] No hard-coded file paths — use variables from CLAUDE.md context.
-- [ ] Random seeds set for reproducibility (`random_state=42`, `np.random.seed(42)`).
-- [ ] OOF score printed as `OOF {metric}: {score:.6f}` so it appears in logs.
-- [ ] Script runs end-to-end without manual intervention.
-
----
-
-## 2. Submission File Validation
-
-Validate the submission CSV before platform upload.
-
-Steps:
-1. Load `data/sample_submission.csv` (or find sample_submission.csv in the data dir).
-2. Load the submission at `artifacts/submission.csv`.
-3. Check that column names match exactly (same order and names).
-4. Check that row counts match.
-5. Check for NaN or Inf in all numeric columns.
-6. For probability predictions: check all values are in [0, 1].
-7. For regression: check values are in a sane range (warn if extreme outliers).
-
-Output:
-- `VALID` if all checks pass.
-- `INVALID: <reason>` listing specific issues.
+- Full quality checklist: `references/checklist.md`
+- Adversarial validation script: `scripts/adversarial_validation.py`
 
 ---
 
-## 3. Adversarial Validation (Distribution Shift)
+## Workflow 1 — Code Review Checklist
 
-Run the standalone script — it handles data loading, CV, AUC reporting, top feature ranking, and sample weight generation:
+Run through `references/checklist.md` on every new script. Non-negotiable items:
+
+### Data Leakage
+
+- [ ] Target encodings computed **inside** each CV fold — never on full train.
+- [ ] Temporal features use only past data — no future leakage.
+- [ ] No test rows in any training fold.
+- [ ] StandardScaler / transformers fit on **train fold only**, applied to val/test.
+- [ ] `train_test_split` NOT used instead of proper k-fold CV.
+
+### Metric Correctness
+
+- [ ] OOF metric computed on the **full OOF array**, not fold-by-fold averages.
+- [ ] Metric function matches competition definition exactly (`average='macro'` vs `'binary'` etc.).
+- [ ] For probability metrics (AUC, log-loss): predictions are **probabilities**, not class labels.
+- [ ] Metric direction (maximize/minimize) consistent throughout.
+
+### Robustness
+
+- [ ] OOF score printed as `OOF {metric}: {score:.6f}` — evaluator agent parses this.
+- [ ] No hard-coded paths — use `pathlib` and config variables.
+- [ ] Random seeds set (`random_state=42`, `np.random.seed(42)`).
+
+---
+
+## Workflow 2 — Submission File Validation
+
+```python
+import pandas as pd
+import numpy as np
+
+def validate_submission(submission_path="artifacts/submission.csv",
+                        sample_path="data/sample_submission.csv") -> str:
+    submission = pd.read_csv(submission_path)
+    sample     = pd.read_csv(sample_path)
+
+    errors = []
+    if list(submission.columns) != list(sample.columns):
+        errors.append(f"Column mismatch — got {submission.columns.tolist()}, expected {sample.columns.tolist()}")
+    if len(submission) != len(sample):
+        errors.append(f"Row count mismatch — got {len(submission)}, expected {len(sample)}")
+    if submission.isnull().any().any():
+        errors.append(f"NaN in: {submission.columns[submission.isnull().any()].tolist()}")
+
+    # Check prediction column value ranges
+    pred_col = sample.columns[-1]
+    vals = submission[pred_col]
+    if vals.dtype in [float, "float64", "float32"]:
+        if (vals < 0).any() or (vals > 1).any():
+            if (vals < 0).any() or (vals > 1.001).any():
+                errors.append(f"Values out of [0,1]: min={vals.min():.4f}, max={vals.max():.4f}")
+
+    return "VALID" if not errors else "INVALID: " + "; ".join(errors)
+
+print(validate_submission())
+```
+
+---
+
+## Workflow 3 — Adversarial Validation
 
 ```bash
 uv run python scripts/adversarial_validation.py --data data/ --target <target_col>
-# Outputs: AUC, top-20 leaking features, artifacts/adversarial_weights.npy
+# Prints: AUC, verdict, top-20 leaking features
+# Saves:  artifacts/adversarial_weights.npy
 ```
 
-Or import the function directly:
+Or inline:
 
 ```python
 from scripts.adversarial_validation import run_adversarial_validation
 result = run_adversarial_validation("data/", target_col="target")
-# result = {"auc": 0.58, "verdict": "...", "top_features": {...}}
+# {"auc": 0.58, "verdict": "⚠️ Mild shift ...", "top_features": {...}}
 ```
-
-### When to run
-
-- Start of every competition — establish baseline train/test similarity.
-- OOF is high but leaderboard score lags (LB-OOF gap > 0.01).
-- After adding a batch of new features — verify they don't introduce shift.
 
 ### AUC interpretation
 
@@ -117,15 +157,7 @@ result = run_adversarial_validation("data/", target_col="target")
 | 0.65–0.80 | ❌ Moderate shift | Drop or transform top leaking features |
 | 0.80–1.00 | 🚨 Severe shift | Likely ID/time leak — investigate immediately |
 
-### Common leaking feature culprits
-
-- **Row ID / index columns** — always unique across splits; drop them.
-- **Timestamp columns** — train is older, test is newer; engineer carefully.
-- **Count/aggregation features** computed on different time windows in train vs test.
-
 ### Using adversarial sample weights
-
-When shift is structural and unavoidable, pass the saved weights to your model:
 
 ```python
 weights = np.load("artifacts/adversarial_weights.npy")
@@ -134,8 +166,22 @@ model.fit(X_train, y_train, sample_weight=weights)
 
 ---
 
-## Quick workflow (each iteration)
+## Common Pitfalls and Solutions
 
-1. Run **Section 1** (code review checklist) on any newly written code.
-2. Run **Section 2** (submission file check) before every submission.
-3. Run **Section 3** (adversarial AUC) once at competition start; re-run when LB-OOF gap widens.
+### The "Leaky OOF" Problem
+
+OOF AUC is 0.95 but leaderboard gives 0.70. Classic target leakage.
+
+**Check:** `references/checklist.md` data leakage section. Most common culprit: target encoding fit on full train rather than per fold.
+
+### The "False Negative" Adversarial AUC
+
+Adversarial AUC is 0.52 but LB-OOF gap is still large. Shift exists but in non-numeric columns not included in the adversarial classifier.
+
+**Fix:** Include string frequency encodings or hash-encoded string features in the adversarial dataset.
+
+### The "Silent Submission Failure"
+
+Platform returns 0.0 or error despite local validation passing. Common cause: integer IDs in prediction column instead of floats for probability competitions.
+
+**Fix:** Always `submission[pred_col] = submission[pred_col].astype(float)` before saving.

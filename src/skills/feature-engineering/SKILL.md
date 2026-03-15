@@ -1,144 +1,167 @@
 ---
 name: feature-engineering
-description: >
-  Systematic feature generation recipes, SHAP-based importance measurement,
-  and feature pruning for ML competitions. Use after a baseline is established.
-  Covers numerical, categorical, temporal, and aggregation features — all
-  with leakage prevention built in.
+description: Systematic feature generation for tabular ML competitions. Covers leakage-safe recipes for numerical, categorical, temporal, and aggregation features, plus SHAP-based importance measurement and disciplined pruning. Use after a baseline OOF score is established — engineering on top of a bad model is wasted effort.
 ---
 
 # Feature Engineering
 
-## Overview
+Feature engineering is the highest-ROI activity in tabular competitions once a solid CV baseline exists. Every new feature should have a hypothesis, be tested with a quick-fold sanity check, and pass the SHAP importance threshold before being committed.
 
-Feature engineering is the highest-ROI activity in tabular competitions after a
-solid CV baseline exists. This skill provides ready-to-use recipes for every
-feature type, a SHAP-based workflow for measuring importance, and a disciplined
-pruning process.
+## When to Use
 
-## When to Use This Skill
-
-- Baseline OOF score is established (LightGBM / XGBoost, raw features).
-- You want to systematically improve features before HPO.
+- Baseline OOF score is established (LightGBM / XGBoost on raw features).
 - OOF score has plateaued and you need orthogonal improvements.
-- You need to identify which features are driving model decisions.
+- You want to understand which variables are driving model decisions (SHAP).
+- Before HPO — tune on a strong feature set, not a weak one.
 
-## Core Capabilities
+## Critical Rules
 
-1. **Leakage Prevention** — mandatory rules before writing any feature code. See `references/safety_rules.md`.
-2. **Numerical Features** — log transforms, binning, Z-score outlier flags, pairwise interactions.
-3. **Categorical Features** — frequency encoding, fold-safe target encoding, rare-group collapsing.
-4. **Temporal / DateTime Features** — cyclic encoding, lag features, rolling statistics. Always sort by entity + time first.
-5. **Aggregation Features** — per-group mean/std/min/max/count. Compute on train fold, map to val/test.
-6. **SHAP Importance & Pruning** — TreeExplainer ranking + incremental pruning loop.
+### ✅ DO
 
----
+- **Read `references/safety_rules.md` first** — data leakage from feature engineering is the #1 competition mistake.
+- **Test each feature batch quickly** — run n_splits=2 before full CV to catch leaks early.
+- **Each feature needs a hypothesis comment** — silent features are technical debt.
+- **Always sort by entity + time before any lag/rolling** — out-of-order lag computation silently leaks future data.
+- **Compute group aggregations on train fold, map to val/test** — fitting on the full dataset is leakage.
+- **Confirm no shift after each feature batch** — run adversarial validation (`validation` skill).
 
-Read `references/safety_rules.md` before writing any feature code. It covers
-fold-safe target encoding, scaler fitting rules, lag feature ordering, aggregation
-leakage, and ID column removal — with correct and incorrect code examples.
+### ❌ DON'T
 
-**Quick rules:**
-- Target encoding: computed inside each CV fold — never on full train.
-- Scalers/encoders: fit on train fold only, transform val/test.
-- Lag/rolling stats: sort by entity + time, use `.shift(1)` to exclude current row.
-- Group aggregations: computed on train, mapped to val/test.
-- Run adversarial validation after any new feature batch (`validation` skill).
+- **Don't encode target statistics on the full training set** — target encoding must be fold-safe.
+- **Don't keep features with SHAP < 0.001 AND no OOF improvement** — noise features hurt generalisation.
+- **Don't engineer before establishing a baseline** — you won't know if features are helping.
+- **Don't fit scalers on val/test** — fit on train fold only, transform everything else.
 
-### 2. Numerical Feature Recipes
+## Anti-Patterns (NEVER)
+
+```python
+# ❌ BAD: Target encoding on full train — leaks target into val fold
+train["cat_enc"] = train.groupby("cat_col")["target"].transform("mean")
+
+# ✅ GOOD: Fold-safe target encoding — computed per fold
+def fold_safe_target_encode(train_fold, val_fold, col, target):
+    mapping = train_fold.groupby(col)[target].mean()
+    global_mean = train_fold[target].mean()
+    return val_fold[col].map(mapping).fillna(global_mean)
+```
+
+```python
+# ❌ BAD: Rolling mean includes current row
+df["rolling3"] = df.groupby("entity")["value"].transform(
+    lambda x: x.rolling(3).mean()
+)  # row i sees itself — future leak in time series
+
+# ✅ GOOD: Shift before rolling to exclude current row
+df = df.sort_values(["entity", "timestamp"])
+df["rolling3"] = df.groupby("entity")["value"].transform(
+    lambda x: x.shift(1).rolling(3).mean()
+)
+```
+
+```python
+# ❌ BAD: Group aggregation computed on full dataset (train+val+test)
+full_agg = df.groupby("group")["value"].mean()
+df["grp_mean"] = df["group"].map(full_agg)
+
+# ✅ GOOD: Computed on train fold, mapped to val/test
+train_agg = train_fold.groupby("group")["value"].mean()
+val_fold["grp_mean"] = val_fold["group"].map(train_agg)
+test["grp_mean"]     = test["group"].map(train_agg)
+```
+
+## Feature Recipes
+
+### Numerical
 
 ```python
 import numpy as np
 
-def add_numerical_features(df):
-    # Log transform (for skewed positives)
-    df["amount_log1p"] = np.log1p(df["amount"].clip(lower=0))
+# Log transform — for right-skewed positives
+df["amount_log1p"] = np.log1p(df["amount"].clip(lower=0))
 
-    # Binning
-    df["age_bin"] = pd.cut(df["age"], bins=10, labels=False)
+# Quantile binning — robust to outliers
+df["age_bin"] = pd.qcut(df["age"], q=10, labels=False, duplicates="drop")
 
-    # Z-score outlier flag
-    mu, sigma = df["value"].mean(), df["value"].std()
-    df["value_outlier"] = (np.abs(df["value"] - mu) > 3 * sigma).astype(int)
+# Outlier flag
+mu, sigma = df["value"].mean(), df["value"].std()
+df["value_outlier"] = (np.abs(df["value"] - mu) > 3 * sigma).astype(int)
 
-    # Pairwise interaction
-    df["ratio_a_b"] = df["feat_a"] / (df["feat_b"] + 1e-6)
-    return df
+# Ratio interaction
+df["ratio_a_b"] = df["feat_a"] / (df["feat_b"] + 1e-6)
 ```
 
-### 3. Categorical Feature Recipes
+### Categorical
 
 ```python
-# Frequency encoding (safe — no target)
-freq = df["cat_col"].value_counts() / len(df)
-df["cat_col_freq"] = df["cat_col"].map(freq)
+# Frequency encoding — no target, always safe
+freq = train["cat"].value_counts() / len(train)
+df["cat_freq"] = df["cat"].map(freq).fillna(0)
 
-# Target encoding — MUST be fold-safe
-def fold_safe_target_encode(train, val, col, target):
-    mapping = train.groupby(col)[target].mean()
-    return val[col].map(mapping).fillna(train[target].mean())
-
-# Rare-group collapsing
-counts = df["cat_col"].value_counts()
-rare = counts[counts < 50].index
-df["cat_col"] = df["cat_col"].where(~df["cat_col"].isin(rare), "RARE")
+# Rare-group collapsing — stabilises low-count categories
+counts = train["cat"].value_counts()
+rare   = counts[counts < 50].index
+df["cat"] = df["cat"].where(~df["cat"].isin(rare), "RARE")
 ```
 
-### 4. Temporal / DateTime Recipes
+### Temporal
 
 ```python
-df["hour"] = df["timestamp"].dt.hour
+df["hour"]      = df["timestamp"].dt.hour
 df["dayofweek"] = df["timestamp"].dt.dayofweek
-df["month"] = df["timestamp"].dt.month
+df["month"]     = df["timestamp"].dt.month
 
-# Cyclic encoding
+# Cyclic encoding — preserves circular nature of time
 df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
 df["hour_cos"] = np.cos(2 * np.pi * df["hour"] / 24)
 
-# Lag features — MUST sort by entity+time first
+# Lag + rolling — sort first, always
 df = df.sort_values(["entity_id", "timestamp"])
-df["lag1"] = df.groupby("entity_id")["value"].shift(1)
-df["rolling3_mean"] = df.groupby("entity_id")["value"].transform(lambda x: x.shift(1).rolling(3).mean())
+df["lag1"]        = df.groupby("entity_id")["value"].shift(1)
+df["roll3_mean"]  = df.groupby("entity_id")["value"].transform(
+    lambda x: x.shift(1).rolling(3).mean()
+)
 ```
 
-### 5. Aggregation Features (Group Stats)
+### SHAP Importance & Pruning
 
 ```python
-# Compute on train, map to val/test — NEVER on full dataset
-agg = train.groupby("group_col")["value"].agg(["mean", "std", "min", "max", "count"])
-agg.columns = [f"grp_{c}" for c in agg.columns]
-df = df.join(agg, on="group_col")
-```
-
-### 6. SHAP Importance & Feature Pruning
-
-```python
-import shap
-import lightgbm as lgb
+import shap, lightgbm as lgb
 
 model = lgb.LGBMClassifier(n_estimators=200, random_state=42)
 model.fit(X_train, y_train)
+shap_vals = shap.TreeExplainer(model).shap_values(X_val)
+sv = shap_vals[1] if isinstance(shap_vals, list) else shap_vals
 
-explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(X_val)
-
-# For binary classification shap_values is a list — take class 1
-if isinstance(shap_values, list):
-    sv = shap_values[1]
-else:
-    sv = shap_values
-
-importance = pd.Series(np.abs(sv).mean(axis=0), index=X_train.columns).sort_values(ascending=False)
+importance = (
+    pd.Series(np.abs(sv).mean(axis=0), index=X_train.columns)
+    .sort_values(ascending=False)
+)
 print(importance.head(30))
+
+# Pruning rule: drop if mean |SHAP| < 0.001 AND no OOF improvement ≥ 0.0005
 ```
 
-**Pruning rule:** Drop a feature if mean |SHAP| < 0.001 AND adding it does not
-improve OOF score by ≥ 0.0005.
+## Common Pitfalls and Solutions
 
-## Quick Workflow
+### The "Too Many Features" Problem
 
-1. Run leakage checklist (Section 1).
-2. Write candidate features using recipes above.
-3. Compute SHAP values and rank features.
-4. Run the pruning loop — keep only features that improve OOF by ≥ 0.0005.
-5. Commit the feature set; each step must have a comment explaining the hypothesis.
+Adding 50 features at once makes it impossible to know which ones help. Overfitting risk rises sharply.
+
+**Fix:** Add features in batches of 5–10. Test each batch with n_splits=2 before committing to full CV.
+
+### The "SHAP Lies" Problem
+
+SHAP says a feature is important, but removing it improves OOF. Collinear features share importance — both appear important, but one is redundant.
+
+**Fix:** After SHAP ranking, run incremental removal: drop features one-by-one from the bottom; keep only if OOF does not increase.
+
+### The "Adversarial AUC Jumps" Problem
+
+Adding a new feature batch raises adversarial AUC from 0.52 to 0.71. The new features introduce distribution shift.
+
+**Fix:** Check which new features have the highest adversarial importance. Lag features that use different lookback windows in train vs test are a common cause.
+
+## Reference
+
+- Leakage rules and examples: `references/safety_rules.md`
+
