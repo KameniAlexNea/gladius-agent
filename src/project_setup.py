@@ -16,9 +16,10 @@ import src.claude_md as claude_md
 import src.roles as roles
 import src.skills as skills
 import src.tools as tools
+from src import team_lead_memory_path
 
-_REPO = Path(__file__).parent.parent
-_TEMPLATES = _REPO / "gladius" / "utils" / "templates"
+_SRC = Path(__file__).parent
+_TEMPLATES = _SRC
 
 # ── Config loading ────────────────────────────────────────────────────────────
 
@@ -96,7 +97,7 @@ def _dir_skeleton(root: Path) -> None:
     for sub in (
         root / ".claude" / "agents",
         root / ".claude" / "skills",
-        root / ".claude" / "agent-memory" / "team-lead",
+        root / ".claude" / "agent-memory",
         root / "src",
         root / "scripts",
         root / "artifacts",
@@ -146,7 +147,7 @@ def _write_settings(root: Path, cfg: dict) -> None:
 
 
 def _seed_memory(root: Path, cfg: dict, *, force: bool) -> None:
-    mem_file = root / ".claude" / "agent-memory" / "team-lead" / "MEMORY.md"
+    mem_file = team_lead_memory_path(root)
     if mem_file.exists() and not force:
         return
     template_name = "MEMORY-ml.md" if cfg["metric"] else "MEMORY-task.md"

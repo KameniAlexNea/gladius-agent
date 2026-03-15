@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.topologies import TOPOLOGY_CATALOG
+from src import team_lead_memory_path
 
 import re
 
@@ -174,9 +175,7 @@ def render(state: "CompetitionState", project_dir: str) -> str:
             "5. Self-assess quality 0-100: rate completeness and correctness against README requirements."
         )
 
-    memory_path = str(
-        Path(project_dir).resolve() / ".claude" / "agent-memory" / "team-lead" / "MEMORY.md"
-    )
+    memory_path = str(team_lead_memory_path(project_dir).resolve())
 
     # ── substitute ───────────────────────────────────────────────────────────
     replacements = {
