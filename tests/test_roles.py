@@ -49,39 +49,19 @@ class TestCatalogCompleteness:
 
 class TestRoleDefinitionFields:
     @pytest.mark.parametrize("name", list(EXPECTED_ROLES))
-    def test_name_matches_key(self, name):
+    def test_role_fields(self, name):
+        """name, description, prompt, session, tools, and model are all valid."""
         role = ROLE_CATALOG[name]
         assert role.name == name
-
-    @pytest.mark.parametrize("name", list(EXPECTED_ROLES))
-    def test_description_non_empty(self, name):
-        role = ROLE_CATALOG[name]
         assert role.description.strip(), f"{name}: description is empty"
-
-    @pytest.mark.parametrize("name", list(EXPECTED_ROLES))
-    def test_system_prompt_non_empty(self, name):
-        role = ROLE_CATALOG[name]
-        assert len(role.system_prompt.strip()) > 50, (
+        assert len(role.prompt.strip()) > 50, (
             f"{name}: system_prompt is suspiciously short"
         )
-
-    @pytest.mark.parametrize("name", list(EXPECTED_ROLES))
-    def test_session_is_valid_value(self, name):
-        role = ROLE_CATALOG[name]
         assert role.session in (
             "persistent",
             "fresh",
         ), f"{name}: unexpected session value '{role.session}'"
-
-    @pytest.mark.parametrize("name", list(EXPECTED_ROLES))
-    def test_tools_non_empty(self, name):
-        role = ROLE_CATALOG[name]
         assert len(role.tools) > 0, f"{name}: tools tuple is empty"
-
-    @pytest.mark.parametrize("name", list(EXPECTED_ROLES))
-    def test_model_is_placeholder(self, name):
-        """The catalog is loaded before model substitution; placeholder must be present."""
-        role = ROLE_CATALOG[name]
         assert "GLADIUS" in role.model, (
             f"{name}: model field '{role.model}' does not contain GLADIUS placeholder"
         )

@@ -7,10 +7,7 @@ import re
 import shlex
 from pathlib import Path
 
-from claude_agent_sdk import AgentDefinition
 from loguru import logger
-
-from gladius.roles import ROLE_CATALOG as _ROLE_CATALOG
 
 
 def validate_runtime_invocation(

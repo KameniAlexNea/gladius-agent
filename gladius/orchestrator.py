@@ -35,7 +35,9 @@ Delegate implementation to the right specialist in `.claude/agents/`:
 - `validator` — submission format and improvement gate
 - `memory-keeper` — update MEMORY.md with learnings
 
-Run specialists sequentially. Each one reads the output of the previous.
+Sequencing depends on the active topology (see `## Management Topology` in CLAUDE.md):
+- **Sequential** (default): each specialist reads EXPERIMENT_STATE written by the previous one.
+- **Parallel** (autonomous / multi-branch): spawn independent branches via parallel Task calls, then merge results before calling the validator.
 
 ## Constraints
 - Do not repeat any approach listed under "Failed Approaches" in CLAUDE.md.
