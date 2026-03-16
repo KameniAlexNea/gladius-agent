@@ -26,7 +26,6 @@ from loguru import logger
 from gladius.roles import ROLE_CATALOG
 from gladius.roles._console import _BLUE, _BOLD, _c, _log_message
 from gladius.roles.helpers import (
-    build_runtime_agents,
     get_runtime_model,
     is_bash_command_scoped_to_cwd,
     is_tool_allowed,
@@ -79,7 +78,7 @@ async def run_agent(
         max_turns=max_turns,
         stderr=stderr_cb,
         setting_sources=["project"],
-        agents=build_runtime_agents(runtime_model),
+        agents=ROLE_CATALOG,
         model=runtime_model,
         **option_kwargs,
     )

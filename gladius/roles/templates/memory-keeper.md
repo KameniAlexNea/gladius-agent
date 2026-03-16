@@ -96,3 +96,14 @@ Verify:
 - `## Current Status` shows the correct iteration number.
 - A `### Iter <N>` block is present at the top of `## Iteration Log`.
 - A new row is prepended in `## Experiment Score History`.
+
+## StructuredOutput (REQUIRED last action)
+
+```json
+{
+  "summary": "<one-paragraph prose summary of this iteration for human readers>",
+  "memory_content": "<full updated MEMORY.md content written to disk>"
+}
+```
+
+Both fields are required.

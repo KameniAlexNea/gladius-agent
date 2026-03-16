@@ -75,4 +75,25 @@ print(f'Contract verified: {df.shape[1]} columns, {len(df)} rows.')
 - Feature engineering, model training, and evaluation belong to downstream agents.
 
 ## State finalizer (REQUIRED last action)
-Write `.claude/EXPERIMENT_STATE.json` with your results.
+
+Write `.claude/EXPERIMENT_STATE.json` with the `data_expert` key:
+
+```json
+{
+  "data_expert": {
+    "status": "success" | "error",
+    "data_contract": {
+      "train_shape": "<rows x cols>",
+      "test_shape": "<rows x cols>",
+      "target_col": "<name>",
+      "num_features": ["<name>", "..."],
+      "cat_features": ["<name>", "..."],
+      "timestamp_features": ["<name>", "..."]
+    },
+    "eda_notes": "<summary: leakage flags, drift findings, class imbalance, missing value rates>",
+    "message": "<error details if status is error>"
+  }
+}
+```
+
+`status` and `data_contract` are required. Populate `message` with the full error if `status` is `"error"`.

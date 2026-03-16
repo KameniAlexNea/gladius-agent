@@ -62,8 +62,10 @@ mcp__skills-on-demand__search_skills({"query": "<model type or task>", "top_k": 
 
 ### How to run
 ```bash
-nohup uv run python scripts/train.py > train.log 2>&1 & echo $!
-while kill -0 <PID> 2>/dev/null; do sleep 30; done && echo "finished"
+nohup uv run python scripts/train.py > train.log 2>&1 &
+TRAIN_PID=$!   # MUST be on its own line — inline & TRAIN_PID=$! does NOT work
+echo "PID: $TRAIN_PID"
+while kill -0 $TRAIN_PID 2>/dev/null; do sleep 30; done && echo "finished"
 tail -n 60 train.log
 ```
 
@@ -86,5 +88,22 @@ Run the `validation` skill and verify:
 - Submission → `artifacts/submission.csv` in SampleSubmission format.
 
 ## State finalizer (REQUIRED last action)
-Write `.claude/EXPERIMENT_STATE.json` with your results.
-If `error_type` is `"upstream_issue"`, set `status` to `"error"` and include the full traceback and broken file in `message`. Do not attempt further retries.
+
+Write `.claude/EXPERIMENT_STATE.json` with the `ml_engineer` key:
+
+```json
+{
+  "ml_engineer": {
+    "status": "success" | "error" | "timeout" | "oom",
+    "oof_score": <number | null>,
+    "quality_score": <number 0–100 | null>,
+    "solution_files": ["src/models.py", "scripts/train.py"],
+    "submission_file": "artifacts/submission.csv",
+    "notes": "<brief summary of what was run>",
+    "error_message": "<traceback or reason if status != success>",
+    "total_turns": <integer | null>
+  }
+}
+```
+
+`status`, `oof_score`, and `quality_score` are required. If `status` is `"error"`, populate `error_message` with the full traceback and the broken file path. Do not attempt further retries for `upstream_issue` errors.

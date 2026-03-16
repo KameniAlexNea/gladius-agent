@@ -13,21 +13,6 @@ from loguru import logger
 from gladius.roles import ROLE_CATALOG as _ROLE_CATALOG
 
 
-def build_runtime_agents(model: str) -> dict[str, AgentDefinition]:
-    """Build AgentDefinition objects for each role, stamped with the runtime model."""
-    small_model = os.environ.get("GLADIUS_SMALL_MODEL") or model
-    _small = {"evaluator", "memory-keeper", "validator"}
-    return {
-        name: AgentDefinition(
-            description=role.description,
-            prompt=role.system_prompt,
-            tools=list(role.tools),
-            model=small_model if name in _small else model,
-        )
-        for name, role in _ROLE_CATALOG.items()
-    }
-
-
 def validate_runtime_invocation(
     *,
     agent_name: str,

@@ -227,14 +227,14 @@ def _write_settings(root: Path, cfg: dict) -> None:
             "PostToolUse": [
                 {
                     "matcher": "Edit|Write",
-                    "hooks": [{"type": "command", "command": "scripts/after_edit.sh"}],
+                    "hooks": [{"type": "command", "command": "scripts/after_edit.sh", "timeout": 60}],
                 }
             ],
             "PreToolUse": [
                 {
                     "matcher": "Bash",
                     "hooks": [
-                        {"type": "command", "command": "scripts/validate_bash.sh"}
+                        {"type": "command", "command": "scripts/validate_bash.sh", "timeout": 7200}
                     ],
                 }
             ],

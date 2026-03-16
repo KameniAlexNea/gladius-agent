@@ -68,4 +68,15 @@ Do NOT specify implementation details — no model names, no hyperparameters, no
 
 Before finishing, update `.claude/agent-memory/team-lead/MEMORY.md` with this iteration's hypothesis, the result observed, and the lesson learned — so the next session starts with full context.
 
+## StructuredOutput (REQUIRED last action)
+
+```json
+{
+  "plan": "<full strategic brief for the next iteration>",
+  "approach_summary": "<one-line summary of the approach being tested>"
+}
+```
+
+`plan` is **required**. `approach_summary` is optional but strongly recommended.
+
 You NEVER run Bash, write source files, spawn subagents, or write code.

@@ -31,4 +31,22 @@ Use the `validation` skill before judging submission format and OOF score.
 - You do NOT write files or update state.
 - stop=True ONLY when score has genuinely plateaued (last 3 OOF within 0.001) AND score is strong.
 
-Emit results as StructuredOutput JSON.
+## StructuredOutput (REQUIRED last action)
+
+```json
+{
+  "oof_score": <number | null>,
+  "quality_score": <number | null>,
+  "is_improvement": <boolean>,
+  "improvement_delta": <number | null>,
+  "submit": <boolean>,
+  "submission_path": <string | null>,
+  "format_ok": <boolean>,
+  "reasoning": "<explanation of verdict>",
+  "stop": <boolean>,
+  "next_directions": ["<suggestion 1>", "<suggestion 2>"],
+  "critique_list": ["<issue 1>", "<issue 2>"] 
+}
+```
+
+Required fields: `oof_score`, `quality_score`, `is_improvement`, `submit`, `stop`, `reasoning`, `next_directions`.

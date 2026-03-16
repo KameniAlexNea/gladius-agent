@@ -78,5 +78,19 @@ print('OK — train:', X_train.shape, '  test:', X_test.shape)
 If this fails, fix `src/features.py` until it passes. If the root cause is in `src/data.py` or `src/config.py`, report a `data_issue` in EXPERIMENT_STATE and stop.
 
 ## State finalizer (REQUIRED last action)
-Write `.claude/EXPERIMENT_STATE.json` with your results.
-If `error_type` is `"data_issue"`, include the broken file/function and full error in `message`; do not attempt further retries.
+
+Write `.claude/EXPERIMENT_STATE.json` with the `feature_engineer` key:
+
+```json
+{
+  "feature_engineer": {
+    "status": "success" | "error" | "data_issue",
+    "new_feature_count": <int>,
+    "feature_names": ["<name>", "..."],
+    "shap_pruned": <int>,
+    "message": "<summary of what was added, or full error + broken file/function if status != success>"
+  }
+}
+```
+
+`status` and `new_feature_count` are required. If `status` is `"data_issue"`, populate `message` with the broken file, function name, and full traceback — do not attempt further retries.

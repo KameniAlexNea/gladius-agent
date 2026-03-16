@@ -142,6 +142,19 @@ Your conversation has a fixed context window. Protect it:
 For training scripts that take more than a few seconds, use `nohup` and track the PID.
 **Never use background task IDs (`TaskOutput`, `TaskStop`).**
 
+> **⚠️ CRITICAL — PID capture must be on its own line.**
+> `nohup ... & TRAIN_PID=$!` does **NOT** capture the PID — bash evaluates `$!`
+> before the `&` job is registered. Put `TRAIN_PID=$!` on the **next line**, alone.
+>
+> ```bash
+> # ❌ WRONG — TRAIN_PID will be empty:
+> nohup uv run python scripts/train.py > train.log 2>&1 & TRAIN_PID=$!
+>
+> # ✅ CORRECT — separate lines:
+> nohup uv run python scripts/train.py > train.log 2>&1 &
+> TRAIN_PID=$!
+> ```
+
 ```bash
 # Launch and capture PID
 nohup uv run python scripts/train.py > train.log 2>&1 &

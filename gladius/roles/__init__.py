@@ -35,7 +35,7 @@ class RoleDefinition:
     tools: tuple[str, ...]
     model: str
     max_turns: int
-    system_prompt: str
+    prompt: str
 
 
 def _parse(path: Path) -> RoleDefinition:
@@ -65,7 +65,7 @@ def _parse(path: Path) -> RoleDefinition:
         tools=tuple(t.strip() for t in tools_str.split(",") if t.strip()),
         model=_get("model"),
         max_turns=int(max_turns_str) if max_turns_str.isdigit() else 0,
-        system_prompt=body,
+        prompt=body,
     )
 
 
