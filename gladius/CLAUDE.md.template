@@ -44,6 +44,10 @@ mcp__skills-on-demand__search_skills({"query": "<what you need to do>", "top_k":
 
 The catalog covers 170+ skills across ML/AI, bioinformatics, cheminformatics, clinical, financial, geospatial, and more. Always search — do not assume a skill doesn't exist.
 
+> **Before launching any training script**, load the `process-management` skill if not loaded.
+> It provides the pre-flight check, PID capture, and wait patterns that prevent
+> duplicate processes and stale-artifact confusion.
+
 ## Agent Memory
 
 Long-term memory for the system lives at `{{memory_path}}`.

@@ -38,7 +38,7 @@ mcp__skills-on-demand__search_skills({"query": "<model type or task>", "top_k": 
 1. **Context sync** — read `.claude/EXPERIMENT_STATE.json` to verify `feature_engineer` status is `success` and retrieve the `data_contract`.
 2. **Contract review** — read `src/config.py`, `src/data.py`, and `src/features.py`.
 3. **Environment** — install dependencies: `uv add lightgbm xgboost catboost scikit-learn`; add others as the plan requires.
-4. **Tooling** — load the `validation` skill now, before writing any code.
+4. **Tooling** — load the `validation` skill and the `process-management` skill now, before writing any code.
 
 ## Your scope — ONLY these tasks
 
