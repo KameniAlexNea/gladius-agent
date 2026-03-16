@@ -42,22 +42,15 @@ Search before every task — invoke the best match.
 mcp__skills-on-demand__search_skills({"query": "<what you need to do>", "top_k": 5})
 ```
 
-**Project-specific skills** (always available):
-
-| Skill | When to invoke |
-| --- | --- |
-| `validation` | Before reporting results — leakage, CV contamination, submission format, distribution shift |
-| `feature-engineering` | Feature recipes, SHAP importance, pruning |
-| `hpo` | Bayesian hyperparameter search with Optuna |
-| `ensembling` | OOF blending, rank averaging, stacking |
-
-The broader catalog covers 170+ skills across ML/AI, bioinformatics, cheminformatics, clinical, financial, geospatial, and more. Always search — do not assume a skill doesn't exist.
+The catalog covers 170+ skills across ML/AI, bioinformatics, cheminformatics, clinical, financial, geospatial, and more. Always search — do not assume a skill doesn't exist.
 
 ## Agent Memory
 
-If you are the **team lead**, read your agent memory at
-`{{memory_path}}` before planning.
-Update it with insights after each iteration.
+Long-term memory for the system lives at `{{memory_path}}`.
+
+- **team-lead**: read it at the start of every iteration before planning.
+- **memory-keeper**: rewrite it at the end of every iteration with this iteration's results.
+- All other agents: may read it for context; never write to it directly.
 
 ## Project Structure
 
@@ -75,31 +68,47 @@ scripts/
 └── evaluate.py    # reload artifacts/oof.npy and report metric
 ```
 
-- `scripts/train.py` MUST print: `OOF <metric>: <value>` — the evaluator parses this.
+- `scripts/train.py` MUST print: `FINAL OOF <metric>: <value> (+/- <std>)` — the evaluator parses this line.
 - Save OOF predictions to `artifacts/oof.npy` (and `artifacts/oof_classes.npy` for multiclass).
 - Use `pathlib` throughout; no hardcoded absolute paths.
 - Set `random_state=42` everywhere for reproducibility.
+- **pandas 4.x**: string columns have `dtype='str'`, not `dtype='object'`. Always use `pd.api.types.is_string_dtype(col)` — never `col.dtype == "object"`.
 
 ## Agent Boundaries & Escalation
 
-Each file has a single owner. Never modify another agent's file — report the problem instead.
+Each file has exactly one owner. Every agent has a defined read/write scope — stay inside it.
 
-| File(s) | Owner |
-| --- | --- |
-| `src/config.py`, `src/data.py`, `src/__init__.py` | **data-expert** |
-| `src/features.py` | **feature-engineer** |
-| `src/models.py`, `scripts/train.py`, `scripts/evaluate.py` | **ml-engineer** |
+| Agent | Writes | Never touches |
+| --- | --- | --- |
+| **data-expert** | `src/config.py`, `src/data.py`, `src/__init__.py` | everything else in `src/` |
+| **feature-engineer** | `src/features.py` | `src/data.py`, `src/config.py`, `src/models.py` |
+| **ml-engineer** | `src/models.py`, `scripts/train.py`, `scripts/evaluate.py` | `src/data.py`, `src/features.py` |
+| **domain-expert** | targeted bug fixes only (fix mode); nothing (review mode) | source files during review |
+| **evaluator** | `EXPERIMENT_STATE.json["evaluator"]` only | all source files and scripts |
+| **validator** | nothing — emits StructuredOutput only | all files |
+| **memory-keeper** | `.claude/agent-memory/team-lead/MEMORY.md` only | all source files and scripts |
+| **team-lead** | `EXPERIMENT_STATE.json["team_lead"]` + `MEMORY.md` (via memory-keeper) | all source files |
 
 **Escalation rule** — If your script crashes with an error originating in a file you do not own:
-1. Record `"status": "error", "error_type": "data_issue"` (or `"feature_issue"`) in `EXPERIMENT_STATE.json`.
+1. Record `"status": "error", "error_type": "upstream_issue"` in `EXPERIMENT_STATE.json`.
 2. Include the exact file path, function name, and error message in `"message"`.
 3. **Stop immediately** — do not patch another agent's file.
 4. The orchestrator will re-delegate the fix to the correct specialist.
 
 **Handoff contract:**
-- `data-expert` guarantees: `load_train()` and `load_test()` return DataFrames where `CAT_FEATURES` columns have `pd.api.types.is_string_dtype()` == True and `NUM_FEATURES` columns are numeric.
-- `feature-engineer` guarantees: `get_features(df, is_train)` returns a DataFrame where **all columns are numeric** — safe to call `.values.astype(float)` on the result.
-- `ml-engineer` may trust these contracts and fail fast (not retry) if they are violated.
+- `data-expert` guarantees: `load_train()` and `load_test()` return DataFrames where `CAT_FEATURES` columns pass `pd.api.types.is_string_dtype()` and `NUM_FEATURES` columns are numeric.
+- `feature-engineer` guarantees: `get_features(df, is_train)` returns a DataFrame where **all columns are numeric** — `.values.astype(np.float32)` must succeed.
+- `ml-engineer` trusts these contracts and fails fast (does not retry) if they are violated.
+
+## EXPERIMENT_STATE.json
+
+The single shared state file for the current iteration. Path: `.claude/EXPERIMENT_STATE.json`.
+
+- **Every executing agent** writes its entry as its **final action**; never leave the file in a partial state.
+- **Every agent** reads it at startup to avoid redoing already-complete work.
+- Standard `status` values: `"success"` · `"error"` · `"approved"` · `"rejected"`.
+- An entry with `"status": "success"` is immutable — no other agent may overwrite it.
+- Topology-specific keys are defined in the `## Management Topology` section above.
 
 ## Package Management
 
@@ -131,14 +140,16 @@ For training scripts that take more than a few seconds, use `nohup` and track th
 
 ```bash
 # Launch and capture PID
-nohup uv run python scripts/train.py > train.log 2>&1 & echo $!
+nohup uv run python scripts/train.py > train.log 2>&1 &
+TRAIN_PID=$!
+echo "PID: $TRAIN_PID"
 
 # Check if still running
-ps -p <PID> -o pid,stat,etime,cmd --no-headers 2>/dev/null || echo "done"
+ps -p $TRAIN_PID -o pid,stat,etime,cmd --no-headers 2>/dev/null || echo "done"
 
 # Tail progress
 tail -n 50 train.log
 
 # Wait for finish
-while kill -0 <PID> 2>/dev/null; do sleep 30; done && echo "finished"
+while kill -0 $TRAIN_PID 2>/dev/null; do sleep 30; done && echo "finished"
 ```
