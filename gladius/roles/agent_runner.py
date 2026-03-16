@@ -68,7 +68,11 @@ async def run_agent(
         },
         allowed_tools=allowed_tools,
         permission_mode=permission_mode,
-        output_format={"type": "json_schema", "schema": output_schema} if output_schema is not None else None,
+        output_format=(
+            {"type": "json_schema", "schema": output_schema}
+            if output_schema is not None
+            else None
+        ),
         cwd=cwd,
         resume=resume,
         mcp_servers=mcp_servers or {},
@@ -108,12 +112,10 @@ async def run_agent(
                                 subagent_type = str(
                                     block.input.get("subagent_type", "")
                                 )
-                                if (
-                                    subagent_type
-                                    and subagent_type in ROLE_CATALOG
-                                ):
-                                    delegated_tool_policies[block.id] = list(ROLE_CATALOG[subagent_type].tools)
-                                    
+                                if subagent_type and subagent_type in ROLE_CATALOG:
+                                    delegated_tool_policies[block.id] = list(
+                                        ROLE_CATALOG[subagent_type].tools
+                                    )
 
                             effective_allowed_tools = allowed_tools
                             policy_label = f"allowed_tools={allowed_tools}"

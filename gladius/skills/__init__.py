@@ -19,7 +19,11 @@ def _copy_tree(src: Path, dst: Path, *, force: bool) -> bool:
 
 def copy(dst: Path, spec: str | list, *, force: bool = False) -> None:
     """Copy skills from src/skills/ into dst."""
-    skill_dirs = [p for p in sorted(_SRC_SKILLS.iterdir()) if p.is_dir() and not p.name.startswith("_")]
+    skill_dirs = [
+        p
+        for p in sorted(_SRC_SKILLS.iterdir())
+        if p.is_dir() and not p.name.startswith("_")
+    ]
 
     if spec != "all":
         names = [spec] if isinstance(spec, str) else list(spec)
@@ -42,8 +46,14 @@ def copy_scientific(dst: Path, override_path: str = "", *, force: bool = False) 
         catalog = Path(override_path).expanduser().resolve()
     else:
         env_val = os.environ.get("GLADIUS_SCIENTIFIC_SKILLS_PATH", "").strip()
-        catalog = Path(env_val).expanduser().resolve() if env_val else (
-            Path(__file__).parent.parent.parent / "claude-scientific-skills" / "scientific-skills"
+        catalog = (
+            Path(env_val).expanduser().resolve()
+            if env_val
+            else (
+                Path(__file__).parent.parent.parent
+                / "claude-scientific-skills"
+                / "scientific-skills"
+            )
         )
 
     if not catalog.is_dir():
@@ -72,7 +82,10 @@ def copy_custom(dst: Path, custom_dir: str) -> None:
         return
     src_root = Path(custom_dir).expanduser().resolve()
     if not src_root.is_dir():
-        print(f"  [warn] custom_skills_dir not found: {src_root} — skipped", file=sys.stderr)
+        print(
+            f"  [warn] custom_skills_dir not found: {src_root} — skipped",
+            file=sys.stderr,
+        )
         return
     for src in sorted(src_root.iterdir()):
         if src.is_dir() and (src / "SKILL.md").is_file():

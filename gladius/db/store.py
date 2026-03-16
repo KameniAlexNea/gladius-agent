@@ -28,13 +28,24 @@ class StateStore:
     def close(self) -> None:
         pass
 
-    def record_event(self, *, iteration: int, topology: str, event: str, detail: str = "") -> None:
+    def record_event(
+        self, *, iteration: int, topology: str, event: str, detail: str = ""
+    ) -> None:
         pass
 
-    def record_plan(self, *, iteration: int, approach_summary: str, plan_text: str, session_id: str | None) -> None:
+    def record_plan(
+        self,
+        *,
+        iteration: int,
+        approach_summary: str,
+        plan_text: str,
+        session_id: str | None,
+    ) -> None:
         pass
 
-    def record_code_snapshots(self, iteration: int, solution_files: list[str], project_dir: str) -> None:
+    def record_code_snapshots(
+        self, iteration: int, solution_files: list[str], project_dir: str
+    ) -> None:
         pass
 
     def record_agent_run(self, **kwargs) -> None:

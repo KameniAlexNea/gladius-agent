@@ -50,8 +50,16 @@ Read CLAUDE.md for current scores and past approaches, and avoid repeating faile
 """
 
 _TOP_LEVEL_TOOLS = [
-    "Read", "Write", "Edit", "MultiEdit", "Bash",
-    "Glob", "Grep", "WebSearch", "Skill", "TodoWrite",
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "Bash",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "Skill",
+    "TodoWrite",
     "Task",
 ]
 

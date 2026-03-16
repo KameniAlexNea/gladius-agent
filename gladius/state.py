@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-__all__ = ["CompetitionState",]
+__all__ = [
+    "CompetitionState",
+]
 
 
 @dataclass
@@ -24,7 +26,9 @@ class CompetitionState:
     metric_direction: str | None = None  # "maximize" | "minimize" | None
 
     # Topology: which management hierarchy is used for this competition
-    topology: str = "functional"  # functional | two-pizza | platform | autonomous | matrix
+    topology: str = (
+        "functional"  # functional | two-pizza | platform | autonomous | matrix
+    )
 
     # Loop control
     iteration: int = 0

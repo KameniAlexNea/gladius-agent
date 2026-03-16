@@ -7,8 +7,6 @@ import re
 import shlex
 from pathlib import Path
 
-import os
-
 from claude_agent_sdk import AgentDefinition
 from loguru import logger
 

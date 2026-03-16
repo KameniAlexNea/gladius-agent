@@ -10,15 +10,14 @@ src/utils/project_setup.py).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from gladius.topologies._catalog import TOPOLOGY_CATALOG
-from gladius import team_lead_memory_path
-
-import re
-
 import yaml
+
+from gladius import team_lead_memory_path
+from gladius.topologies._catalog import TOPOLOGY_CATALOG
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
@@ -64,7 +63,9 @@ def render(state: "CompetitionState", project_dir: str) -> str:
             else "none yet"
         )
         threshold_val = state.submission_threshold
-        threshold_str = f"{threshold_val:.6f}" if threshold_val is not None else "not set"
+        threshold_str = (
+            f"{threshold_val:.6f}" if threshold_val is not None else "not set"
+        )
         threshold_note = (
             f"> ⛔ **Do not build a submission unless your OOF score beats {threshold_str}.**"
             if threshold_val is not None
@@ -101,11 +102,17 @@ def render(state: "CompetitionState", project_dir: str) -> str:
             score_col = (
                 str(e.get("oof_score", "?"))
                 if state.target_metric
-                else (f"{e.get('quality_score')}/100" if e.get("quality_score") is not None else "?")
+                else (
+                    f"{e.get('quality_score')}/100"
+                    if e.get("quality_score") is not None
+                    else "?"
+                )
             )
             files = ", ".join(Path(f).name for f in e.get("solution_files", []))
             notes = e.get("notes", "")[:100]
-            rows.append(f"| iter {e.get('iteration', '?')} | {score_col} | {files} | {notes} |")
+            rows.append(
+                f"| iter {e.get('iteration', '?')} | {score_col} | {files} | {notes} |"
+            )
         recent_experiments = (
             f"| Iteration | {score_header} | Files | Notes |\n| --- | --- | --- | --- |\n"
             + "\n".join(rows)
@@ -126,10 +133,18 @@ def render(state: "CompetitionState", project_dir: str) -> str:
     stagnation_block = ""
     if state.target_metric:
         scored = [e for e in state.experiments if e.get("oof_score") is not None]
-        score_key, threshold_label, threshold = "oof_score", state.target_metric, _STAGNATION_THRESHOLD_METRIC
+        score_key, threshold_label, threshold = (
+            "oof_score",
+            state.target_metric,
+            _STAGNATION_THRESHOLD_METRIC,
+        )
     else:
         scored = [e for e in state.experiments if e.get("quality_score") is not None]
-        score_key, threshold_label, threshold = "quality_score", "quality", _STAGNATION_THRESHOLD_QUALITY
+        score_key, threshold_label, threshold = (
+            "quality_score",
+            "quality",
+            _STAGNATION_THRESHOLD_QUALITY,
+        )
 
     if len(scored) >= 3:
         last3 = [e[score_key] for e in scored[-3:]]
@@ -158,7 +173,7 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         submission_section = (
             "## Submission Rules\n\n"
             "1. **Gate:** Only build a submission once your OOF score beats the `Minimum submission threshold` shown above.\n"
-            "   - If threshold is \"not set\", `WebSearch` the leaderboard first and use the current median score as your bar.\n"
+            '   - If threshold is "not set", `WebSearch` the leaderboard first and use the current median score as your bar.\n'
             "2. Load `sample_submission.csv` to get the exact submission format.\n"
             "3. Your submission must match its columns and row count exactly.\n"
             "4. Save to `submissions/submission.csv`.\n"
@@ -235,8 +250,12 @@ def write_from_project(root: Path, cfg: dict) -> None:
     direction = cfg.get("direction") or front.get("direction") or None
     data_dir = cfg.get("data_dir") or str(root / front.get("data_dir", "data"))
     topology = cfg.get("topology", "functional")
-    submission_threshold = front.get("submission_threshold") or cfg.get("submission_threshold")
-    max_sub_day = int(front.get("max_submissions_per_day", cfg.get("max_submissions_per_day", 5)))
+    submission_threshold = front.get("submission_threshold") or cfg.get(
+        "submission_threshold"
+    )
+    max_sub_day = int(
+        front.get("max_submissions_per_day", cfg.get("max_submissions_per_day", 5))
+    )
 
     state = CompetitionState(
         competition_id=cfg["competition_id"],
@@ -250,5 +269,3 @@ def write_from_project(root: Path, cfg: dict) -> None:
     )
     write(state, str(root))
     print("  claude → CLAUDE.md")
-
-

@@ -30,7 +30,7 @@ class IterationResult:
     status: str  # "success" | "error" | "timeout" | "oom"
 
     # Scores (same semantics as old implementer + validator output)
-    oof_score: float | None = None       # None for open-ended tasks
+    oof_score: float | None = None  # None for open-ended tasks
     quality_score: float | None = None  # 0-100 self-assessed; required
 
     # Artifacts

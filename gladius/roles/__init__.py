@@ -8,10 +8,9 @@ maxTurns) and a body that becomes the system_prompt.
 from __future__ import annotations
 
 import re
+import sys  # noqa: E402
 from dataclasses import dataclass
 from pathlib import Path
-
-import sys  # noqa: E402
 
 _TEMPLATES = Path(__file__).parent / "templates"
 

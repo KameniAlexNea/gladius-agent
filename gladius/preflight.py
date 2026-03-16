@@ -20,7 +20,9 @@ def _build_preflight_errors(
     n_parallel: int,
 ) -> list[str]:
     errors: list[str] = []
-    load_dotenv(os.path.join(competition_dir, ".env"))  # re-load .env from project dir for preflight checks
+    load_dotenv(
+        os.path.join(competition_dir, ".env")
+    )  # re-load .env from project dir for preflight checks
 
     if max_iterations <= 0:
         errors.append("max_iterations must be > 0")

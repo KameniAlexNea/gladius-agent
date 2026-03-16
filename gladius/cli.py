@@ -19,8 +19,13 @@ def main(argv: list[str] | None = None) -> None:
         epilog="Example: gladius examples/project.yaml",
     )
     parser.add_argument("config", metavar="CONFIG", help="Project config YAML file.")
-    parser.add_argument("--max-turns", type=int, default=None, metavar="N",
-                        help="Hard cap on agent turns (default: unlimited).")
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Hard cap on agent turns (default: unlimited).",
+    )
 
     args = parser.parse_args(argv)
 
@@ -31,6 +36,7 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         from gladius.project_setup import load_config, setup
+
         cfg = load_config(config_path)
     except Exception as exc:
         print(f"error loading config: {exc}", file=sys.stderr)
@@ -44,6 +50,7 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         from gladius.orchestrator import run_competition
+
         asyncio.run(
             run_competition(
                 competition_dir=cfg["project_dir"],
