@@ -79,24 +79,6 @@ Skill discovery protocol (mandatory):
 {parallel_instruction}
 """
 
-
-# ── pipeline agent output schema (shared by all 4 specialist roles) ──────────
-
-PIPELINE_AGENT_OUTPUT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "required": ["status", "summary"],
-    "properties": {
-        "status": {"type": "string", "enum": ["success", "error"]},
-        "summary": {"type": "string"},
-        "files_modified": {"type": "array", "items": {"type": "string"}},
-        "oof_score": {"type": ["number", "null"]},
-        "quality_score": {"type": ["number", "null"]},
-        "submission_file": {"type": "string"},
-        "error_message": {"type": "string"},
-    },
-    "additionalProperties": False,
-}
-
 # ── iteration result schema (common across all topologies) ────────────────────
 
 ITERATION_RESULT_SCHEMA: dict[str, Any] = {

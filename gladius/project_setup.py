@@ -17,8 +17,7 @@ import gladius.skills as skills
 import gladius.tools as tools
 from gladius import team_lead_memory_path
 
-_SRC = Path(__file__).parent
-_TEMPLATES = _SRC
+_TEMPLATES = Path(__file__).parent
 
 # ── Config loading ────────────────────────────────────────────────────────────
 

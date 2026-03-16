@@ -112,9 +112,8 @@ async def run_agent(
                                     subagent_type
                                     and subagent_type in ROLE_CATALOG
                                 ):
-                                    delegated_tool_policies[block.id] = list(
-                                        list(ROLE_CATALOG[subagent_type].tools)
-                                    )
+                                    delegated_tool_policies[block.id] = list(ROLE_CATALOG[subagent_type].tools)
+                                    
 
                             effective_allowed_tools = allowed_tools
                             policy_label = f"allowed_tools={allowed_tools}"

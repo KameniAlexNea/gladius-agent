@@ -13,8 +13,6 @@ from pathlib import Path
 
 import sys  # noqa: E402
 
-_ROLES_DIR = Path(__file__).parent / "templates"
-
 _TEMPLATES = Path(__file__).parent / "templates"
 
 ROLES = (
@@ -79,12 +77,12 @@ def copy(
     dst.mkdir(parents=True, exist_ok=True)
 
     if spec == "all":
-        candidates = sorted(_ROLES_DIR.glob("*.md"))
+        candidates = sorted(_TEMPLATES.glob("*.md"))
     else:
         names = [spec] if isinstance(spec, str) else list(spec)
         candidates = []
         for name in names:
-            p = _ROLES_DIR / f"{name}.md"
+            p = _TEMPLATES / f"{name}.md"
             if p.is_file():
                 candidates.append(p)
             else:
