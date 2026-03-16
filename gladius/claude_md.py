@@ -239,8 +239,8 @@ def _parse_readme(root: Path) -> tuple[dict, str]:
     return front, body
 
 
-def write_from_project(root: Path, cfg: dict) -> None:
-    """Build CompetitionState from config + README.md and write CLAUDE.md."""
+def write_from_project(root: Path, cfg: dict) -> "CompetitionState":
+    """Build CompetitionState from config + README.md, write CLAUDE.md, and return the state."""
     from gladius.state import CompetitionState
 
     front, _body = _parse_readme(root)
@@ -269,3 +269,4 @@ def write_from_project(root: Path, cfg: dict) -> None:
     )
     write(state, str(root))
     print("  claude → CLAUDE.md")
+    return state
