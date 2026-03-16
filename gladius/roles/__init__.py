@@ -11,6 +11,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+import sys  # noqa: E402
+
+_ROLES_DIR = Path(__file__).parent / "templates"
+
 _TEMPLATES = Path(__file__).parent / "templates"
 
 ROLES = (
@@ -29,7 +33,7 @@ ROLES = (
 @dataclass(frozen=True)
 class RoleDefinition:
     name: str
-    session: str       # "persistent" | "fresh"
+    session: str  # "persistent" | "fresh"
     description: str
     tools: tuple[str, ...]
     model: str
@@ -68,20 +72,9 @@ def _parse(path: Path) -> RoleDefinition:
     )
 
 
-ROLE_CATALOG: dict[str, RoleDefinition] = {
-    r.name: r
-    for r in (_parse(_TEMPLATES / f"{name}.md") for name in ROLES)
-}
-
-__all__ = ["ROLE_CATALOG", "RoleDefinition", "ROLES", "copy"]
-
-
-import sys  # noqa: E402
-
-_ROLES_DIR = Path(__file__).parent / "templates"
-
-
-def copy(dst: Path, spec: str | list, model: str, small_model: str, *, force: bool = False) -> None:
+def copy(
+    dst: Path, spec: str | list, model: str, small_model: str, *, force: bool = False
+) -> None:
     """Copy role .md files into dst (.claude/agents/), substituting model placeholders."""
     dst.mkdir(parents=True, exist_ok=True)
 
@@ -108,3 +101,10 @@ def copy(dst: Path, spec: str | list, model: str, small_model: str, *, force: bo
         )
         dest.write_text(content, encoding="utf-8")
         print(f"  agent  → .claude/agents/{src.name}")
+
+
+ROLE_CATALOG: dict[str, RoleDefinition] = {
+    r.name: r for r in (_parse(_TEMPLATES / f"{name}.md") for name in ROLES)
+}
+
+__all__ = ["ROLE_CATALOG", "RoleDefinition", "ROLES", "copy"]
