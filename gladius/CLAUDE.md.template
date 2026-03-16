@@ -80,6 +80,27 @@ scripts/
 - Use `pathlib` throughout; no hardcoded absolute paths.
 - Set `random_state=42` everywhere for reproducibility.
 
+## Agent Boundaries & Escalation
+
+Each file has a single owner. Never modify another agent's file — report the problem instead.
+
+| File(s) | Owner |
+| --- | --- |
+| `src/config.py`, `src/data.py`, `src/__init__.py` | **data-expert** |
+| `src/features.py` | **feature-engineer** |
+| `src/models.py`, `scripts/train.py`, `scripts/evaluate.py` | **ml-engineer** |
+
+**Escalation rule** — If your script crashes with an error originating in a file you do not own:
+1. Record `"status": "error", "error_type": "data_issue"` (or `"feature_issue"`) in `EXPERIMENT_STATE.json`.
+2. Include the exact file path, function name, and error message in `"message"`.
+3. **Stop immediately** — do not patch another agent's file.
+4. The orchestrator will re-delegate the fix to the correct specialist.
+
+**Handoff contract:**
+- `data-expert` guarantees: `load_train()` and `load_test()` return DataFrames where `CAT_FEATURES` columns have `pd.api.types.is_string_dtype()` == True and `NUM_FEATURES` columns are numeric.
+- `feature-engineer` guarantees: `get_features(df, is_train)` returns a DataFrame where **all columns are numeric** — safe to call `.values.astype(float)` on the result.
+- `ml-engineer` may trust these contracts and fail fast (not retry) if they are violated.
+
 ## Package Management
 
 > **This project uses `uv` — there is no `pip` in the venv.**
