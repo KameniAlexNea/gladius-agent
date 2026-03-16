@@ -10,7 +10,22 @@ from pathlib import Path
 from claude_agent_sdk import AgentDefinition
 from loguru import logger
 
-from gladius.roles._agent_defs import SUBAGENT_DEFINITIONS as _SUBAGENT_DEFINITIONS
+from gladius.roles import ROLE_CATALOG as _ROLE_CATALOG
+
+
+def build_runtime_agents(model: str) -> dict[str, AgentDefinition]:
+    """Build AgentDefinition objects for each role, stamped with the runtime model."""
+    small_model = os.environ.get("GLADIUS_SMALL_MODEL") or model
+    _small = {"evaluator", "memory-keeper", "validator"}
+    return {
+        name: AgentDefinition(
+            description=role.description,
+            prompt=role.system_prompt,
+            tools=list(role.tools),
+            model=small_model if name in _small else model,
+        )
+        for name, role in _ROLE_CATALOG.items()
+    }
 
 
 def validate_runtime_invocation(
@@ -42,23 +57,6 @@ def get_runtime_model() -> str:
             "  GLADIUS_MODEL=qwen3-coder"
         )
     return model
-
-
-_SMALL_MODEL_AGENTS = frozenset({"evaluator", "memory-keeper"})
-
-
-def build_runtime_agents(model: str) -> dict[str, AgentDefinition]:
-    """Stamp the live model name into every entry in the registry."""
-    small_model = os.environ.get("GLADIUS_SMALL_MODEL") or model
-    return {
-        k: AgentDefinition(
-            description=v.description,
-            prompt=v.prompt,
-            tools=v.tools,
-            model=small_model if k in _SMALL_MODEL_AGENTS else model,
-        )
-        for k, v in _SUBAGENT_DEFINITIONS.items()
-    }
 
 
 def stderr_cb(line: str) -> None:

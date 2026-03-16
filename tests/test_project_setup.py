@@ -1,161 +1,268 @@
-"""Tests for project setup helpers."""
+"""Tests for gladius.project_setup.load_config.
 
-import json
+Covers:
+- Valid configs are loaded and defaults are applied correctly
+- Missing required fields raise ConfigError
+- Invalid enum values for platform / topology / direction raise ConfigError
+- metric and direction must both be present or both absent
+- data_dir is resolved relative to project_dir when not absolute
+- All max_turns defaults are populated
+"""
+
+from __future__ import annotations
+
+import textwrap
 from pathlib import Path
 
-from gladius.state import CompetitionState
-from gladius.utils.project_setup import setup_project_dir
+import pytest
 
-_SUBAGENT_NAMES = {
-    "team-lead",
-    "data-expert",
-    "feature-engineer",
-    "ml-engineer",
-    "domain-expert",
-    "evaluator",
-    "validator",
-    "memory-keeper",
-}
+from gladius.project_setup import ConfigError, load_config
 
 
-def _state(tmp_path: Path) -> CompetitionState:
-    return CompetitionState(
-        competition_id="comp-1",
-        data_dir=str((tmp_path / "data").resolve()),
-        output_dir=str((tmp_path / ".gladius").resolve()),
-        target_metric="auc_roc",
-        metric_direction="maximize",
-    )
+def write_config(tmp_path: Path, content: str) -> Path:
+    p = tmp_path / "project.yaml"
+    p.write_text(textwrap.dedent(content), encoding="utf-8")
+    return p
 
 
-def test_setup_writes_fake_mcp_server(tmp_path):
-    state = _state(tmp_path)
-    setup_project_dir(state, str(tmp_path), platform="fake")
-
-    mcp_path = tmp_path / ".mcp.json"
-    cfg = json.loads(mcp_path.read_text(encoding="utf-8"))
-    assert "fake-tools" in cfg["mcpServers"]
-    cmd = cfg["mcpServers"]["fake-tools"]["args"][1]
-    assert "fake_server" in cmd
-    assert "fake_server.run()" in cmd
-
-
-def test_setup_copies_all_subagents(tmp_path):
-    """All six coordinator subagents must be written to .claude/agents/ on setup."""
-    state = _state(tmp_path)
-    setup_project_dir(state, str(tmp_path), platform="fake")
-
-    agents_dir = tmp_path / ".claude" / "agents"
-    written = {p.stem for p in agents_dir.glob("*.md")}
-    assert _SUBAGENT_NAMES.issubset(written), (
-        f"Missing subagents: {_SUBAGENT_NAMES - written}"
-    )
-
-
-def test_setup_subagents_idempotent(tmp_path):
-    """Subagent files written on first setup are NOT overwritten on second setup."""
-    state = _state(tmp_path)
-    setup_project_dir(state, str(tmp_path), platform="fake")
-
-    agents_dir = (
-        tmp_path / ".clone" / "agents" if False else tmp_path / ".claude" / "agents"
-    )
-    # Corrupt one subagent file to verify it is preserved on re-run.
-    sentinel = "# CUSTOM_SENTINEL\n"
-    target = agents_dir / "ml-engineer.md"
-    target.write_text(sentinel, encoding="utf-8")
-
-    setup_project_dir(state, str(tmp_path), platform="fake")
-
-    assert target.read_text(encoding="utf-8") == sentinel, (
-        "ml-engineer.md was overwritten — subagents must be idempotent"
-    )
-
-
-def test_setup_all_agents_are_idempotent(tmp_path):
-    """All agent templates are written idempotently — no file is overwritten on re-run."""
-    state = _state(tmp_path)
-    setup_project_dir(state, str(tmp_path), platform="fake")
-
-    agents_dir = tmp_path / ".claude" / "agents"
-    sentinel = "# CUSTOM_SENTINEL\n"
-    for agent_path in agents_dir.glob("*.md"):
-        agent_path.write_text(sentinel, encoding="utf-8")
-
-    setup_project_dir(state, str(tmp_path), platform="fake")
-
-    for agent_path in agents_dir.glob("*.md"):
-        assert agent_path.read_text(encoding="utf-8") == sentinel, (
-            f"{agent_path.name} was overwritten — all agents must be idempotent"
+class TestRequiredFields:
+    def test_missing_competition_id_raises(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            project_dir: {tmp_path}
+            platform: none
+            """,
         )
+        with pytest.raises(ConfigError, match="competition_id"):
+            load_config(cfg)
+
+    def test_missing_project_dir_raises(self, tmp_path):
+        cfg = write_config(tmp_path, "competition_id: x\n")
+        with pytest.raises(ConfigError, match="project_dir"):
+            load_config(cfg)
+
+    def test_nonexistent_file_raises(self, tmp_path):
+        with pytest.raises(ConfigError, match="not found"):
+            load_config(tmp_path / "does_not_exist.yaml")
 
 
-def test_subagent_files_contain_experiment_state_reference(tmp_path):
-    """Executing roles must reference EXPERIMENT_STATE.json (artifact protocol).
-    team-lead (plan-only), validator (read-only), and memory-keeper (writes MEMORY.md)
-    are exempt — they never touch EXPERIMENT_STATE.json by design.
-    """
-    _EXECUTOR_ROLES = {
-        "data-expert",
-        "feature-engineer",
-        "ml-engineer",
-        "domain-expert",
-        "evaluator",
-    }
-    state = _state(tmp_path)
-    setup_project_dir(state, str(tmp_path), platform="fake")
+class TestPlatformValidation:
+    def test_valid_platforms_accepted(self, tmp_path):
+        for platform in ("kaggle", "zindi", "fake", "none"):
+            cfg = write_config(
+                tmp_path,
+                f"""\
+                competition_id: x
+                project_dir: {tmp_path}
+                platform: {platform}
+                """,
+            )
+            result = load_config(cfg)
+            assert result["platform"] == platform
 
-    agents_dir = tmp_path / ".claude" / "agents"
-    missing = [
-        name
-        for name in _EXECUTOR_ROLES
-        if "EXPERIMENT_STATE"
-        not in (agents_dir / f"{name}.md").read_text(encoding="utf-8")
-    ]
-    assert not missing, f"Missing EXPERIMENT_STATE.json reference in: {missing}"
-
-
-def test_subagent_small_model_default_is_inherit(tmp_path, monkeypatch):
-    """Without GLADIUS_SMALL_MODEL set, model: inherit must appear for scaffolder/evaluator."""
-    monkeypatch.delenv("GLADIUS_SMALL_MODEL", raising=False)
-    state = _state(tmp_path)
-    setup_project_dir(state, str(tmp_path), platform="fake")
-
-    agents_dir = tmp_path / ".claude" / "agents"
-    for name in ("evaluator", "memory-keeper", "validator"):
-        content = (agents_dir / f"{name}.md").read_text(encoding="utf-8")
-        assert "model: inherit" in content, (
-            f"{name}.md should default to model: inherit"
+    def test_invalid_platform_raises(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: unknown_platform
+            """,
         )
-        assert "haiku" not in content, f"{name}.md must not contain hardcoded 'haiku'"
+        with pytest.raises(ConfigError, match="platform"):
+            load_config(cfg)
 
 
-def test_subagent_small_model_env_var_substituted(tmp_path, monkeypatch):
-    """GLADIUS_SMALL_MODEL env var is substituted into the small-model role templates."""
-    monkeypatch.setenv("GLADIUS_SMALL_MODEL", "claude-haiku-4-5")
-    state = _state(tmp_path)
-    setup_project_dir(state, str(tmp_path), platform="fake")
-
-    agents_dir = tmp_path / ".claude" / "agents"
-    for name in ("evaluator", "validator", "memory-keeper"):
-        content = (agents_dir / f"{name}.md").read_text(encoding="utf-8")
-        assert "model: claude-haiku-4-5" in content, (
-            f"{name}.md should contain the substituted model name"
+class TestMetricDirection:
+    def test_metric_without_direction_raises(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            metric: f1_score
+            """,
         )
-        assert "{{GLADIUS_SMALL_MODEL}}" not in content, (
-            f"{name}.md must not contain the raw placeholder"
+        with pytest.raises(ConfigError, match="metric.*direction|direction.*metric"):
+            load_config(cfg)
+
+    def test_direction_without_metric_raises(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            direction: maximize
+            """,
         )
+        with pytest.raises(ConfigError, match="metric.*direction|direction.*metric"):
+            load_config(cfg)
+
+    def test_invalid_direction_raises(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            metric: rmse
+            direction: sideways
+            """,
+        )
+        with pytest.raises(ConfigError, match="direction"):
+            load_config(cfg)
+
+    def test_no_metric_no_direction_is_valid(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            """,
+        )
+        result = load_config(cfg)
+        assert result["metric"] is None
+        assert result["direction"] is None
+
+    def test_direction_normalized_to_lowercase(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            metric: rmse
+            direction: MINIMIZE
+            """,
+        )
+        result = load_config(cfg)
+        assert result["direction"] == "minimize"
 
 
-def test_subagent_no_tilde_claude_path(tmp_path):
-    """No subagent template should reference ~/.claude — only local .claude/ paths."""
-    state = _state(tmp_path)
-    setup_project_dir(state, str(tmp_path), platform="fake")
+class TestTopologyValidation:
+    def test_valid_topologies_accepted(self, tmp_path):
+        for topo in ("functional", "two-pizza", "platform", "autonomous", "matrix"):
+            cfg = write_config(
+                tmp_path,
+                f"""\
+                competition_id: x
+                project_dir: {tmp_path}
+                platform: none
+                topology: {topo}
+                """,
+            )
+            result = load_config(cfg)
+            assert result["topology"] == topo
 
-    agents_dir = tmp_path / ".claude" / "agents"
-    offenders = [
-        name
-        for name in _SUBAGENT_NAMES
-        if "~/.claude" in (agents_dir / f"{name}.md").read_text(encoding="utf-8")
-    ]
-    assert not offenders, f"Templates must not reference ~/.claude: {offenders}"
+    def test_invalid_topology_raises(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            topology: star-wars
+            """,
+        )
+        with pytest.raises(ConfigError, match="topology"):
+            load_config(cfg)
+
+    def test_topology_defaults_to_functional(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            """,
+        )
+        result = load_config(cfg)
+        assert result["topology"] == "functional"
+
+
+class TestDataDirResolution:
+    def test_data_dir_defaults_to_project_data(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            """,
+        )
+        result = load_config(cfg)
+        assert result["data_dir"] == str(tmp_path / "data")
+
+    def test_relative_data_dir_resolved_against_project(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            data_dir: my_data
+            """,
+        )
+        result = load_config(cfg)
+        assert result["data_dir"] == str(tmp_path / "my_data")
+
+    def test_absolute_data_dir_kept(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            data_dir: /abs/path/data
+            """,
+        )
+        result = load_config(cfg)
+        assert result["data_dir"] == "/abs/path/data"
+
+
+class TestDefaults:
+    def test_max_turns_all_populated(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            """,
+        )
+        result = load_config(cfg)
+        mt = result["max_turns"]
+        for key in ("coordinator", "full_stack", "platform_layer", "product_layer",
+                    "validator", "memory_keeper", "reviewer", "domain_fix"):
+            assert key in mt, f"max_turns['{key}'] not set"
+            assert mt[key] > 0
+
+    def test_permissions_deny_includes_rm(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            """,
+        )
+        result = load_config(cfg)
+        deny = result["settings"]["permissions_deny"]
+        assert any("rm" in rule for rule in deny)
+
+    def test_permissions_deny_includes_pip(self, tmp_path):
+        cfg = write_config(
+            tmp_path,
+            f"""\
+            competition_id: x
+            project_dir: {tmp_path}
+            platform: none
+            """,
+        )
+        result = load_config(cfg)
+        deny = result["settings"]["permissions_deny"]
+        assert any("pip" in rule for rule in deny)

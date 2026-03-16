@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import stat
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +16,7 @@ import gladius.skills as skills
 import gladius.tools as tools
 from gladius import team_lead_memory_path
 
-_SRC = Path(__file__).parent
-_TEMPLATES = _SRC
+_TEMPLATES = Path(__file__).parent
 
 # ── Config loading ────────────────────────────────────────────────────────────
 
@@ -45,17 +43,23 @@ def load_config(path: str | Path) -> dict[str, Any]:
 
     platform = str(raw.get("platform") or "none").strip().lower()
     if platform not in _VALID_PLATFORMS:
-        raise ConfigError(f"platform must be one of {sorted(_VALID_PLATFORMS)}, got {platform!r}")
+        raise ConfigError(
+            f"platform must be one of {sorted(_VALID_PLATFORMS)}, got {platform!r}"
+        )
     raw["platform"] = platform
 
     has_metric = bool(raw.get("metric"))
     has_direction = bool(raw.get("direction"))
     if has_metric != has_direction:
-        raise ConfigError("'metric' and 'direction' must both be provided or both omitted.")
+        raise ConfigError(
+            "'metric' and 'direction' must both be provided or both omitted."
+        )
     if has_direction:
         direction = str(raw["direction"]).strip().lower()
         if direction not in _VALID_DIRECTIONS:
-            raise ConfigError(f"direction must be 'maximize' or 'minimize', got {direction!r}")
+            raise ConfigError(
+                f"direction must be 'maximize' or 'minimize', got {direction!r}"
+            )
         raw["direction"] = direction
     else:
         raw["metric"] = None
@@ -63,14 +67,18 @@ def load_config(path: str | Path) -> dict[str, Any]:
 
     topology = str(raw.get("topology") or "functional").strip().lower()
     if topology not in _VALID_TOPOLOGIES:
-        raise ConfigError(f"topology must be one of {sorted(_VALID_TOPOLOGIES)}, got {topology!r}")
+        raise ConfigError(
+            f"topology must be one of {sorted(_VALID_TOPOLOGIES)}, got {topology!r}"
+        )
     raw["topology"] = topology
 
     project_dir = Path(raw["project_dir"]).expanduser().resolve()
     raw["project_dir"] = str(project_dir)
     if raw.get("data_dir"):
         data_dir = Path(raw["data_dir"]).expanduser()
-        raw["data_dir"] = str(data_dir if data_dir.is_absolute() else (project_dir / data_dir).resolve())
+        raw["data_dir"] = str(
+            data_dir if data_dir.is_absolute() else (project_dir / data_dir).resolve()
+        )
     else:
         raw["data_dir"] = str(project_dir / "data")
 
@@ -98,25 +106,59 @@ def load_config(path: str | Path) -> dict[str, Any]:
 
     raw.setdefault("default_mode", "acceptEdits")
     s = raw.setdefault("settings", {})
-    s.setdefault("permissions_allow", [
-        "Bash(uv *)",
-        "Bash(python *)", "Bash(python3 *)",
-        "Bash(ls *)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)",
-        "Bash(grep *)", "Bash(find *)", "Bash(wc *)", "Bash(sort *)", "Bash(unzip *)",
-        "Bash(nohup *)", "Bash(ps *)", "Bash(kill *)", "Bash(wait *)",
-        "Bash(mkdir *)", "Bash(cp *)", "Bash(mv *)", "Bash(touch *)", "Bash(chmod +x *)",
-        "Bash(git status)", "Bash(git diff *)", "Bash(git log *)",
-        "Bash(git add *)", "Bash(git commit *)",
-        "Bash(echo *)", "Bash(which *)", "Bash(pwd)", "Bash(source *)",
-        "Bash(* --help *)", "Bash(* --version)",
-    ])
-    s.setdefault("permissions_deny", [
-        "Bash(rm *)",
-        "Bash(sudo *)",
-        "Bash(git push *)", "Bash(git reset --hard *)", "Bash(git clean *)",
-        "Bash(pip *)", "Bash(pip3 *)",
-        "Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(~/.gnupg/**)", "Read(~/.env)",
-    ])
+    s.setdefault(
+        "permissions_allow",
+        [
+            "Bash(uv *)",
+            "Bash(python *)",
+            "Bash(python3 *)",
+            "Bash(ls *)",
+            "Bash(cat *)",
+            "Bash(head *)",
+            "Bash(tail *)",
+            "Bash(grep *)",
+            "Bash(find *)",
+            "Bash(wc *)",
+            "Bash(sort *)",
+            "Bash(unzip *)",
+            "Bash(nohup *)",
+            "Bash(ps *)",
+            "Bash(kill *)",
+            "Bash(wait *)",
+            "Bash(mkdir *)",
+            "Bash(cp *)",
+            "Bash(mv *)",
+            "Bash(touch *)",
+            "Bash(chmod +x *)",
+            "Bash(git status)",
+            "Bash(git diff *)",
+            "Bash(git log *)",
+            "Bash(git add *)",
+            "Bash(git commit *)",
+            "Bash(echo *)",
+            "Bash(which *)",
+            "Bash(pwd)",
+            "Bash(source *)",
+            "Bash(* --help *)",
+            "Bash(* --version)",
+        ],
+    )
+    s.setdefault(
+        "permissions_deny",
+        [
+            "Bash(rm *)",
+            "Bash(sudo *)",
+            "Bash(git push *)",
+            "Bash(git reset --hard *)",
+            "Bash(git clean *)",
+            "Bash(pip *)",
+            "Bash(pip3 *)",
+            "Read(~/.ssh/**)",
+            "Read(~/.aws/**)",
+            "Read(~/.gnupg/**)",
+            "Read(~/.env)",
+        ],
+    )
     s.setdefault("additional_directories", [])
 
     return raw
@@ -139,7 +181,9 @@ def _dir_skeleton(root: Path) -> None:
 
     gi = root / ".gitignore"
     if not gi.exists():
-        gi.write_text("data/\nartifacts/\nsubmissions/\n*.db\n*.log\n.env\n", encoding="utf-8")
+        gi.write_text(
+            "data/\nartifacts/\nsubmissions/\n*.db\n*.log\n.env\n", encoding="utf-8"
+        )
 
 
 def _copy_hooks(root: Path, *, force: bool) -> None:
@@ -158,6 +202,7 @@ def _copy_hooks(root: Path, *, force: bool) -> None:
 
 def _write_settings(root: Path, cfg: dict) -> None:
     import json
+
     s = cfg["settings"]
     extra_dirs = list(s["additional_directories"] or [])
     if cfg["data_dir"] not in extra_dirs:
@@ -179,8 +224,20 @@ def _write_settings(root: Path, cfg: dict) -> None:
         },
         "additionalDirectories": extra_dirs,
         "hooks": {
-            "PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "scripts/after_edit.sh"}]}],
-            "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "scripts/validate_bash.sh"}]}],
+            "PostToolUse": [
+                {
+                    "matcher": "Edit|Write",
+                    "hooks": [{"type": "command", "command": "scripts/after_edit.sh"}],
+                }
+            ],
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {"type": "command", "command": "scripts/validate_bash.sh"}
+                    ],
+                }
+            ],
         },
     }
     path = root / ".claude" / "settings.json"
@@ -213,16 +270,26 @@ def setup(config_path: str | Path, *, force: bool = False) -> Path:
     f = cfg["force"]
 
     print(f"\nSetting up: {root}")
-    print(f"  competition: {cfg['competition_id']}  topology: {cfg['topology']}  platform: {cfg['platform']}")
+    print(
+        f"  competition: {cfg['competition_id']}  topology: {cfg['topology']}  platform: {cfg['platform']}"
+    )
     if cfg["metric"]:
         print(f"  metric: {cfg['metric']} ({cfg['direction']})")
     print()
 
     _dir_skeleton(root)
-    roles.copy(root / ".claude" / "agents", cfg["roles"], cfg["model"], cfg["small_model"], force=f)
+    roles.copy(
+        root / ".claude" / "agents",
+        cfg["roles"],
+        cfg["model"],
+        cfg["small_model"],
+        force=f,
+    )
     skills.copy(root / ".claude" / "skills", cfg["gladius_skills"], force=f)
     if cfg["scientific_skills"]:
-        skills.copy_scientific(root / ".claude" / "skills", cfg["scientific_skills_path"], force=f)
+        skills.copy_scientific(
+            root / ".claude" / "skills", cfg["scientific_skills_path"], force=f
+        )
     skills.copy_custom(root / ".claude" / "skills", cfg["custom_skills_dir"])
     _copy_hooks(root, force=f)
     _write_settings(root, cfg)
@@ -262,7 +329,9 @@ def _parse_frontmatter(readme: Path) -> dict:
         ) from exc
     if not isinstance(cfg, dict):
         raise CompetitionConfigError(f"{readme}: frontmatter must be a YAML mapping.")
-    return {k: v if isinstance(v, (int, float, bool)) else str(v) for k, v in cfg.items()}
+    return {
+        k: v if isinstance(v, (int, float, bool)) else str(v) for k, v in cfg.items()
+    }
 
 
 def load_competition_config(competition_dir: str) -> dict:

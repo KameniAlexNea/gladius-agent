@@ -23,7 +23,7 @@ from claude_agent_sdk.types import (
 from llm_output_parser import parse_json as _parse_json
 from loguru import logger
 
-from gladius.roles._agent_defs import SUBAGENT_DEFINITIONS
+from gladius.roles import ROLE_CATALOG
 from gladius.roles._console import _BLUE, _BOLD, _c, _log_message
 from gladius.roles.helpers import (
     build_runtime_agents,
@@ -41,8 +41,8 @@ async def run_agent(
     prompt: str,
     system_prompt: str,
     allowed_tools: list[str],
-    output_schema: dict[str, Any],
-    cwd: str,
+    output_schema: dict[str, Any] | None = None,
+    cwd: str = "",
     resume: str | None = None,
     mcp_servers: dict | None = None,
     max_turns: int | None = None,
@@ -68,7 +68,11 @@ async def run_agent(
         },
         allowed_tools=allowed_tools,
         permission_mode=permission_mode,
-        output_format={"type": "json_schema", "schema": output_schema},
+        output_format=(
+            {"type": "json_schema", "schema": output_schema}
+            if output_schema is not None
+            else None
+        ),
         cwd=cwd,
         resume=resume,
         mcp_servers=mcp_servers or {},
@@ -108,12 +112,9 @@ async def run_agent(
                                 subagent_type = str(
                                     block.input.get("subagent_type", "")
                                 )
-                                if (
-                                    subagent_type
-                                    and subagent_type in SUBAGENT_DEFINITIONS
-                                ):
+                                if subagent_type and subagent_type in ROLE_CATALOG:
                                     delegated_tool_policies[block.id] = list(
-                                        SUBAGENT_DEFINITIONS[subagent_type].tools
+                                        ROLE_CATALOG[subagent_type].tools
                                     )
 
                             effective_allowed_tools = allowed_tools

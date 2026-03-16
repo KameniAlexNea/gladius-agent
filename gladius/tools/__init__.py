@@ -14,13 +14,13 @@ __all__ = ["fake_server", "kaggle_server", "zindi_server", "write_mcp_json"]
 
 _PLATFORM_MODULE = {
     "kaggle": "gladius.tools.kaggle_tools",
-    "zindi":  "gladius.tools.zindi_tools",
-    "fake":   "gladius.tools.fake_platform_tools",
+    "zindi": "gladius.tools.zindi_tools",
+    "fake": "gladius.tools.fake_platform_tools",
 }
 _PLATFORM_SERVER = {
     "kaggle": "kaggle_server",
-    "zindi":  "zindi_server",
-    "fake":   "fake_server",
+    "zindi": "zindi_server",
+    "fake": "fake_server",
 }
 
 
@@ -46,7 +46,10 @@ def write_mcp_json(root: Path, cfg: dict) -> None:
             mcp["mcpServers"][f"{platform}-tools"] = {
                 "type": "stdio",
                 "command": sys.executable,
-                "args": ["-c", f"from {mod} import {srv}; import asyncio; asyncio.run({srv}.run())"],
+                "args": [
+                    "-c",
+                    f"from {mod} import {srv}; import asyncio; asyncio.run({srv}.run())",
+                ],
                 "env": {},
             }
 
@@ -56,4 +59,3 @@ def write_mcp_json(root: Path, cfg: dict) -> None:
     path = root / ".mcp.json"
     path.write_text(json.dumps(mcp, indent=2) + "\n", encoding="utf-8")
     print("  mcp    → .mcp.json")
-

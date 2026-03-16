@@ -36,7 +36,7 @@ def run_adversarial_validation(
 
     data_dir = Path(data_dir)
     train = pd.read_csv(data_dir / "train.csv")
-    test  = pd.read_csv(data_dir / "test.csv")
+    test = pd.read_csv(data_dir / "test.csv")
 
     train_adv = train.drop(columns=[target_col], errors="ignore")
 
@@ -46,8 +46,7 @@ def run_adversarial_validation(
     )
 
     feats = (
-        combined
-        .select_dtypes(include=[np.number])
+        combined.select_dtypes(include=[np.number])
         .drop(columns=["_is_test"], errors="ignore")
         .columns.tolist()
     )
@@ -55,7 +54,7 @@ def run_adversarial_validation(
     y = combined["_is_test"]
 
     clf = LGBMClassifier(n_estimators=300, random_state=42, verbose=-1)
-    cv  = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
+    cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
     aucs: list[float] = []
 
     for tr, val in cv.split(X, y):
@@ -66,9 +65,8 @@ def run_adversarial_validation(
     clf.fit(X, y)
     auc = float(np.mean(aucs))
 
-    importances = (
-        pd.Series(clf.feature_importances_, index=feats)
-        .sort_values(ascending=False)
+    importances = pd.Series(clf.feature_importances_, index=feats).sort_values(
+        ascending=False
     )
 
     # AUC verdict
@@ -98,7 +96,7 @@ def run_adversarial_validation(
         weights = np.clip(proba / (1 - proba + 1e-6), 0.1, 10.0)
         Path("artifacts").mkdir(exist_ok=True)
         np.save("artifacts/adversarial_weights.npy", weights)
-        print(f"\nSample weights saved to artifacts/adversarial_weights.npy")
+        print("\nSample weights saved to artifacts/adversarial_weights.npy")
         result["weights_path"] = "artifacts/adversarial_weights.npy"
 
     return result
@@ -106,11 +104,13 @@ def run_adversarial_validation(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data",    default="data/",   help="Data directory")
-    parser.add_argument("--target",  required=True,     help="Target column name")
+    parser.add_argument("--data", default="data/", help="Data directory")
+    parser.add_argument("--target", required=True, help="Target column name")
     parser.add_argument("--n-folds", default=5, type=int)
     args = parser.parse_args()
 
     result = run_adversarial_validation(args.data, args.target, args.n_folds)
     print("\nResult summary:")
-    print(json.dumps({k: v for k, v in result.items() if k != "top_features"}, indent=2))
+    print(
+        json.dumps({k: v for k, v in result.items() if k != "top_features"}, indent=2)
+    )

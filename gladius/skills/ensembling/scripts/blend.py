@@ -15,8 +15,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-
 # ── Diversity check ─────────────────────────────────────────────────────────
+
 
 def diversity_check(oof_preds: dict[str, np.ndarray]) -> pd.DataFrame:
     """
@@ -34,13 +34,14 @@ def diversity_check(oof_preds: dict[str, np.ndarray]) -> pd.DataFrame:
 
 # ── Hill-climbing ────────────────────────────────────────────────────────────
 
+
 def hill_climb(
-    oof_preds:  dict[str, np.ndarray],
+    oof_preds: dict[str, np.ndarray],
     test_preds: dict[str, np.ndarray],
-    y_train:    np.ndarray,
+    y_train: np.ndarray,
     metric_fn=None,
-    direction:  str = "maximize",
-    n_steps:    int = 100,
+    direction: str = "maximize",
+    n_steps: int = 100,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, float]]:
     """
     Greedy forward selection — adds the model that most improves OOF each step.
@@ -52,12 +53,13 @@ def hill_climb(
     """
     if metric_fn is None:
         from sklearn.metrics import roc_auc_score
+
         metric_fn = roc_auc_score
 
-    names   = list(oof_preds.keys())
+    names = list(oof_preds.keys())
     weights = {n: 0 for n in names}
-    n_test  = len(next(iter(test_preds.values())))
-    ensemble_oof  = np.zeros(len(y_train))
+    n_test = len(next(iter(test_preds.values())))
+    ensemble_oof = np.zeros(len(y_train))
     ensemble_test = np.zeros(n_test)
 
     for step in range(n_steps):
@@ -65,15 +67,15 @@ def hill_climb(
         best_name = None
         for name in names:
             cand_oof = (ensemble_oof * step + oof_preds[name]) / (step + 1)
-            score    = metric_fn(y_train, cand_oof)
-            better   = (score > cmp) if direction == "maximize" else (score < cmp)
+            score = metric_fn(y_train, cand_oof)
+            better = (score > cmp) if direction == "maximize" else (score < cmp)
             if better:
                 cmp, best_name = score, name
         weights[best_name] += 1
-        ensemble_oof  = (ensemble_oof  * step + oof_preds[best_name])  / (step + 1)
+        ensemble_oof = (ensemble_oof * step + oof_preds[best_name]) / (step + 1)
         ensemble_test = (ensemble_test * step + test_preds[best_name]) / (step + 1)
         if (step + 1) % 10 == 0:
-            print(f"Step {step+1:3d}: OOF={cmp:.6f}  (added {best_name})")
+            print(f"Step {step + 1:3d}: OOF={cmp:.6f}  (added {best_name})")
 
     total = sum(weights.values())
     norm_weights = {k: v / total for k, v in weights.items()}
@@ -83,12 +85,13 @@ def hill_climb(
 
 # ── Weighted Nelder-Mead blend ────────────────────────────────────────────────
 
+
 def optimised_blend(
-    oof_preds:  dict[str, np.ndarray],
+    oof_preds: dict[str, np.ndarray],
     test_preds: dict[str, np.ndarray],
-    y_train:    np.ndarray,
+    y_train: np.ndarray,
     metric_fn=None,
-    direction:  str = "maximize",
+    direction: str = "maximize",
 ) -> tuple[np.ndarray, np.ndarray, dict[str, float]]:
     """
     Optimise blend weights via scipy.optimize.minimize (Nelder-Mead).
@@ -99,12 +102,13 @@ def optimised_blend(
     """
     if metric_fn is None:
         from sklearn.metrics import roc_auc_score
+
         metric_fn = roc_auc_score
 
     from scipy.optimize import minimize
 
-    names       = list(oof_preds.keys())
-    oof_matrix  = np.column_stack([oof_preds[n]  for n in names])
+    names = list(oof_preds.keys())
+    oof_matrix = np.column_stack([oof_preds[n] for n in names])
     test_matrix = np.column_stack([test_preds[n] for n in names])
 
     def neg_score(w: np.ndarray) -> float:
@@ -112,14 +116,18 @@ def optimised_blend(
         score = metric_fn(y_train, oof_matrix @ w)
         return -score if direction == "maximize" else score
 
-    x0     = np.ones(len(names)) / len(names)
-    result = minimize(neg_score, x0, method="Nelder-Mead",
-                      options={"maxiter": 5000, "xatol": 1e-6, "fatol": 1e-6})
-    w      = np.abs(result.x) / np.abs(result.x).sum()
+    x0 = np.ones(len(names)) / len(names)
+    result = minimize(
+        neg_score,
+        x0,
+        method="Nelder-Mead",
+        options={"maxiter": 5000, "xatol": 1e-6, "fatol": 1e-6},
+    )
+    w = np.abs(result.x) / np.abs(result.x).sum()
 
-    opt_oof  = oof_matrix  @ w
+    opt_oof = oof_matrix @ w
     opt_test = test_matrix @ w
-    weights  = dict(zip(names, w.tolist()))
+    weights = dict(zip(names, w.tolist()))
     print(f"Optimised weights: { {k: round(v, 4) for k, v in weights.items()} }")
     print(f"OOF score: {metric_fn(y_train, opt_oof):.6f}")
     return opt_oof, opt_test, weights
@@ -127,11 +135,13 @@ def optimised_blend(
 
 # ── Rank averaging ─────────────────────────────────────────────────────────────
 
+
 def rank_average(preds_dict: dict[str, np.ndarray]) -> np.ndarray:
     """
     Scale-invariant blend — useful when model outputs are on different scales.
     Each array is rank-transformed to [0, 1] then averaged.
     """
     from scipy.stats import rankdata
+
     ranks = [rankdata(p) / len(p) for p in preds_dict.values()]
     return np.mean(ranks, axis=0)

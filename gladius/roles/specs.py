@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # ── Shared submission-builder schema ─────────────────────────────────────────
 
 SUBMISSION_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -151,7 +150,7 @@ def build_validator_prompt(
 New OOF score   : {oof_score}
 Current best    : {best_oof_score}
 Metric          : {target_metric} ({metric_direction})
-Submission file : {submission_path or 'not provided'}
+Submission file : {submission_path or "not provided"}
 Quota remaining : {submission_quota_remaining} submissions today"""
     else:
         score_block = f"""\
@@ -199,7 +198,7 @@ def build_memory_keeper_prompt(
     return f"""\
 Competition     : {competition_id}
 Iteration       : {iteration}
-Metric          : {target_metric or 'open-ended'} {metric_direction or ''}
+Metric          : {target_metric or "open-ended"} {metric_direction or ""}
 
 ## Latest result
 {_json.dumps(latest_result, indent=2)}
