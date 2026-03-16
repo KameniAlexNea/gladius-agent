@@ -21,6 +21,7 @@ Always search the catalog for model-specific guidance:
 ```
 mcp__skills-on-demand__search_skills({"query": "<model type or task>", "top_k": 3})
 ```
+> **Note:** Call `mcp__skills-on-demand__search_skills` as a **direct MCP tool call** — do NOT pass it as the `skill` argument to the `Skill` tool.
 
 | When | Skill |
 | --- | --- |
@@ -89,13 +90,15 @@ Run the `validation` skill and verify:
 
 ## State finalizer (REQUIRED last action)
 
-Write `.claude/EXPERIMENT_STATE.json` with the `ml_engineer` key:
+**First read** `.claude/EXPERIMENT_STATE.json` (use `Read`), then update only the `ml_engineer` key in the dict, and write the full object back.
 
 ```json
 {
   "ml_engineer": {
     "status": "success" | "error" | "timeout" | "oom",
     "oof_score": <number | null>,
+    "oof_std": <number | null>,
+    "oof_fold_scores": [<fold1>, <fold2>, "..."],
     "quality_score": <number 0–100 | null>,
     "solution_files": ["src/models.py", "scripts/train.py"],
     "submission_file": "artifacts/submission.csv",
@@ -106,4 +109,4 @@ Write `.claude/EXPERIMENT_STATE.json` with the `ml_engineer` key:
 }
 ```
 
-`status`, `oof_score`, and `quality_score` are required. If `status` is `"error"`, populate `error_message` with the full traceback and the broken file path. Do not attempt further retries for `upstream_issue` errors.
+`status` and `oof_score` (as a top-level float, e.g. `0.7971`) are required — the evaluator reads `ml_engineer.oof_score` directly. If `status` is `"error"`, populate `error_message` with the full traceback and the broken file path. Do not attempt further retries for `upstream_issue` errors.

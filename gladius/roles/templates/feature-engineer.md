@@ -22,6 +22,7 @@ Always search the catalog for domain-specific feature recipes:
 ```
 mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "top_k": 3})
 ```
+> **Note:** Call `mcp__skills-on-demand__search_skills` as a **direct MCP tool call** — do NOT pass it as the `skill` argument to the `Skill` tool.
 
 | When | Skill |
 | --- | --- |
@@ -79,7 +80,7 @@ If this fails, fix `src/features.py` until it passes. If the root cause is in `s
 
 ## State finalizer (REQUIRED last action)
 
-Write `.claude/EXPERIMENT_STATE.json` with the `feature_engineer` key:
+**First read** `.claude/EXPERIMENT_STATE.json` (use `Read`), then update only the `feature_engineer` key in the dict, and write the full object back.
 
 ```json
 {
@@ -94,3 +95,9 @@ Write `.claude/EXPERIMENT_STATE.json` with the `feature_engineer` key:
 ```
 
 `status` and `new_feature_count` are required. If `status` is `"data_issue"`, populate `message` with the broken file, function name, and full traceback — do not attempt further retries.
+
+### Encoder state — avoid global mutable singletons
+Do NOT use module-level variables (e.g. `_encoder_fitted`, `_encoders_cache`) to track fit state. Instead, expose `get_features(df, is_train=True) -> pd.DataFrame` that:
+- Fits encoders internally when `is_train=True` and stores them as a **module-level dict** populated only once (idempotent guard: `if _encoders_cache and not is_train`).
+- If you need to reset state between calls in tests, expose a `reset_encoders()` helper.
+This prevents cross-agent state corruption when subagents call `get_features` in different processes.

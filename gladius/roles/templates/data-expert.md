@@ -7,7 +7,7 @@ description: >
   data contract, performs rigorous data profiling (leakage, drift, distributions,
   class imbalance), and initialises src/ (config, data).
   Writes status to EXPERIMENT_STATE.json.
-tools: Read, Write, Bash, Glob, Grep, Skill, mcp__skills-on-demand__search_skills
+tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 30
 ---
@@ -23,6 +23,7 @@ Before any implementation, search the catalog for domain-specific loaders:
 ```
 mcp__skills-on-demand__search_skills({"query": "scientific data loading <domain>", "top_k": 3})
 ```
+> **Note:** Call `mcp__skills-on-demand__search_skills` as a **direct MCP tool call** — do NOT pass it as the `skill` argument to the `Skill` tool.
 
 | Context | Skill |
 | --- | --- |
@@ -76,7 +77,7 @@ print(f'Contract verified: {df.shape[1]} columns, {len(df)} rows.')
 
 ## State finalizer (REQUIRED last action)
 
-Write `.claude/EXPERIMENT_STATE.json` with the `data_expert` key:
+**If `.claude/EXPERIMENT_STATE.json` already exists**, read it first (use `Read`), then update only the `data_expert` key in the dict and write the full object back. If the file does not exist yet, create it fresh.
 
 ```json
 {

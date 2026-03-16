@@ -1,8 +1,9 @@
 """
 Agent launcher — writes CLAUDE.md and starts a single Claude agent that
-reads the project, plans its own approach, and delegates to sub-agents.
+plans its own approach and delegates to sub-agents.
 
-No Python orchestration. The agent decides topology by reading CLAUDE.md.
+CLAUDE.md is automatically injected into the agent context — no explicit read needed.
+No Python orchestration. The agent decides topology from its context.
 """
 
 from __future__ import annotations
@@ -20,10 +21,12 @@ You are a top-tier ML competition agent. Your goal for this iteration is one \
 focused, high-impact experiment.
 
 ## Step 1 — Plan (read-only)
-Use the built-in Plan subagent to research the current state:
-- Scores, experiment history, and failed approaches are in CLAUDE.md.
-- Explore existing code under `src/` and `scripts/`.
-- Identify the single highest-leverage change to make this iteration.
+`CLAUDE.md` is already in your context — do not read it again.
+Read `.claude/agent-memory/team-lead/MEMORY.md` to get the full experiment history.
+Identify the single highest-leverage change to make this iteration.
+
+**Do NOT explore data directories, run scripts, or write any files yourself.**
+Your role is coordination only — delegate all implementation and exploration to specialists.
 
 ## Step 2 — Execute (delegate)
 Delegate implementation to the right specialist in `.claude/agents/`:
@@ -35,20 +38,22 @@ Delegate implementation to the right specialist in `.claude/agents/`:
 - `validator` — submission format and improvement gate
 - `memory-keeper` — update MEMORY.md with learnings
 
-Sequencing depends on the active topology (see `## Management Topology` in CLAUDE.md):
+**Re-dispatch rule:** before calling any specialist, read `.claude/EXPERIMENT_STATE.json`.
+If that specialist's entry already has `"status": "success"`, skip them — their work is done.
+Only re-dispatch a specialist if their status is missing, `"error"`, or if new upstream work requires it (e.g. data-expert fixes a bug flagged by ml-engineer).
+
+Sequencing depends on the active topology (see `## Management Topology` in your context):
 - **Sequential** (default): each specialist reads EXPERIMENT_STATE written by the previous one.
 - **Parallel** (autonomous / multi-branch): spawn independent branches via parallel Task calls, then merge results before calling the validator.
 
 ## Constraints
-- Do not repeat any approach listed under "Failed Approaches" in CLAUDE.md.
+- Do not repeat any approach listed under "Failed Approaches" in your context.
 - Search skills before writing new code: `mcp__skills-on-demand__search_skills`.
 - Save the final submission to `submissions/submission.csv` if the validator approves."""
 
 _KICKOFF_PROMPT = """\
-Kick off the competition with a focused experiment. Use the Plan tool to create a concise, ordered plan for this iteration. 
-Then delegate to specialists as needed. 
-
-Read CLAUDE.md for current scores and past approaches, and avoid repeating failed approaches.
+Kick off the competition with a focused experiment. CLAUDE.md is already in your context — check it for current scores, past approaches, and the active topology, then create a concise ordered plan.
+Delegate to specialists as needed and avoid repeating failed approaches.
 """
 
 _TOP_LEVEL_TOOLS = [
