@@ -13,9 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from gladius.topologies._catalog import TOPOLOGY_CATALOG, TopologyDefinition
+from gladius.topologies._catalog import TOPOLOGY_CATALOG
 from gladius.topologies.base import BaseTopology, IterationResult
-
 
 EXPECTED_TOPOLOGIES = {"functional", "two-pizza", "platform", "autonomous", "matrix"}
 
@@ -132,13 +131,16 @@ class TestBudgetOk:
         assert self.topo._budget_ok("label", check_budget=lambda: False) is False
 
     def test_consume_agent_call_false_returns_false(self):
-        assert self.topo._budget_ok("label", consume_agent_call=lambda l: False) is False
+        assert (
+            self.topo._budget_ok("label", consume_agent_call=lambda label: False)
+            is False
+        )
 
     def test_both_guardrails_true_returns_true(self):
         assert (
             self.topo._budget_ok(
                 "label",
-                consume_agent_call=lambda l: True,
+                consume_agent_call=lambda label: True,
                 check_budget=lambda: True,
             )
             is True
@@ -149,7 +151,7 @@ class TestBudgetOk:
         assert (
             self.topo._budget_ok(
                 "label",
-                consume_agent_call=lambda l: True,
+                consume_agent_call=lambda label: True,
                 check_budget=lambda: False,
             )
             is False

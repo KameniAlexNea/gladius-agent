@@ -98,7 +98,9 @@ class TestKagglePlatform:
     def test_missing_kaggle_credentials_is_error(self, tmp_path):
         with (
             patch("shutil.which", return_value="/usr/bin/kaggle"),
-            patch.dict("os.environ", {"KAGGLE_USERNAME": "", "KAGGLE_KEY": ""}, clear=False),
+            patch.dict(
+                "os.environ", {"KAGGLE_USERNAME": "", "KAGGLE_KEY": ""}, clear=False
+            ),
             patch("pathlib.Path.exists", return_value=False),
         ):
             errs = _call(tmp_path, platform="kaggle")

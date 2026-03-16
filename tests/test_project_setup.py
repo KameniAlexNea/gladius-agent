@@ -236,8 +236,16 @@ class TestDefaults:
         )
         result = load_config(cfg)
         mt = result["max_turns"]
-        for key in ("coordinator", "full_stack", "platform_layer", "product_layer",
-                    "validator", "memory_keeper", "reviewer", "domain_fix"):
+        for key in (
+            "coordinator",
+            "full_stack",
+            "platform_layer",
+            "product_layer",
+            "validator",
+            "memory_keeper",
+            "reviewer",
+            "domain_fix",
+        ):
             assert key in mt, f"max_turns['{key}'] not set"
             assert mt[key] > 0
 
