@@ -52,6 +52,12 @@ Available specialists in `.claude/agents/`:
 If that specialist's entry already has `"status": "success"`, skip them — their work is done.
 Only re-dispatch a specialist if their status is missing, `"error"`, or if new upstream work requires it.
 
+**Incomplete-agent rule:** after every Task call, check whether the result contains a line like:
+`agentId: <hex> (for resuming to continue this agent's work if needed)`
+This means the agent hit its turn limit and stopped **before finishing**. Its EXPERIMENT_STATE entry
+will be missing or incomplete. You MUST re-dispatch that same agent immediately, passing the
+`agentId` value as the `resume` parameter in the new Task call.
+
 ## Step 3 — Signal stop (if validator says so)
 After memory-keeper finishes, if the validator returned `stop=True`, write the following
 as the **last action** before finishing:
