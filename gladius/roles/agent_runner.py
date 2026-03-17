@@ -133,7 +133,9 @@ async def run_agent(
                                     f"{policy_label}"
                                 )
                                 if is_subagent:
-                                    logger.debug(f"sub-agent policy violation (handled by SDK): {msg}")
+                                    logger.debug(
+                                        f"sub-agent policy violation (handled by SDK): {msg}"
+                                    )
                                 else:
                                     forbidden_tool_error = msg
                             elif block.name == "Bash":
@@ -144,7 +146,9 @@ async def run_agent(
                                         f"cwd={cwd} command={cmd!r}"
                                     )
                                     if is_subagent:
-                                        logger.debug(f"sub-agent scope violation (handled by SDK): {msg}")
+                                        logger.debug(
+                                            f"sub-agent scope violation (handled by SDK): {msg}"
+                                        )
                                     else:
                                         forbidden_tool_error = msg
                     last_assistant_msg = message

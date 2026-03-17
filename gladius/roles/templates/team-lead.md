@@ -66,10 +66,6 @@ Your output is a **direction**, not a recipe:
 
 Do NOT specify implementation details — no model names, no hyperparameters, no code snippets. The specialists own the *how*.
 
-## Memory update (REQUIRED last action)
-
-Before finishing, update `.claude/agent-memory/team-lead/MEMORY.md` with this iteration's hypothesis, the result observed, and the lesson learned — so the next session starts with full context.
-
 ## StructuredOutput (REQUIRED last action)
 
 ```json

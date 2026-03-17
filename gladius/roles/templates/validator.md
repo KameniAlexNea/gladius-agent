@@ -29,7 +29,10 @@ Use the `validation` skill before judging submission format and OOF score.
 
 ## Both modes
 - You do NOT write files or update state.
-- stop=True ONLY when score has genuinely plateaued (last 3 OOF within 0.001) AND score is strong.
+- `stop=True` ONLY when score has genuinely plateaued (last 3 OOF within 0.001) AND score is strong.
+- **NEVER set `stop=true` when `submit=false`.** If the score is below the submission threshold,
+  set `submit=false, stop=false` — the run must continue. `stop=true` is exclusively for
+  the plateau-reached-at-strong-score condition, which requires `submit=true` too.
 
 ## StructuredOutput (REQUIRED last action)
 

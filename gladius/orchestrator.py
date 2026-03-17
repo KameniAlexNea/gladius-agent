@@ -58,13 +58,16 @@ This means the agent hit its turn limit and stopped **before finishing**. Its EX
 will be missing or incomplete. You MUST re-dispatch that same agent immediately, passing the
 `agentId` value as the `resume` parameter in the new Task call.
 
-## Step 3 — Signal stop (if validator says so)
-After memory-keeper finishes, if the validator returned `stop=True`, write the following
-as the **last action** before finishing:
+## Step 3 — Signal stop (ONLY if submission was made AND plateau confirmed)
+After memory-keeper finishes, if the validator returned **both** `stop=True` AND `submit=True`,
+the competition has plateaued at a strong score — write the following as the **last action**:
 ```json
 {"done": true}
 ```
 to `.claude/EXPERIMENT_STATE.json` (merge with existing content, do not overwrite other keys).
+
+**CRITICAL:** if the validator returned `submit=False` (score too low to submit), do NOT write
+`done=true` regardless of the `stop` value — the competition must continue to the next iteration.
 
 ## Constraints
 - Do not repeat any approach listed under "Failed Approaches" in your context.
@@ -215,6 +218,15 @@ async def run_competition(
 
     while not state.done and state.iteration < state.max_iterations:
         state.iteration += 1
+
+        # Archive EXPERIMENT_STATE from the previous iteration so agents start fresh
+        exp_path = project_dir / ".claude" / "EXPERIMENT_STATE.json"
+        if exp_path.exists():
+            archive = exp_path.with_name(
+                f"EXPERIMENT_STATE_iter{state.iteration - 1}.json"
+            )
+            exp_path.rename(archive)
+            logger.debug(f"Archived previous EXPERIMENT_STATE → {archive.name}")
 
         # Refresh CLAUDE.md with current state before each iteration
         claude_md.write(state, str(project_dir))
