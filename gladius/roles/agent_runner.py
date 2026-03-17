@@ -173,7 +173,9 @@ async def run_agent(
                             )
 
                 if result_msg.is_error and structured is None:
-                    raise RuntimeError(f"Agent returned error result: {result_msg.result}")
+                    raise RuntimeError(
+                        f"Agent returned error result: {result_msg.result}"
+                    )
                 if result_msg.is_error and structured is not None:
                     logger.warning(
                         f"[{agent_name}] ResultMessage is_error=True but structured_output "
@@ -186,7 +188,9 @@ async def run_agent(
                     )
             else:
                 if result_msg.is_error:
-                    raise RuntimeError(f"Agent returned error result: {result_msg.result}")
+                    raise RuntimeError(
+                        f"Agent returned error result: {result_msg.result}"
+                    )
 
             return structured or {}, result_msg.session_id or early_session_id or ""
 
