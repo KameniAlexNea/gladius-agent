@@ -126,18 +126,27 @@ async def run_agent(
                                     effective_allowed_tools = delegated
                                     policy_label = f"subagent_allowed_tools={effective_allowed_tools}"
 
+                            is_subagent = bool(message.parent_tool_use_id)
                             if not is_tool_allowed(block.name, effective_allowed_tools):
-                                forbidden_tool_error = (
+                                msg = (
                                     f"[{agent_name}] attempted forbidden tool '{block.name}'. "
                                     f"{policy_label}"
                                 )
+                                if is_subagent:
+                                    logger.debug(f"sub-agent policy violation (handled by SDK): {msg}")
+                                else:
+                                    forbidden_tool_error = msg
                             elif block.name == "Bash":
                                 cmd = str(block.input.get("command", ""))
                                 if not is_bash_command_scoped_to_cwd(cmd, cwd):
-                                    forbidden_tool_error = (
+                                    msg = (
                                         f"[{agent_name}] attempted out-of-project Bash command. "
                                         f"cwd={cwd} command={cmd!r}"
                                     )
+                                    if is_subagent:
+                                        logger.debug(f"sub-agent scope violation (handled by SDK): {msg}")
+                                    else:
+                                        forbidden_tool_error = msg
                     last_assistant_msg = message
                 if isinstance(message, ResultMessage):
                     result_msg = message
