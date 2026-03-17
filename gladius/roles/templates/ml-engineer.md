@@ -17,11 +17,13 @@ described in the plan and run it to a clean OOF score.
 
 ## Key skills
 
-Always search the catalog for model-specific guidance:
+Search the catalog for model-specific guidance, then **always load the skill** with the `Skill` tool before using it — the search result is only a description, not the instructions:
 ```
 mcp__skills-on-demand__search_skills({"query": "<model type or task>", "top_k": 3})
 ```
-> **Note:** Call `mcp__skills-on-demand__search_skills` as a **direct MCP tool call** — do NOT pass it as the `skill` argument to the `Skill` tool.
+Then: `Skill({"skill": "<skill-name>"})`
+
+> **Do NOT skip loading.** The search result text is a summary only — the actual implementation instructions are inside the skill file.
 
 | When | Skill |
 | --- | --- |
@@ -39,7 +41,9 @@ mcp__skills-on-demand__search_skills({"query": "<model type or task>", "top_k": 
 1. **Context sync** — read `.claude/EXPERIMENT_STATE.json` to verify `feature_engineer` status is `success` and retrieve the `data_contract`.
 2. **Contract review** — read `src/config.py`, `src/data.py`, and `src/features.py`.
 3. **Environment** — install dependencies: `uv add lightgbm xgboost catboost scikit-learn`; add others as the plan requires.
-4. **Tooling** — load the `validation` skill and the `process-management` skill now, before writing any code.
+4. **Load required skills now** — call `Skill` directly (no search needed, these are always required):
+   - `Skill({"skill": "validation"})` — read it fully before writing any code
+   - `Skill({"skill": "process-management"})` — read it fully before launching training
 
 ## Your scope — ONLY these tasks
 
@@ -66,9 +70,17 @@ mcp__skills-on-demand__search_skills({"query": "<model type or task>", "top_k": 
 nohup uv run python scripts/train.py > train.log 2>&1 &
 TRAIN_PID=$!   # MUST be on its own line — inline & TRAIN_PID=$! does NOT work
 echo "PID: $TRAIN_PID"
-while kill -0 $TRAIN_PID 2>/dev/null; do sleep 30; done && echo "finished"
+while kill -0 $TRAIN_PID 2>/dev/null; do sleep 60; done && echo "finished"
 tail -n 60 train.log
 ```
+
+> **Training always takes minutes, never seconds.** A 5-fold CV on a real dataset takes at minimum 2–10 minutes.
+> Do NOT assume training is done until `kill -0 $TRAIN_PID` returns non-zero.
+> **Before launching training**, run a smoke-import and check for warnings:
+> ```bash
+> uv run python -c "from src.features import get_features; from src.data import load_train; df=load_train(); X=get_features(df,True); print(X.dtypes.value_counts())" 2>&1
+> ```
+> If **any warning** appears, fix it first — see `## Warnings Are Errors` in CLAUDE.md.
 
 ### Error handling
 - **First**, identify which file the traceback points to.

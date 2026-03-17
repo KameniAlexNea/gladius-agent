@@ -137,6 +137,23 @@ Your conversation has a fixed context window. Protect it:
   StructuredOutput `summary` field must be ≤250 words. The orchestrator passes only
   that summary to the next agent — make it information-dense and factual.
 
+## Warnings Are Errors
+
+> **Never ignore Python warnings. A warning during training is a sign of a bug — fix it before proceeding.**
+
+When a script emits `UserWarning`, `FutureWarning`, `RuntimeWarning`, or any other warning:
+1. **Stop** — do not continue, do not re-run, do not suppress with `warnings.filterwarnings`.
+2. **Read** the full warning text and identify its cause.
+3. **Search** for a solution: `mcp__skills-on-demand__search_skills` or `WebSearch`.
+4. **Fix** the root cause in the source file. Common examples:
+   - `X does not have valid feature names, but model was fitted with feature names` → pass a DataFrame (not `.values`) to `predict`/`predict_proba`.
+   - `DataConversionWarning` → fix dtype mismatch at the source.
+   - `ConvergenceWarning` → increase `max_iter` or fix the input scale.
+5. **Re-run** the smoke test (`uv run python -c "from src.X import Y; ..."`) to confirm the warning is gone.
+6. Only then launch training.
+
+A model trained with warnings is unreliable — its scores cannot be trusted.
+
 ## Long-Running Scripts
 
 For training scripts that take more than a few seconds, use `nohup` and track the PID.
@@ -168,5 +185,5 @@ ps -p $TRAIN_PID -o pid,stat,etime,cmd --no-headers 2>/dev/null || echo "done"
 tail -n 50 train.log
 
 # Wait for finish
-while kill -0 $TRAIN_PID 2>/dev/null; do sleep 30; done && echo "finished"
+while kill -0 $TRAIN_PID 2>/dev/null; do sleep 60; done && echo "finished"
 ```
