@@ -38,7 +38,8 @@ Follow that topology's flow **exactly** — it specifies which agents to call an
 Do NOT substitute a different flow.
 
 Available specialists in `.claude/agents/`:
-- `team-lead` — strategic direction and hypothesis (always first)
+- `scout` — fast data reconnaissance; produces `.claude/DATA_BRIEFING.md` (iteration 1 only, before team-lead)
+- `team-lead` — strategic direction and hypothesis (always first after scout)
 - `data-expert` — EDA, data loading, feature infrastructure
 - `feature-engineer` — feature transforms and selection
 - `ml-engineer` — model, training loop, artifacts
@@ -116,9 +117,12 @@ def _make_kickoff_prompt(state: CompetitionState) -> str:
     if state.iteration == 1:
         return (
             "This is the FIRST iteration — no experiments have run yet.\n"
-            "1. Delegate to `team-lead` to plan a baseline experiment "
-            "(team-lead will read MEMORY.md itself).\n"
-            f"2. Then follow the **{state.topology}** topology: {flow}.\n"
+            "1. Delegate to `scout` first — it will explore the data and write "
+            "`.claude/DATA_BRIEFING.md` with shapes, distributions, risks, and "
+            "strategic angles. This gives team-lead the context it needs to plan.\n"
+            "2. Delegate to `team-lead` to plan a baseline experiment "
+            "(team-lead will read DATA_BRIEFING.md and MEMORY.md itself).\n"
+            f"3. Then follow the **{state.topology}** topology: {flow}.\n"
             "Focus on getting a clean, reproducible baseline score above all else."
         )
 
@@ -135,11 +139,12 @@ def _make_kickoff_prompt(state: CompetitionState) -> str:
     return (
         f"This is iteration {state.iteration}/{state.max_iterations}. "
         f"Current best {metric_label}: **{best}**.\n\n"
-        "1. Delegate to `team-lead` to plan the next experiment "
-        "(team-lead will read MEMORY.md itself).\n"
-        f"2. Then follow the **{state.topology}** topology: {flow}.\n"
+        "1. Skip `scout` — `.claude/DATA_BRIEFING.md` already exists from iteration 1.\n"
+        "2. Delegate to `team-lead` to plan the next experiment "
+        "(team-lead will read DATA_BRIEFING.md and MEMORY.md itself).\n"
+        f"3. Then follow the **{state.topology}** topology: {flow}.\n"
         '   Skip any agent whose EXPERIMENT_STATE.json entry is already `"status": "success"`.'
-        "\n3. After validation, have `memory-keeper` update MEMORY.md.\n\n"
+        "\n4. After validation, have `memory-keeper` update MEMORY.md.\n\n"
         "Avoid any approach listed under 'Failed Approaches' in your context."
     )
 

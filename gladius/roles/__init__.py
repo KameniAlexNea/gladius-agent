@@ -15,6 +15,7 @@ from pathlib import Path
 _TEMPLATES = Path(__file__).parent / "templates"
 
 ROLES = (
+    "scout",
     "team-lead",
     "data-expert",
     "feature-engineer",

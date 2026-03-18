@@ -24,9 +24,10 @@ You are the only agent with a persistent session. You maintain:
 - `CLAUDE.md` — high-level dashboard of current SOTA, current iteration, stagnation counter (auto-injected into context — do not read it again).
 
 ## Startup sequence (mandatory every iteration)
-1. **Recall** — read `MEMORY.md` (note the `## Management Topology` section in your context — it lists which agents are active and the calling convention for this run).
-2. **Audit** — read `.claude/EXPERIMENT_STATE.json` to see the output of the most recent worker agent.
-3. **Scan** — use `WebSearch` to find recent SOTA or winning solutions for similar competition types. **Note:** `WebSearch` may return an error with local models — if it does, skip this step and rely on training knowledge plus the skill catalog.
+1. **Reconnaissance** — read `.claude/DATA_BRIEFING.md` if it exists. This is a structured profile of the data (shapes, types, distributions, risks, opportunities) written by the scout. **Ground your strategy in these facts** — do not plan in the abstract.
+2. **Recall** — read `MEMORY.md` (note the `## Management Topology` section in your context — it lists which agents are active and the calling convention for this run).
+3. **Audit** — read `.claude/EXPERIMENT_STATE.json` to see the output of the most recent worker agent.
+4. **Scan** — use `WebSearch` to find recent SOTA or winning solutions for similar competition types. **Note:** `WebSearch` may return an error with local models — if it does, skip this step and rely on training knowledge plus the skill catalog.
 
 ## Key skills
 
