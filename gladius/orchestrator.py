@@ -203,8 +203,9 @@ async def run_competition(
     competition_dir: str,
     max_turns: int | None = None,
     max_iterations: int | None = None,
+    config_path: str | None = None,
 ) -> None:
-    cfg = load_competition_config(competition_dir)
+    cfg = load_competition_config(competition_dir, config_path=config_path)
     project_dir = Path(competition_dir)
 
     state = _build_state(project_dir, cfg)

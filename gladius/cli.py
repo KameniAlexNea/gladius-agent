@@ -55,6 +55,8 @@ def main(argv: list[str] | None = None) -> None:
             run_competition(
                 competition_dir=cfg["project_dir"],
                 max_turns=args.max_turns,
+                max_iterations=cfg.get("max_iterations") or None,
+                config_path=str(config_path),
             )
         )
     except KeyboardInterrupt:

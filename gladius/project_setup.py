@@ -319,17 +319,13 @@ class CompetitionConfigError(ValueError):
 
 
 def _parse_frontmatter(readme: Path) -> dict:
-    """Parse YAML frontmatter from README.md."""
+    """Parse YAML frontmatter from README.md. Returns {} if no frontmatter block found."""
     text = readme.read_text(encoding="utf-8")
     if not text.startswith("---"):
-        raise CompetitionConfigError(
-            f"{readme}: must start with '---' to open the YAML frontmatter block."
-        )
+        return {}
     end = text.find("\n---", 3)
     if end == -1:
-        raise CompetitionConfigError(
-            f"{readme}: frontmatter block never closed with '---'."
-        )
+        return {}
     frontmatter_text = text[3:end]
     try:
         cfg = yaml.safe_load(frontmatter_text) or {}
@@ -344,17 +340,27 @@ def _parse_frontmatter(readme: Path) -> dict:
     }
 
 
-def load_competition_config(competition_dir: str) -> dict:
+def load_competition_config(
+    competition_dir: str,
+    config_path: str | Path | None = None,
+) -> dict:
     """
-    Parse README.md frontmatter in competition_dir.
+    Return the runtime competition config.
 
-    Returns dict with keys:
+    If config_path is provided (e.g. project.yaml), it is the authoritative source
+    and is parsed via load_config().  Otherwise README.md frontmatter is used.
+
+    In both cases submission_threshold is pulled from README.md frontmatter when
+    not already set (it is the only field that lives exclusively there).
+
+    Returns dict with at least:
         competition_id, platform, metric (may be None), direction (may be None),
         data_dir (absolute path), topology, submission_threshold (may be None)
 
-    Raises CompetitionConfigError if README.md is missing, has no frontmatter,
-    is missing competition_id, or provides metric without direction (or vice-versa).
+    Raises CompetitionConfigError if required fields are missing or invalid.
     """
+    _VALID_TOPOLOGIES = ("functional", "two-pizza", "platform", "autonomous", "matrix")
+
     readme = Path(competition_dir) / "README.md"
     if not readme.exists():
         raise CompetitionConfigError(
@@ -369,56 +375,68 @@ def load_competition_config(competition_dir: str) -> dict:
             "    ---\n"
         )
 
-    cfg = _parse_frontmatter(readme)
+    # submission_threshold only lives in README.md — read it up front
+    readme_threshold: float | None = None
+    try:
+        front = _parse_frontmatter(readme)
+        raw_t = front.get("submission_threshold")
+        if raw_t is not None:
+            readme_threshold = float(raw_t)
+    except Exception:
+        pass
 
-    if not cfg.get("competition_id"):
-        raise CompetitionConfigError(
-            "README.md frontmatter missing required field: competition_id"
-        )
-
-    platform = cfg.get("platform") or "none"
-    if platform not in ("kaggle", "zindi", "fake", "none"):
-        raise CompetitionConfigError(
-            f"platform must be kaggle | zindi | fake | none, got {platform!r}"
-        )
-    cfg["platform"] = platform
-
-    has_metric = bool(cfg.get("metric"))
-    has_direction = bool(cfg.get("direction"))
-    if has_metric != has_direction:
-        raise CompetitionConfigError(
-            "'metric' and 'direction' must both be provided or both omitted."
-        )
-    if has_direction and cfg["direction"] not in ("maximize", "minimize"):
-        raise CompetitionConfigError(
-            f"direction must be maximize | minimize, got {cfg['direction']!r}"
-        )
-
-    cfg["metric"] = cfg.get("metric") or None
-    cfg["direction"] = cfg.get("direction") or None
-
-    _VALID_TOPOLOGIES = ("functional", "two-pizza", "platform", "autonomous", "matrix")
-    topology = cfg.get("topology") or "functional"
-    if topology not in _VALID_TOPOLOGIES:
-        raise CompetitionConfigError(
-            f"topology must be one of {' | '.join(_VALID_TOPOLOGIES)}, got {topology!r}"
-        )
-    cfg["topology"] = topology
-
-    raw_threshold = cfg.get("submission_threshold")
-    if raw_threshold is not None:
+    if config_path is not None:
+        # project.yaml is fully authoritative; load_config() validates & resolves paths
+        _p = Path(config_path)
+        if not _p.is_file():
+            raise CompetitionConfigError(f"Config file not found: {_p}")
         try:
-            cfg["submission_threshold"] = float(raw_threshold)
-        except (ValueError, TypeError):
-            raise CompetitionConfigError(
-                f"submission_threshold must be a number, got {raw_threshold!r}"
-            )
+            cfg = load_config(_p)
+        except ConfigError as exc:
+            raise CompetitionConfigError(str(exc)) from exc
     else:
-        cfg["submission_threshold"] = None
+        cfg = _parse_frontmatter(readme)
 
-    p = Path(cfg.get("data_dir") or "data")
-    if not p.is_absolute():
-        p = Path(competition_dir) / p
-    cfg["data_dir"] = str(p.resolve())
+        if not cfg.get("competition_id"):
+            raise CompetitionConfigError(
+                "README.md frontmatter missing required field: competition_id"
+            )
+
+        platform = cfg.get("platform") or "none"
+        if platform not in ("kaggle", "zindi", "fake", "none"):
+            raise CompetitionConfigError(
+                f"platform must be kaggle | zindi | fake | none, got {platform!r}"
+            )
+        cfg["platform"] = platform
+
+        has_metric = bool(cfg.get("metric"))
+        has_direction = bool(cfg.get("direction"))
+        if has_metric != has_direction:
+            raise CompetitionConfigError(
+                "'metric' and 'direction' must both be provided or both omitted."
+            )
+        if has_direction and cfg["direction"] not in ("maximize", "minimize"):
+            raise CompetitionConfigError(
+                f"direction must be maximize | minimize, got {cfg['direction']!r}"
+            )
+
+        cfg["metric"] = cfg.get("metric") or None
+        cfg["direction"] = cfg.get("direction") or None
+
+        topology = cfg.get("topology") or "functional"
+        if topology not in _VALID_TOPOLOGIES:
+            raise CompetitionConfigError(
+                f"topology must be one of {' | '.join(_VALID_TOPOLOGIES)}, got {topology!r}"
+            )
+        cfg["topology"] = topology
+
+        p = Path(cfg.get("data_dir") or "data")
+        if not p.is_absolute():
+            p = Path(competition_dir) / p
+        cfg["data_dir"] = str(p.resolve())
+
+    # submission_threshold: README.md is the canonical source for this field
+    if cfg.get("submission_threshold") is None:
+        cfg["submission_threshold"] = readme_threshold
 
     return cfg
