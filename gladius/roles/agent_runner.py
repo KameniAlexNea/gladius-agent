@@ -26,7 +26,6 @@ from loguru import logger
 from gladius.roles import ROLE_CATALOG
 from gladius.roles._console import _BLUE, _BOLD, _c, _log_message
 from gladius.roles.helpers import (
-    build_runtime_agents,
     get_runtime_model,
     is_bash_command_scoped_to_cwd,
     is_tool_allowed,
@@ -79,7 +78,7 @@ async def run_agent(
         max_turns=max_turns,
         stderr=stderr_cb,
         setting_sources=["project"],
-        agents=build_runtime_agents(runtime_model),
+        agents=ROLE_CATALOG,
         model=runtime_model,
         **option_kwargs,
     )
@@ -127,18 +126,31 @@ async def run_agent(
                                     effective_allowed_tools = delegated
                                     policy_label = f"subagent_allowed_tools={effective_allowed_tools}"
 
+                            is_subagent = bool(message.parent_tool_use_id)
                             if not is_tool_allowed(block.name, effective_allowed_tools):
-                                forbidden_tool_error = (
+                                msg = (
                                     f"[{agent_name}] attempted forbidden tool '{block.name}'. "
                                     f"{policy_label}"
                                 )
+                                if is_subagent:
+                                    logger.debug(
+                                        f"sub-agent policy violation (handled by SDK): {msg}"
+                                    )
+                                else:
+                                    forbidden_tool_error = msg
                             elif block.name == "Bash":
                                 cmd = str(block.input.get("command", ""))
                                 if not is_bash_command_scoped_to_cwd(cmd, cwd):
-                                    forbidden_tool_error = (
+                                    msg = (
                                         f"[{agent_name}] attempted out-of-project Bash command. "
                                         f"cwd={cwd} command={cmd!r}"
                                     )
+                                    if is_subagent:
+                                        logger.debug(
+                                            f"sub-agent scope violation (handled by SDK): {msg}"
+                                        )
+                                    else:
+                                        forbidden_tool_error = msg
                     last_assistant_msg = message
                 if isinstance(message, ResultMessage):
                     result_msg = message
@@ -154,38 +166,46 @@ async def run_agent(
 
             structured = result_msg.structured_output
 
-            if structured is None and last_assistant_msg is not None:
-                full_text = "\n".join(
-                    block.text.strip()
-                    for block in last_assistant_msg.content
-                    if isinstance(block, TextBlock) and block.text.strip()
-                )
-                if full_text:
-                    try:
-                        structured = _parse_json(full_text)
-                        logger.warning(
-                            f"[{agent_name}] structured_output was None — "
-                            "extracted JSON from assistant text (llm_output_parser fallback)"
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            f"[{agent_name}] structured_output fallback parse failed: {exc}"
-                        )
+            if output_schema is not None:
+                if structured is None and last_assistant_msg is not None:
+                    full_text = "\n".join(
+                        block.text.strip()
+                        for block in last_assistant_msg.content
+                        if isinstance(block, TextBlock) and block.text.strip()
+                    )
+                    if full_text:
+                        try:
+                            structured = _parse_json(full_text)
+                            logger.warning(
+                                f"[{agent_name}] structured_output was None — "
+                                "extracted JSON from assistant text (llm_output_parser fallback)"
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                f"[{agent_name}] structured_output fallback parse failed: {exc}"
+                            )
 
-            if result_msg.is_error and structured is None:
-                raise RuntimeError(f"Agent returned error result: {result_msg.result}")
-            if result_msg.is_error and structured is not None:
-                logger.warning(
-                    f"[{agent_name}] ResultMessage is_error=True but structured_output "
-                    "was captured — using it (model ran extra turns after StructuredOutput)."
-                )
+                if result_msg.is_error and structured is None:
+                    raise RuntimeError(
+                        f"Agent returned error result: {result_msg.result}"
+                    )
+                if result_msg.is_error and structured is not None:
+                    logger.warning(
+                        f"[{agent_name}] ResultMessage is_error=True but structured_output "
+                        "was captured — using it (model ran extra turns after StructuredOutput)."
+                    )
 
-            if structured is None:
-                raise RuntimeError(
-                    "Agent returned no structured_output (schema not satisfied?)"
-                )
+                if structured is None:
+                    raise RuntimeError(
+                        "Agent returned no structured_output (schema not satisfied?)"
+                    )
+            else:
+                if result_msg.is_error:
+                    raise RuntimeError(
+                        f"Agent returned error result: {result_msg.result}"
+                    )
 
-            return structured, result_msg.session_id or early_session_id or ""
+            return structured or {}, result_msg.session_id or early_session_id or ""
 
         except CLINotFoundError:
             raise

@@ -7,7 +7,7 @@ description: >
   data contract, performs rigorous data profiling (leakage, drift, distributions,
   class imbalance), and initialises src/ (config, data).
   Writes status to EXPERIMENT_STATE.json.
-tools: Read, Write, Bash, Glob, Grep, Skill, mcp__skills-on-demand__search_skills
+tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 30
 ---
@@ -19,10 +19,12 @@ bridge between raw files and model-ready features.
 
 ## Key skills
 
-Before any implementation, search the catalog for domain-specific loaders:
+You may search for domain-specific loaders to inform your implementation, but **do not wait for or depend on search results** — proceed with scaffolding immediately:
 ```
 mcp__skills-on-demand__search_skills({"query": "scientific data loading <domain>", "top_k": 3})
 ```
+> **Note:** Call `mcp__skills-on-demand__search_skills` as a **direct MCP tool call** — do NOT pass it as the `skill` argument to the `Skill` tool.
+> Searching for skills is **optional context only** — if no relevant skill is found, continue with your own implementation.
 
 | Context | Skill |
 | --- | --- |
@@ -75,4 +77,25 @@ print(f'Contract verified: {df.shape[1]} columns, {len(df)} rows.')
 - Feature engineering, model training, and evaluation belong to downstream agents.
 
 ## State finalizer (REQUIRED last action)
-Write `.claude/EXPERIMENT_STATE.json` with your results.
+
+**If `.claude/EXPERIMENT_STATE.json` already exists**, read it first (use `Read`), then update only the `data_expert` key in the dict and write the full object back. If the file does not exist yet, create it fresh.
+
+```json
+{
+  "data_expert": {
+    "status": "success" | "error",
+    "data_contract": {
+      "train_shape": "<rows x cols>",
+      "test_shape": "<rows x cols>",
+      "target_col": "<name>",
+      "num_features": ["<name>", "..."],
+      "cat_features": ["<name>", "..."],
+      "timestamp_features": ["<name>", "..."]
+    },
+    "eda_notes": "<summary: leakage flags, drift findings, class imbalance, missing value rates>",
+    "message": "<error details if status is error>"
+  }
+}
+```
+
+`status` and `data_contract` are required. Populate `message` with the full error if `status` is `"error"`.

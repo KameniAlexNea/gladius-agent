@@ -36,14 +36,22 @@ the exact pre-flight checks and wait patterns to avoid that.
 ## Anti-Patterns (NEVER)
 
 ```bash
-# ❌ BAD: Launch without PID capture
-nohup uv run python scripts/train.py > train.log 2>&1 & echo $!
-# echo $! prints the PID but you never stored it — it's gone
+# ❌ BAD: TRAIN_PID=$! on the same line as the & command
+nohup uv run python scripts/train.py > train.log 2>&1 & TRAIN_PID=$!
+# $! is NOT captured — bash evaluates $! before & has set it for this line.
+# TRAIN_PID is empty. Every subsequent kill -0 $TRAIN_PID call silently exits
+# immediately, so the wait loop never waits. The model then polls manually.
 
-# ✅ GOOD: Capture PID immediately
+# ❌ BAD: Inline echo — same problem
+nohup uv run python scripts/train.py > train.log 2>&1 & TRAIN_PID=$! && echo "PID: $TRAIN_PID"
+# Still broken — $! is empty when assigned on the same compound line.
+
+# ✅ CORRECT: TRAIN_PID=$! MUST be on its own line, immediately after &
 nohup uv run python scripts/train.py > train.log 2>&1 &
 TRAIN_PID=$!
 echo "Training PID: $TRAIN_PID"
+# Now $! is the PID of the background job just started. Do NOT put anything
+# between the & and the TRAIN_PID=$! assignment.
 ```
 
 ```bash

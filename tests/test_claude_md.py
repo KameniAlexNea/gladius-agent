@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 from gladius.claude_md import render
 from gladius.state import CompetitionState
 
@@ -108,7 +106,12 @@ class TestRecentExperiments:
         s = _state(target_metric="f1", metric_direction="maximize")
         for i in range(7):
             s.experiments.append(
-                {"iteration": i, "oof_score": 0.5 + i * 0.01, "solution_files": [], "notes": f"iter{i}"}
+                {
+                    "iteration": i,
+                    "oof_score": 0.5 + i * 0.01,
+                    "solution_files": [],
+                    "notes": f"iter{i}",
+                }
             )
         result = render(s, str(tmp_path))
         # iter 6 and iter 2 … but NOT iter 0 or iter 1 (older than last 5)
@@ -118,8 +121,22 @@ class TestRecentExperiments:
 
     def test_most_recent_shown_first(self, tmp_path):
         s = _state(target_metric="f1", metric_direction="maximize")
-        s.experiments.append({"iteration": 1, "oof_score": 0.6, "solution_files": [], "notes": "ZZZ_OLDER_NOTE"})
-        s.experiments.append({"iteration": 2, "oof_score": 0.7, "solution_files": [], "notes": "ZZZ_NEWER_NOTE"})
+        s.experiments.append(
+            {
+                "iteration": 1,
+                "oof_score": 0.6,
+                "solution_files": [],
+                "notes": "ZZZ_OLDER_NOTE",
+            }
+        )
+        s.experiments.append(
+            {
+                "iteration": 2,
+                "oof_score": 0.7,
+                "solution_files": [],
+                "notes": "ZZZ_NEWER_NOTE",
+            }
+        )
         result = render(s, str(tmp_path))
         idx_older = result.find("ZZZ_OLDER_NOTE")
         idx_newer = result.find("ZZZ_NEWER_NOTE")
@@ -145,7 +162,14 @@ class TestStagnation:
         s = _state(target_metric="f1", metric_direction="maximize")
         # Three experiments within 0.001 of each other
         for i in range(3):
-            s.experiments.append({"iteration": i, "oof_score": 0.800 + i * 0.0001, "solution_files": [], "notes": ""})
+            s.experiments.append(
+                {
+                    "iteration": i,
+                    "oof_score": 0.800 + i * 0.0001,
+                    "solution_files": [],
+                    "notes": "",
+                }
+            )
         result = render(s, str(tmp_path))
         # Check for the unique section header that only appears inside the stagnation block
         assert "STAGNATION WARNING" in result
@@ -154,7 +178,9 @@ class TestStagnation:
         s = _state(target_metric="f1", metric_direction="maximize")
         scores = [0.70, 0.75, 0.82]
         for i, sc in enumerate(scores):
-            s.experiments.append({"iteration": i, "oof_score": sc, "solution_files": [], "notes": ""})
+            s.experiments.append(
+                {"iteration": i, "oof_score": sc, "solution_files": [], "notes": ""}
+            )
         result = render(s, str(tmp_path))
         # "STAGNATION WARNING" is the unique header only injected by the stagnation block
         assert "STAGNATION WARNING" not in result

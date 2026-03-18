@@ -22,7 +22,6 @@ from gladius.submission import (
     update_best_submission_score,
 )
 
-
 # ── submit() ─────────────────────────────────────────────────────────────────
 
 
@@ -49,7 +48,8 @@ class TestSubmitFake:
         sub = tmp_path / "sub.csv"
         sub.write_text("id,target\n1,0\n")
         with patch(
-            "gladius.tools.fake_platform_tools._score_submission", side_effect=RuntimeError("bad")
+            "gladius.tools.fake_platform_tools._score_submission",
+            side_effect=RuntimeError("bad"),
         ):
             ok, err = submit("fake", "comp-x", str(sub), "msg")
         assert ok is False
@@ -82,7 +82,9 @@ class TestScoreSubmissionArtifact:
     def test_fake_platform_returns_float(self, tmp_path):
         sub = tmp_path / "sub.csv"
         sub.write_text("id,target\n1,0\n")
-        with patch("gladius.tools.fake_platform_tools._score_submission", return_value=0.88):
+        with patch(
+            "gladius.tools.fake_platform_tools._score_submission", return_value=0.88
+        ):
             score = score_submission_artifact("fake", str(sub))
         assert score == pytest.approx(0.88)
 
@@ -94,7 +96,8 @@ class TestScoreSubmissionArtifact:
     def test_fake_scorer_exception_returns_none(self, tmp_path):
         sub = tmp_path / "sub.csv"
         with patch(
-            "gladius.tools.fake_platform_tools._score_submission", side_effect=Exception("broken")
+            "gladius.tools.fake_platform_tools._score_submission",
+            side_effect=Exception("broken"),
         ):
             assert score_submission_artifact("fake", str(sub)) is None
 

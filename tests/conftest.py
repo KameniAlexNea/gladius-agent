@@ -48,13 +48,15 @@ def minimal_config(project_dir: Path) -> Path:
     """Write a valid minimal YAML config and return its path."""
     cfg = project_dir / "project.yaml"
     cfg.write_text(
-        textwrap.dedent(f"""\
+        textwrap.dedent(
+            f"""\
             competition_id: test-comp
             project_dir: {project_dir}
             platform: none
             metric: f1_score
             direction: maximize
-        """),
+        """
+        ),
         encoding="utf-8",
     )
     return cfg
