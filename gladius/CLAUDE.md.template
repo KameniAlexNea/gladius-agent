@@ -30,7 +30,11 @@
 
 {{stagnation_block}}
 
+{{phase_guidance}}
+
 {{data_section}}
+
+{{data_briefing_section}}
 
 {{submission_section}}
 
@@ -103,6 +107,7 @@ Each file has exactly one owner. Every agent has a defined read/write scope — 
 
 | Agent | Writes | Never touches |
 | --- | --- | --- |
+| **scout** | `.claude/DATA_BRIEFING.md` only (iteration 1) | all source files, `EXPERIMENT_STATE.json` |
 | **data-expert** | `src/config.py`, `src/data.py`, `src/__init__.py` | everything else in `src/` |
 | **feature-engineer** | `src/features.py` | `src/data.py`, `src/config.py`, `src/models.py` |
 | **ml-engineer** | `src/models.py`, `scripts/train.py`, `scripts/evaluate.py` | `src/data.py`, `src/features.py` |
@@ -173,36 +178,16 @@ When a script emits `UserWarning`, `FutureWarning`, `RuntimeWarning`, or any oth
 
 A model trained with warnings is unreliable — its scores cannot be trusted.
 
-## Long-Running Scripts
+## Logging — Use loguru, Not print
 
-For training scripts that take more than a few seconds, use `nohup` and track the PID.
-**Never use background task IDs (`TaskOutput`, `TaskStop`).**
+> **Never use `print()` for progress or debug output. Use `loguru` — it flushes immediately.**
 
-> **⚠️ CRITICAL — PID capture must be on its own line.**
-> `nohup ... & TRAIN_PID=$!` does **NOT** capture the PID — bash evaluates `$!`
-> before the `&` job is registered. Put `TRAIN_PID=$!` on the **next line**, alone.
->
-> ```bash
-> # ❌ WRONG — TRAIN_PID will be empty:
-> nohup uv run python scripts/train.py > logs/train.log 2>&1 & TRAIN_PID=$!
->
-> # ✅ CORRECT — separate lines:
-> nohup uv run python scripts/train.py > logs/train.log 2>&1 &
-> TRAIN_PID=$!
-> ```
+`print()` is line-buffered to terminals but **fully buffered** when piped to a file (`> logs/train.log`). Under heavy CPU load, the buffer doesn't flush — your log file stays empty for minutes, and if the process crashes, the output is lost entirely.
 
-```bash
-# Launch and capture PID
-nohup uv run python scripts/train.py > logs/train.log 2>&1 &
-TRAIN_PID=$!
-echo "PID: $TRAIN_PID"
-
-# Check if still running
-ps -p $TRAIN_PID -o pid,stat,etime,cmd --no-headers 2>/dev/null || echo "done"
-
-# Tail progress
-tail -n 50 logs/train.log
-
-# Wait for finish
-while kill -0 $TRAIN_PID 2>/dev/null; do sleep 60; done && echo "finished"
+**One exception:** `scripts/train.py` MUST still `print()` on the final line:
+```python
+print(f"FINAL OOF {METRIC_NAME}: {oof_score:.6f} (+/- {oof_std:.6f})")
 ```
+The evaluator greps for this exact `FINAL OOF` pattern. Use `loguru` for everything else in the script; only this final line uses `print()`, and call `sys.stdout.flush()` immediately after to guarantee it is written.
+
+Install with: `uv add loguru`

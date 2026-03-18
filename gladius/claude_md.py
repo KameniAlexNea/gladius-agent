@@ -28,6 +28,37 @@ _STAGNATION_THRESHOLD_METRIC = 0.001
 _STAGNATION_THRESHOLD_QUALITY = 3.0
 
 
+def _phase_guidance(iteration: int, max_iterations: int) -> str:
+    """Return a short phase-appropriate guidance block."""
+    if max_iterations <= 2:
+        # Too few iterations for phasing — skip
+        return ""
+
+    if iteration <= 2:
+        phase, label, advice = "EARLY", "🟢 Early (baseline)", (
+            "> **Priority: get a clean, reproducible baseline.**\n"
+            "> - Don't over-engineer features or models.\n"
+            "> - Validate the full pipeline end-to-end (data → features → train → OOF → submission).\n"
+            "> - A simple model with correct CV is worth more than a complex model with broken validation."
+        )
+    elif iteration >= max_iterations - 1:
+        phase, label, advice = "LATE", "🔴 Late (polish)", (
+            "> **Priority: maximise the final score — no risky pivots.**\n"
+            "> - Ensemble top-performing models from prior iterations.\n"
+            "> - Run HPO on the best model if not done yet.\n"
+            "> - Ensure the best submission is saved. Do NOT start a new approach from scratch."
+        )
+    else:
+        phase, label, advice = "MID", "🟡 Mid (explore)", (
+            "> **Priority: try diverse approaches to find signal.**\n"
+            "> - Feature engineering and model variety are high-impact.\n"
+            "> - HPO is worthwhile once you have a strong feature set.\n"
+            "> - If stagnating, pivot to a fundamentally different strategy."
+        )
+
+    return f"## Iteration Phase: {label}\n\n{advice}"
+
+
 def render(state: "CompetitionState", project_dir: str) -> str:
     """Return the rendered CLAUDE.md content for the current state."""
     template = _TEMPLATE.read_text(encoding="utf-8")
@@ -108,13 +139,12 @@ def render(state: "CompetitionState", project_dir: str) -> str:
                     else "?"
                 )
             )
-            files = ", ".join(Path(f).name for f in e.get("solution_files", []))
-            notes = e.get("notes", "")[:100]
+            approach = e.get("approach_summary") or e.get("notes", "")[:100]
             rows.append(
-                f"| iter {e.get('iteration', '?')} | {score_col} | {files} | {notes} |"
+                f"| iter {e.get('iteration', '?')} | {score_col} | {approach} |"
             )
         recent_experiments = (
-            f"| Iteration | {score_header} | Files | Notes |\n| --- | --- | --- | --- |\n"
+            f"| Iteration | {score_header} | Approach |\n| --- | --- | --- |\n"
             + "\n".join(rows)
         )
     else:
@@ -192,6 +222,24 @@ def render(state: "CompetitionState", project_dir: str) -> str:
 
     memory_path = str(team_lead_memory_path(project_dir).resolve())
 
+    # ── data briefing (produced by scout in iteration 1) ─────────────────────
+    briefing_path = Path(project_dir) / ".claude" / "DATA_BRIEFING.md"
+    if briefing_path.is_file():
+        data_briefing_section = (
+            "## Data Briefing\n\n"
+            "> Produced by the scout agent. All agents may read this for data context.\n\n"
+            + briefing_path.read_text(encoding="utf-8").strip()
+        )
+    else:
+        data_briefing_section = (
+            "## Data Briefing\n\n"
+            "_(not yet available — the scout agent will produce `.claude/DATA_BRIEFING.md` "
+            "in iteration 1)_"
+        )
+
+    # ── phase guidance ───────────────────────────────────────────────────────
+    phase_guidance = _phase_guidance(state.iteration, state.max_iterations)
+
     # ── substitute ───────────────────────────────────────────────────────────
     replacements = {
         "competition_id": state.competition_id,
@@ -206,7 +254,9 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         "recent_experiments": recent_experiments,
         "failed_approaches": failed_approaches,
         "stagnation_block": stagnation_block,
+        "phase_guidance": phase_guidance,
         "data_section": data_section,
+        "data_briefing_section": data_briefing_section,
         "submission_section": submission_section,
         "memory_path": memory_path,
     }

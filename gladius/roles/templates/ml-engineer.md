@@ -69,11 +69,36 @@ Then: `Skill({"skill": "<skill-name>"})`
 
 > **MANDATORY: ALWAYS pipe training output to `logs/train.log`.** The evaluator reads `logs/train.log` to verify the score. If you run `train.py` without `> logs/train.log 2>&1`, the score disappears and the evaluator will be unable to validate, triggering a full retrain cycle.
 
+For training scripts that take more than a few seconds, use `nohup` and track the PID.
+**Never use background task IDs (`TaskOutput`, `TaskStop`).**
+
+> **⚠️ CRITICAL — PID capture must be on its own line.**
+> `nohup ... & TRAIN_PID=$!` does **NOT** capture the PID — bash evaluates `$!`
+> before the `&` job is registered. Put `TRAIN_PID=$!` on the **next line**, alone.
+>
+> ```bash
+> # ❌ WRONG — TRAIN_PID will be empty:
+> nohup uv run python scripts/train.py > logs/train.log 2>&1 & TRAIN_PID=$!
+>
+> # ✅ CORRECT — separate lines:
+> nohup uv run python scripts/train.py > logs/train.log 2>&1 &
+> TRAIN_PID=$!
+> ```
+
 ```bash
+# Launch and capture PID
 mkdir -p logs
 nohup uv run python scripts/train.py > logs/train.log 2>&1 &
-TRAIN_PID=$!   # MUST be on its own line — inline & TRAIN_PID=$! does NOT work
+TRAIN_PID=$!
 echo "PID: $TRAIN_PID"
+
+# Check if still running
+ps -p $TRAIN_PID -o pid,stat,etime,cmd --no-headers 2>/dev/null || echo "done"
+
+# Tail progress
+tail -n 50 logs/train.log
+
+# Wait for finish
 while kill -0 $TRAIN_PID 2>/dev/null; do sleep 60; done && echo "finished"
 tail -n 60 logs/train.log
 ```

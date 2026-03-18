@@ -171,6 +171,7 @@ def _update_state(state: CompetitionState, project_dir: Path) -> None:
     # Extract OOF score — evaluator is authoritative, ml_engineer as fallback
     evaluator = data.get("evaluator", {})
     ml_eng = data.get("ml_engineer", {})
+    team_lead = data.get("team_lead", {})
     oof_score: float | None = evaluator.get("oof_score") or ml_eng.get("oof_score")
     quality_score: float | None = ml_eng.get("quality_score")
     metric = evaluator.get("metric") or state.target_metric
@@ -184,8 +185,9 @@ def _update_state(state: CompetitionState, project_dir: Path) -> None:
         "quality_score": quality_score,
         "metric": metric,
         "notes": notes,
+        "approach_summary": team_lead.get("approach_summary", ""),
         "solution_files": solution_files,
-        "approach": ml_eng.get("notes", ""),
+        "approach": team_lead.get("approach_summary") or ml_eng.get("notes", ""),
     }
     state.experiments.append(entry)
 
