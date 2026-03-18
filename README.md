@@ -2,6 +2,8 @@
 
 Fully autonomous multi-agent system for ML competitions. Given a competition directory it runs a continuous loop without human intervention: plans experiments, writes and executes code, evaluates OOF results, decides whether to submit, and synthesises learnings into persistent memory — all driven by [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk).
 
+![Gladius execution trace](docs/gladius-trace.jpeg)
+
 ---
 
 ## Architecture
@@ -9,7 +11,7 @@ Fully autonomous multi-agent system for ML competitions. Given a competition dir
 ```
 orchestrator.py
   │
-  ├─ reads topology from competition README.md frontmatter
+  ├─ reads config from project.yaml (topology, model, platform, metric, …)
   ├─ bootstraps .claude/ project dir (idempotent)
   │
   └─ while iterations remain:
@@ -23,7 +25,7 @@ The orchestrator is a thin loop. It never orchestrates individual agent phases d
 
 ### Topologies
 
-Set `topology:` in the competition's README.md frontmatter. Default is `functional`.
+Set `topology:` in `project.yaml`. Default is `functional`.
 
 | Topology | Style | Agent flow |
 |---|---|---|
@@ -194,16 +196,45 @@ ZINDI_CHALLENGE_INDEX=0
 
 ## Competition directory
 
-Each competition lives in its own directory. The only required file is `README.md` with a YAML frontmatter block:
+Each competition lives in its own directory with a `project.yaml` config file and a `README.md` for context.
+
+### `project.yaml` — primary config
+
+```yaml
+# Required
+competition_id: my-competition
+project_dir: /path/to/my-competition
+
+# Competition type
+platform: zindi          # kaggle | zindi | fake | none
+metric: f1-score         # omit for open-ended tasks
+direction: maximize      # maximize | minimize
+
+# Data
+data_dir: data           # relative to project_dir, or absolute
+max_submissions_per_day: 5
+
+# Agent topology
+topology: functional     # functional | two-pizza | platform | autonomous | matrix
+
+# Model
+model: claude-opus-4-5
+small_model: claude-haiku-4-5
+
+# Iteration cap (optional — defaults to 20)
+# max_iterations: 20
+```
+
+See [`examples/data_dog/project.yaml`](examples/data_dog/project.yaml) for a fully-annotated reference.
+
+### `README.md` — task description (optional frontmatter)
+
+The `README.md` is the human-readable task description that agents read for competition context. It may optionally carry a YAML frontmatter block with `submission_threshold` (the minimum OOF score required before a submission is made — this is the only field read from README.md at runtime):
 
 ```yaml
 ---
 competition_id: my-competition
-platform: zindi          # kaggle | zindi | fake | none
-metric: f1-score         # metric name (informational for agents; omit for open-ended tasks)
-direction: maximize      # maximize | minimize (required when metric is set)
-data_dir: data           # relative path to data directory
-topology: functional     # functional | two-pizza | platform | autonomous | matrix
+submission_threshold: 0.85
 ---
 
 # My Competition Title
@@ -211,7 +242,7 @@ topology: functional     # functional | two-pizza | platform | autonomous | matr
 ...competition description and data documentation here...
 ```
 
-The rest of the README is the human-readable task description that agents read for context. For open-ended (non-metric) tasks it is the primary source of truth — agents derive goal, deliverables, and self-assessment criteria from it.
+For open-ended (non-metric) tasks the README is the primary source of truth — agents derive goal, deliverables, and self-assessment criteria from it.
 
 `data_dir` must contain at minimum:
 - `train.csv`
@@ -222,7 +253,7 @@ The rest of the README is the human-readable task description that agents read f
 
 ```bash
 cd examples/fake_competition
-gladius --competition-dir ./ --iterations 5
+gladius project.yaml
 ```
 
 `examples/fake_competition` is a 1000-row binary classification dataset. `platform: fake` — submissions scored locally against `data/.answers.csv` using AUC-ROC. No API key needed.
@@ -232,25 +263,23 @@ gladius --competition-dir ./ --iterations 5
 ## CLI
 
 ```bash
-gladius --competition-dir PATH [--iterations N] [--no-resume] [--no-submit] [--parallel N] [--mode MODE]
+gladius CONFIG [--max-turns N]
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `--competition-dir` | required | Competition directory (must contain README.md with frontmatter) |
-| `--iterations` | 20 | Maximum iterations |
-| `--no-resume` | false | Start fresh — ignore `.gladius/state.db` |
-| `--no-submit` | false | Dry-run — skip platform submissions |
-| `--parallel N` | 1 | For `autonomous` topology: run N mini-teams concurrently |
-| `--mode` | experimental | `experimental` or `personal-production` (hard caps: 1800s/iter, 5 agent calls/iter) |
-| `--max-iteration-seconds` | unset | Runtime cap per iteration |
-| `--max-agent-calls-per-iteration` | unset | Cap on total agent calls per iteration |
-| `--max-failed-runs-total` | unset | Cap on cumulative failed runs before halt |
+| Argument | Description |
+|---|---|
+| `CONFIG` | Path to `project.yaml` |
+| `--max-turns N` | Hard cap on agent turns per iteration (default: unlimited) |
 
 ```bash
-# Check progress
-gladius status --competition-dir PATH
+# Run a competition
+gladius examples/data_dog/project.yaml
+
+# Run with a turn cap
+gladius examples/data_dog/project.yaml --max-turns 100
 ```
+
+`max_iterations` is set in `project.yaml`. The run stops when that count is reached, a plateau stop-signal is written, or 3 consecutive errors occur.
 
 ---
 
@@ -314,6 +343,16 @@ tox -e format
 
 # Run example competition (1 iteration, fresh start)
 gladius --competition-dir examples/fake_competition --iterations 1 --no-resume
+```
+
+### Visualising a run
+
+Use the [gladius-log-viewer](https://github.com/KameniAlexNea/gladius-log-viewer) to inspect agent traces interactively:
+
+```bash
+git clone git@github.com:KameniAlexNea/gladius-log-viewer.git
+cd gladius-log-viewer
+uv run python app.py --log /path/to/gladius.log
 ```
 
 ---
