@@ -85,9 +85,21 @@ For training scripts that take more than a few seconds, use `nohup` and track th
 > TRAIN_PID=$!
 > ```
 
+**Pre-launch: record a timestamp and wipe stale artifacts.**
+The orchestrator archives previous-iteration artifacts, but if YOUR training crashed mid-iteration, stale files from a **failed retry** may remain. Always clean before launching:
+
 ```bash
-# Launch and capture PID
-mkdir -p logs
+# Record launch time and wipe stale training outputs
+LAUNCH_TS=$(date +%s)
+rm -f artifacts/oof.npy artifacts/oof_classes.npy artifacts/model_f*.bin
+rm -f logs/train.log
+mkdir -p logs artifacts
+echo "Cleaned stale artifacts. Launch timestamp: $LAUNCH_TS"
+```
+
+**Launch training:**
+
+```bash
 nohup uv run python scripts/train.py > logs/train.log 2>&1 &
 TRAIN_PID=$!
 echo "PID: $TRAIN_PID"
@@ -102,6 +114,25 @@ tail -n 50 logs/train.log
 while kill -0 $TRAIN_PID 2>/dev/null; do sleep 60; done && echo "finished"
 tail -n 60 logs/train.log
 ```
+
+**Post-training: verify artifacts are fresh (MANDATORY).**
+After training completes, confirm the artifacts were actually produced by THIS run:
+
+```bash
+# Verify oof.npy was created AFTER launch
+if [ -f artifacts/oof.npy ]; then
+    OOF_TS=$(stat -c %Y artifacts/oof.npy)
+    if [ "$OOF_TS" -lt "$LAUNCH_TS" ]; then
+        echo "❌ STALE: artifacts/oof.npy is OLDER than launch time — training did NOT produce it"
+    else
+        echo "✅ artifacts/oof.npy is fresh (created after launch)"
+    fi
+else
+    echo "❌ MISSING: artifacts/oof.npy not found — training failed to produce output"
+fi
+```
+
+> If the freshness check fails, do NOT report success. Read `logs/train.log` to diagnose the failure.
 
 > **Training always takes minutes, never seconds.** A 5-fold CV on a real dataset takes at minimum 2–10 minutes.
 > Do NOT assume training is done until `kill -0 $TRAIN_PID` returns non-zero.

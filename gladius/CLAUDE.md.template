@@ -138,6 +138,13 @@ The single shared state file for the current iteration. Path: `.claude/EXPERIMEN
 - An entry with `"status": "success"` is immutable — no other agent may overwrite it.
 - Topology-specific keys are defined in the `## Management Topology` section above.
 
+## Artifact Freshness
+
+> **Never trust an artifact you didn't produce.** The orchestrator archives `artifacts/` and `logs/` between iterations, but if training crashes mid-iteration, stale files from a failed retry may linger.
+
+- **ml-engineer**: wipe `artifacts/oof.npy`, `model_f*.bin`, and `logs/train.log` **before** launching training. Record a timestamp. After training, verify artifacts are newer than the timestamp.
+- **evaluator**: verify `artifacts/oof.npy` is newer than `scripts/train.py` before trusting it. A stale artifact means training failed silently.
+
 ## Package Management
 
 > **This project uses `uv` — there is no `pip` in the venv.**

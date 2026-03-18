@@ -30,9 +30,19 @@ Read `.claude/EXPERIMENT_STATE.json` (use `Read`, not `Bash`). If `ml_engineer.o
 **Never trust a score from a log or from EXPERIMENT_STATE. Always re-compute it yourself.**
 
 1. Verify `artifacts/oof.npy` exists, has non-zero shape, and contains no NaN/Inf.
-2. Read `src/config.py` for `TARGET_COL`, `METRIC_NAME`, and any class ordering hints. Read `artifacts/oof_classes.npy` if it exists — it should be the model's `clf.classes_` array (shape `(n_classes,)`), telling you which column of `oof.npy` maps to which class label.
-3. Load the training labels via `src.data.load_train()`, then compute the metric from scratch using `artifacts/oof.npy` and the task/metric you identified in Step 1. Write the code yourself based on the actual metric — do not guess.
-4. The score you compute is the authoritative value. If it differs from `ml_engineer.oof_score` in EXPERIMENT_STATE, **use your computed value** and note the discrepancy in `message`. Do NOT escalate or retrain over a score disagreement.
+2. **Freshness check**: verify `artifacts/oof.npy` is newer than `scripts/train.py`. If `oof.npy` is older, it is stale from a previous run — report `status: "error"` with message "stale artifact detected".
+   ```bash
+   python3 -c "
+   from pathlib import Path
+   oof, script = Path('artifacts/oof.npy'), Path('scripts/train.py')
+   if oof.exists() and script.exists() and oof.stat().st_mtime < script.stat().st_mtime:
+       raise SystemExit('❌ STALE: oof.npy is older than train.py — not from this run')
+   print('✅ Artifact freshness OK')
+   "
+   ```
+3. Read `src/config.py` for `TARGET_COL`, `METRIC_NAME`, and any class ordering hints. Read `artifacts/oof_classes.npy` if it exists — it should be the model's `clf.classes_` array (shape `(n_classes,)`), telling you which column of `oof.npy` maps to which class label.
+4. Load the training labels via `src.data.load_train()`, then compute the metric from scratch using `artifacts/oof.npy` and the task/metric you identified in Step 1. Write the code yourself based on the actual metric — do not guess.
+5. The score you compute is the authoritative value. If it differs from `ml_engineer.oof_score` in EXPERIMENT_STATE, **use your computed value** and note the discrepancy in `message`. Do NOT escalate or retrain over a score disagreement.
 
 ## Step 4 — Artifact missing: report and stop
 If `artifacts/oof.npy` is absent, **do NOT retrain**. Set `status: "error"` and write a clear account of everything you checked: which files were absent, what EXPERIMENT_STATE contained, what `logs/train.log` showed. The coordinator will decide what to do — that is not your problem.

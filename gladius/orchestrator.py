@@ -14,6 +14,7 @@ CLAUDE.md is automatically injected into the agent context — no explicit read 
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from loguru import logger
@@ -38,7 +39,7 @@ Follow that topology's flow **exactly** — it specifies which agents to call an
 Do NOT substitute a different flow.
 
 Available specialists in `.claude/agents/`:
-- `scout` — fast data reconnaissance; produces `.claude/DATA_BRIEFING.md` (iteration 1 only, before team-lead)
+- `scout` — fast data reconnaissance; produces `.claude/DATA_BRIEFING.md` (run once, before team-lead). **Skip if `.claude/DATA_BRIEFING.md` already exists** — do NOT check EXPERIMENT_STATE for scout status (scout has no entry there).
 - `team-lead` — strategic direction and hypothesis (always first after scout)
 - `data-expert` — EDA, data loading, feature infrastructure
 - `feature-engineer` — feature transforms and selection
@@ -117,9 +118,9 @@ def _make_kickoff_prompt(state: CompetitionState) -> str:
     if state.iteration == 1:
         return (
             "This is the FIRST iteration — no experiments have run yet.\n"
-            "1. Delegate to `scout` first — it will explore the data and write "
-            "`.claude/DATA_BRIEFING.md` with shapes, distributions, risks, and "
-            "strategic angles. This gives team-lead the context it needs to plan.\n"
+            "1. Check if `.claude/DATA_BRIEFING.md` exists. If NOT, delegate to `scout` — "
+            "it will explore the data and write the briefing with shapes, distributions, "
+            "risks, and strategic angles. If it already exists, skip scout entirely.\n"
             "2. Delegate to `team-lead` to plan a baseline experiment "
             "(team-lead will read DATA_BRIEFING.md and MEMORY.md itself).\n"
             f"3. Then follow the **{state.topology}** topology: {flow}.\n"
@@ -154,6 +155,52 @@ def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
     state = claude_md.write_from_project(project_dir, cfg)
     state.max_iterations = int(cfg.get("max_iterations", state.max_iterations))
     return state
+
+
+# Files in artifacts/ that are intentionally reusable across iterations.
+_PERSISTENT_ARTIFACTS = {"best_params.json"}
+
+
+def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
+    """Move stale artifacts/ and agent logs to iteration-stamped archives.
+
+    Prevents agents from mistaking previous-iteration outputs (oof.npy,
+    model_f*.bin, train.log) for current-iteration results.
+    ``best_params.json`` is copied forward since HPO results are reusable.
+    ``logs/gladius.log`` is never touched — it's the orchestrator's own log.
+    """
+    prev = iteration - 1
+    if prev < 1:
+        return
+
+    # --- artifacts/: move the whole directory ---
+    art_dir = project_dir / "artifacts"
+    if art_dir.is_dir() and any(art_dir.iterdir()):
+        archive_dir = project_dir / f"artifacts_iter{prev}"
+        shutil.move(str(art_dir), str(archive_dir))
+        art_dir.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Archived artifacts/ → {archive_dir.name}/")
+
+        # Copy forward persistent artifacts
+        for keep in _PERSISTENT_ARTIFACTS:
+            archived = archive_dir / keep
+            if archived.is_file():
+                shutil.copy2(str(archived), str(art_dir / keep))
+                logger.debug(f"Carried forward {keep} from iter {prev}")
+
+    # --- logs/: move only agent-produced files, leave gladius.log in place ---
+    logs_dir = project_dir / "logs"
+    if logs_dir.is_dir():
+        agent_logs = [
+            f for f in logs_dir.iterdir()
+            if f.is_file() and f.name != "gladius.log"
+        ]
+        if agent_logs:
+            archive_dir = project_dir / f"logs_iter{prev}"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            for f in agent_logs:
+                shutil.move(str(f), str(archive_dir / f.name))
+            logger.debug(f"Archived {len(agent_logs)} log file(s) → {archive_dir.name}/")
 
 
 def _update_state(state: CompetitionState, project_dir: Path) -> None:
@@ -242,6 +289,11 @@ async def run_competition(
             )
             exp_path.rename(archive)
             logger.debug(f"Archived previous EXPERIMENT_STATE → {archive.name}")
+
+        # Archive stale artifacts and logs so agents can't confuse old outputs
+        # with current iteration results.  best_params.json is preserved
+        # (intentionally reusable across iterations).
+        _archive_stale_outputs(project_dir, state.iteration)
 
         # Refresh CLAUDE.md with current state before each iteration
         claude_md.write(state, str(project_dir))
