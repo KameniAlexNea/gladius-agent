@@ -66,12 +66,16 @@ Then: `Skill({"skill": "<skill-name>"})`
 - Generates `reports/validation_plot.png` (confusion matrix for classification, residual plot for regression).
 
 ### How to run
+
+> **MANDATORY: ALWAYS pipe training output to `logs/train.log`.** The evaluator reads `logs/train.log` to verify the score. If you run `train.py` without `> logs/train.log 2>&1`, the score disappears and the evaluator will be unable to validate, triggering a full retrain cycle.
+
 ```bash
-nohup uv run python scripts/train.py > train.log 2>&1 &
+mkdir -p logs
+nohup uv run python scripts/train.py > logs/train.log 2>&1 &
 TRAIN_PID=$!   # MUST be on its own line — inline & TRAIN_PID=$! does NOT work
 echo "PID: $TRAIN_PID"
 while kill -0 $TRAIN_PID 2>/dev/null; do sleep 60; done && echo "finished"
-tail -n 60 train.log
+tail -n 60 logs/train.log
 ```
 
 > **Training always takes minutes, never seconds.** A 5-fold CV on a real dataset takes at minimum 2–10 minutes.
@@ -97,28 +101,34 @@ Run the `validation` skill and verify:
 - `pathlib`; `random_state=42`; imports at top.
 - Always import via `from src.module import …` (not bare `from module import …`).
 - Install packages with `uv add <pkg>` — never `pip install`.
-- OOF → `artifacts/oof.npy`; multiclass: shape `(n_samples, n_classes)` + `artifacts/oof_classes.npy`.
+- OOF → `artifacts/oof.npy`; multiclass: shape `(n_samples, n_classes)` ordered by `clf.classes_`.
+- `artifacts/oof_classes.npy` → **MUST be `np.save("artifacts/oof_classes.npy", clf.classes_)`** — shape `(n_classes,)`, the class labels in the same column order as `oof.npy`. This is NOT per-row labels; it is the class name array the evaluator uses to align columns when re-computing the metric.
 - Submission → `artifacts/submission.csv` in SampleSubmission format.
 
 ## State finalizer (REQUIRED last action)
 
-**First read** `.claude/EXPERIMENT_STATE.json` (use `Read`), then update only the `ml_engineer` key in the dict, and write the full object back.
+Use Bash to **merge** your entry into the existing state — NEVER overwrite the whole file:
 
-```json
-{
-  "ml_engineer": {
-    "status": "success" | "error" | "timeout" | "oom",
-    "oof_score": <number | null>,
-    "oof_std": <number | null>,
-    "oof_fold_scores": [<fold1>, <fold2>, "..."],
-    "quality_score": <number 0–100 | null>,
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path('.claude/EXPERIMENT_STATE.json')
+state = json.loads(p.read_text()) if p.exists() else {}
+state['ml_engineer'] = {
+    "status": "success",              # or "error" | "timeout" | "oom"
+    "oof_score": None,                # replace with actual float, e.g. 0.7971
+    "oof_std": None,
+    "oof_fold_scores": [],
+    "quality_score": None,
     "solution_files": ["src/models.py", "scripts/train.py"],
     "submission_file": "artifacts/submission.csv",
-    "notes": "<brief summary of what was run>",
-    "error_message": "<traceback or reason if status != success>",
-    "total_turns": <integer | null>
-  }
+    "notes": "",
+    "error_message": "",
+    "total_turns": None
 }
+p.write_text(json.dumps(state, indent=2))
+print("EXPERIMENT_STATE updated")
+PY
 ```
 
-`status` and `oof_score` (as a top-level float, e.g. `0.7971`) are required — the evaluator reads `ml_engineer.oof_score` directly. If `status` is `"error"`, populate `error_message` with the full traceback and the broken file path. Do not attempt further retries for `upstream_issue` errors.
+`status` and `oof_score` (as a top-level float, e.g. `0.7971`) are required — the evaluator reads `ml_engineer.oof_score` directly. If `status` is `"error"`, populate `error_message` with the full traceback and the broken file path. Do not attempt further retries for `upstream_issue` errors. All other keys in the file **must be preserved** — the merge above guarantees this.

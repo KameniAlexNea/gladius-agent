@@ -63,16 +63,35 @@ Organise all code under `src/` and `scripts/` as importable modules:
 ```
 src/
 ├── __init__.py
-├── config.py      # constants: paths, metric, target column
-├── data.py        # load_train(), load_test() helpers
-├── features.py    # feature engineering transforms
-└── models.py      # model factory + CV loop
+├── config.py        # all constants: paths, TARGET_COL, METRIC_NAME, SEED, feature lists
+├── data.py          # load_train(), load_test() — cast dtypes here (CAT_FEATURES → pd.Categorical)
+├── features.py      # get_features(df, is_train) — stateless transform, no side effects
+├── models.py        # build_model(params=None) — accepts Optuna trial params or best_params.json
+├── cv.py            # run_cv(X, y, model_fn, folds) → oof array + fold scores
+├── hpo.py           # Optuna objective + study creation; writes artifacts/best_params.json
+└── ensemble.py      # blend / stack multiple oof.npy and test prediction arrays
 scripts/
-├── train.py       # entry point: fit, save artifacts/oof.npy, print OOF score
-└── evaluate.py    # reload artifacts/oof.npy and report metric
+├── train.py         # load features → run_cv → save artifacts → print FINAL OOF score
+├── hpo.py           # run HPO study, write artifacts/best_params.json
+├── evaluate.py      # reload artifacts/oof.npy, recompute metric independently
+└── predict.py       # load fold models, generate final submission.csv
+artifacts/
+├── oof.npy          # shape (n_samples,) or (n_samples, n_classes)
+├── oof_classes.npy  # clf.classes_ array — column alignment for multiclass scoring
+├── model_f*.bin     # per-fold saved models
+├── best_params.json # HPO output — train.py loads this if it exists, falls back to defaults
+└── submission.csv
+logs/
+├── train.log        # stdout of scripts/train.py — REQUIRED audit trail for the evaluator
+├── hpo.log          # stdout of scripts/hpo.py
+└── predict.log      # stdout of scripts/predict.py
 ```
 
-- `scripts/train.py` MUST print: `FINAL OOF <metric>: <value> (+/- <std>)` — the evaluator parses this line.
+Not every file is needed in every iteration — add them as the plan requires. `cv.py`, `hpo.py`, `ensemble.py` are optional until the plan calls for them.
+
+- `scripts/train.py` MUST print: `FINAL OOF <metric>: <value> (+/- <std>)` and always run as `> logs/train.log 2>&1` — the evaluator reads `logs/train.log` as the audit trail. Without it, the score cannot be verified.
+- `build_model()` in `src/models.py` must accept an optional `params` dict so the same function serves both HPO trials and final training with best params.
+- `src/cv.py` is the single CV engine — both `train.py` and `hpo.py` call it; never duplicate the fold loop.
 - Save OOF predictions to `artifacts/oof.npy` (and `artifacts/oof_classes.npy` for multiclass).
 - Use `pathlib` throughout; no hardcoded absolute paths.
 - Set `random_state=42` everywhere for reproducibility.
@@ -100,8 +119,8 @@ Each file has exactly one owner. Every agent has a defined read/write scope — 
 4. The orchestrator will re-delegate the fix to the correct specialist.
 
 **Handoff contract:**
-- `data-expert` guarantees: `load_train()` and `load_test()` return DataFrames where `CAT_FEATURES` columns pass `pd.api.types.is_string_dtype()` and `NUM_FEATURES` columns are numeric.
-- `feature-engineer` guarantees: `get_features(df, is_train)` returns a DataFrame where **all columns are numeric** — `.values.astype(np.float32)` must succeed.
+- `data-expert` guarantees: `load_train()` and `load_test()` return DataFrames where `CAT_FEATURES` columns are `pd.Categorical` dtype and `NUM_FEATURES` columns are numeric.
+- `feature-engineer` guarantees: `get_features(df, is_train)` returns a DataFrame with consistent columns between train and test. Categorical columns remain `pd.Categorical` for tree-based models — only convert to float if the model explicitly requires it.
 - `ml-engineer` trusts these contracts and fails fast (does not retry) if they are violated.
 
 ## EXPERIMENT_STATE.json
@@ -165,16 +184,16 @@ For training scripts that take more than a few seconds, use `nohup` and track th
 >
 > ```bash
 > # ❌ WRONG — TRAIN_PID will be empty:
-> nohup uv run python scripts/train.py > train.log 2>&1 & TRAIN_PID=$!
+> nohup uv run python scripts/train.py > logs/train.log 2>&1 & TRAIN_PID=$!
 >
 > # ✅ CORRECT — separate lines:
-> nohup uv run python scripts/train.py > train.log 2>&1 &
+> nohup uv run python scripts/train.py > logs/train.log 2>&1 &
 > TRAIN_PID=$!
 > ```
 
 ```bash
 # Launch and capture PID
-nohup uv run python scripts/train.py > train.log 2>&1 &
+nohup uv run python scripts/train.py > logs/train.log 2>&1 &
 TRAIN_PID=$!
 echo "PID: $TRAIN_PID"
 
@@ -182,7 +201,7 @@ echo "PID: $TRAIN_PID"
 ps -p $TRAIN_PID -o pid,stat,etime,cmd --no-headers 2>/dev/null || echo "done"
 
 # Tail progress
-tail -n 50 train.log
+tail -n 50 logs/train.log
 
 # Wait for finish
 while kill -0 $TRAIN_PID 2>/dev/null; do sleep 60; done && echo "finished"

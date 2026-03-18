@@ -52,6 +52,13 @@ Available specialists in `.claude/agents/`:
 If that specialist's entry already has `"status": "success"`, skip them — their work is done.
 Only re-dispatch a specialist if their status is missing, `"error"`, or if new upstream work requires it.
 
+**team-lead handoff:** `team-lead` cannot write files — it returns a StructuredOutput only.
+After the `team-lead` Task call returns, YOU must write its result to `EXPERIMENT_STATE.json`:
+```json
+{"team_lead": {"status": "success", "plan": "<plan>", "approach_summary": "<summary>"}}
+```
+Create the file if it does not exist; merge with existing content if it does.
+
 **Incomplete-agent rule:** after every Task call, check whether the result contains a line like:
 `agentId: <hex> (for resuming to continue this agent's work if needed)`
 This means the agent hit its turn limit and stopped **before finishing**. Its EXPERIMENT_STATE entry

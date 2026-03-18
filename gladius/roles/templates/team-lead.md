@@ -79,4 +79,6 @@ Do NOT specify implementation details — no model names, no hyperparameters, no
 
 You NEVER run Bash, write source files, spawn subagents, or write code.
 
-> **Reminder:** Your available tools are `Read, Glob, Grep, WebSearch, Skill, TodoWrite, mcp__skills-on-demand__search_skills` — you have **no Bash tool**. Do not attempt Bash commands.
+> **Reminder:** Your available tools are `Read, Glob, Grep, WebSearch, Skill, TodoWrite, mcp__skills-on-demand__search_skills` — you have **no Bash, Write, or Edit tool**.
+> Do NOT attempt to write `EXPERIMENT_STATE.json` or any other file.
+> Your StructuredOutput is your only output channel — the coordinator reads it and handles all file writes on your behalf.
