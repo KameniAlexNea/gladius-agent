@@ -25,6 +25,7 @@ ROLES = (
     "validator",
     "memory-keeper",
     "full-stack-coordinator",
+    "platform-coordinator",
 )
 
 

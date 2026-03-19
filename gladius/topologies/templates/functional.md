@@ -8,13 +8,26 @@ flow: scout (iter 1) → team-lead → data-expert → feature-engineer → ml-e
 
 ```mermaid
 graph LR
+    subgraph Initialization
     SC[scout] -.->|iter 1| TL[team-lead]
+    end
+
+    subgraph Pipeline
     TL --> DE[data-expert]
     DE --> FE[feature-engineer]
     FE --> ME[ml-engineer]
     ME --> EV[evaluator]
+    end
+
+    subgraph Finalization
     EV --> V[validator]
     V --> MK[memory-keeper]
+    end
+
+    %% Failure Logic
+    DE -.->|failure| TL
+    FE -.->|failure| DE
+    ME -.->|failure| FE
 ```
 
 ### How this iteration works

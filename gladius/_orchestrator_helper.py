@@ -25,6 +25,7 @@ Available specialists in `.claude/agents/`:
 - `memory-keeper` — update MEMORY.md with learnings
 - `full-stack-coordinator` — owns full pipeline; delegates selectively (two-pizza topology)
 - `domain-expert` — domain review and leakage/CV checks (matrix topology)
+- `platform-coordinator` — owns platform layer (data-expert) and delegates product layer (feature-engineer, ml-engineer)
 
 **Re-dispatch rule:** before calling any specialist, read `.claude/EXPERIMENT_STATE.json`.
 If that specialist's entry already has `"status": "success"`, skip them — their work is done.

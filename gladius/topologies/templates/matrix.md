@@ -10,9 +10,17 @@ flow: scout (iter 1) → team-lead → ml-engineer → (team-lead review + domai
 graph TD
     SC[scout] -.->|iter 1| TL[team-lead]
     TL --> ME[ml-engineer]
-    DE[domain-expert] --> ME
-    ME --> Approval{Dual Review}
-    Approval --> V[validator]
+    
+    ME --> TR[Technical Review: team-lead]
+    ME --> DR[Domain Review: domain-expert]
+    
+    TR --> Approval{Dual Approval?}
+    DR --> Approval
+    
+    Approval -- Approved --> EV[evaluator]
+    Approval -- Rejected/Critical --> ME
+    
+    EV --> V[ealidator]
     V --> MK[memory-keeper]
 ```
 

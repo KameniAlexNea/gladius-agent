@@ -9,11 +9,29 @@ flow: scout (iter 1) → team-lead (N plans) → N × (data-expert → feature-e
 ```mermaid
 graph TD
     SC[scout] -.->|iter 1| TL[team-lead]
-    TL --> P1[Mini-Team A]
-    TL --> P2[Mini-Team B]
-    TL --> P3[Mini-Team C]
-    P1 & P2 & P3 --> V[validator]
+    
+    subgraph Parallel_Execution ["N x asyncio.gather"]
+        subgraph Team_A ["Branch A"]
+            DE_A[data-expert] --> FE_A[feature-engineer] --> ME_A[ml-engineer] --> EV_A[evaluator]
+        end
+        subgraph Team_B ["Branch B"]
+            DE_B[data-expert] --> FE_B[feature-engineer] --> ME_B[ml-engineer] --> EV_B[evaluator]
+        end
+        subgraph Team_N ["Branch N"]
+            DE_N[data-expert] --> FE_N[feature-engineer] --> ME_N[ml-engineer] --> EV_N[evaluator]
+        end
+    end
+
+    TL --> DE_A
+    TL --> DE_B
+    TL --> DE_N
+    
+    EV_A --> V[validator]
+    EV_B --> V
+    EV_N --> V
+    
     V --> MK[memory-keeper]
+
 ```
 
 ### How this iteration works
