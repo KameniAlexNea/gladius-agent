@@ -85,6 +85,17 @@ Also include any relevant upstream outputs as additional context, for example:
 A specialist that does not receive its full instructions will make poor decisions. \
 This requirement is non-negotiable.
 
+## ML-Engineer Training Log Requirement
+When dispatching `ml-engineer`, you **must** include the following verbatim in the Task prompt:
+
+> **Training log contract (non-negotiable):**
+> Any execution of a training script (`train.py` or any script whose name contains "train") \
+must redirect all output to `logs/train.log`. The required format is:
+
+> The same applies to tuning scripts: redirect to `logs/tune.log`.
+> Training runs that do not produce `logs/train.log` will be treated as failed and discarded \
+by the evaluator. No exceptions.
+
 ## Incomplete-Agent Rule
 After every Task call, check whether the result contains a line like:
 ```text
