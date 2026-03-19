@@ -142,8 +142,14 @@ The single shared state file for the current iteration. Path: `.claude/EXPERIMEN
 
 > **Never trust an artifact you didn't produce.** The orchestrator archives `artifacts/` and `logs/` between iterations, but if training crashes mid-iteration, stale files from a failed retry may linger.
 
-- **ml-engineer**: wipe `artifacts/oof.npy`, `model_f*.bin`, and `logs/train.log` **before** launching training. Record a timestamp. After training, verify artifacts are newer than the timestamp.
-- **evaluator**: verify `artifacts/oof.npy` is newer than `scripts/train.py` before trusting it. A stale artifact means training failed silently.
+- **ml-engineer**: **do not delete or wipe any file before training** — `rm` on artifacts or logs is forbidden.
+  Instead: record a launch timestamp (`LAUNCH_TS=$(date +%s)`) immediately before starting training.
+  After training completes, verify **all three** of the following or the run is considered failed:
+  1. `artifacts/oof.npy` modification time is **after** `$LAUNCH_TS`.
+  2. `logs/train.log` modification time is **after** `$LAUNCH_TS`.
+  3. `logs/train.log` contains the `FINAL OOF` line.
+  The redirect (`nohup uv run python scripts/train.py > logs/train.log 2>&1 &`) naturally overwrites the log — that is fine. Deleting it with `rm` is forbidden and will be blocked.
+- **evaluator**: verify `artifacts/oof.npy` and `logs/train.log` are both newer than `scripts/train.py` before trusting them. A stale artifact or log means training failed silently.
 
 ## Package Management
 
