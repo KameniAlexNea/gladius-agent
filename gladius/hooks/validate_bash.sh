@@ -36,19 +36,20 @@ if echo "$COMMAND" | grep -qE 'CLAUDE\.md'; then
     fi
 fi
 
-# Require train.py to redirect output to logs/train.log
-# Matches: python[3] train.py  |  uv run python train.py  (etc., path-independent)
-if echo "$COMMAND" | grep -qE '\bpython3?\b.*\btrain\.py|uv[[:space:]]+run.*\btrain\.py'; then
+# Require any script with "train" in its name to redirect output to logs/train.log.
+# Matches execution via: python[3], bash, uv run, or direct ./
+# Does NOT match read-only uses like: cat, tail, grep, head on those files.
+if echo "$COMMAND" | grep -qE '(python3?|bash)[[:space:]]+[^[:space:]]*train[^[:space:]]*(\.(py|sh))|uv[[:space:]]+run[[:space:]].*\btrain[^[:space:]]*(\.(py|sh))|\./[^[:space:]]*train[^[:space:]]*(\.(py|sh))'; then
     if ! echo "$COMMAND" | grep -qE 'logs/train\.log'; then
-        echo "Blocked: 'train.py' must redirect output to logs/train.log. Required format: nohup uv run python train.py > logs/train.log 2>&1 &" >&2
+        echo "Blocked: any training script must redirect output to logs/train.log. Required format: nohup uv run python train.py > logs/train.log 2>&1 &" >&2
         exit 2
     fi
 fi
 
-# Require tune.py to redirect output to logs/tune.log
-if echo "$COMMAND" | grep -qE '\bpython3?\b.*\btune\.py|uv[[:space:]]+run.*\btune\.py'; then
+# Require any script with "tune" in its name to redirect output to logs/tune.log.
+if echo "$COMMAND" | grep -qE '(python3?|bash)[[:space:]]+[^[:space:]]*tune[^[:space:]]*(\.(py|sh))|uv[[:space:]]+run[[:space:]].*\btune[^[:space:]]*(\.(py|sh))|\./[^[:space:]]*tune[^[:space:]]*(\.(py|sh))'; then
     if ! echo "$COMMAND" | grep -qE 'logs/tune\.log'; then
-        echo "Blocked: 'tune.py' must redirect output to logs/tune.log. Required format: nohup uv run python tune.py > logs/tune.log 2>&1 &" >&2
+        echo "Blocked: any tune script must redirect output to logs/tune.log. Required format: nohup uv run python tune.py > logs/tune.log 2>&1 &" >&2
         exit 2
     fi
 fi
