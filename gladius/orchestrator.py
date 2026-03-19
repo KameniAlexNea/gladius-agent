@@ -171,7 +171,8 @@ def _incomplete_agents(exp_path: Path) -> list[str]:
     except Exception:
         return list(_REQUIRED_AGENTS)
     return [
-        k for k in _REQUIRED_AGENTS
+        k
+        for k in _REQUIRED_AGENTS
         if not (isinstance(data.get(k), dict) and data[k].get("status") == "success")
     ]
 
@@ -241,7 +242,9 @@ async def run_competition(
             except Exception as exc:
                 logger.error(f"Iteration {state.iteration} agent error: {exc}")
                 state.consecutive_errors += 1
-                state.error_log.append({"iteration": state.iteration, "error": str(exc)})
+                state.error_log.append(
+                    {"iteration": state.iteration, "error": str(exc)}
+                )
                 if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
                     logger.error(
                         f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
@@ -260,7 +263,9 @@ async def run_competition(
                     f"Iteration {state.iteration}: orchestrator returned early — "
                     f"agents still pending: {incomplete}. Re-dispatching (attempt {_attempt + 2}/{_MAX_REDISPATCH + 1})."
                 )
-                state_text = exp_path.read_text(encoding="utf-8") if exp_path.exists() else "{}"
+                state_text = (
+                    exp_path.read_text(encoding="utf-8") if exp_path.exists() else "{}"
+                )
                 prompt = (
                     f"You returned before the pipeline was complete.\n"
                     f"Current EXPERIMENT_STATE.json:\n```json\n{state_text}\n```\n\n"
