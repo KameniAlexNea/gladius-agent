@@ -36,4 +36,21 @@ if echo "$COMMAND" | grep -qE 'CLAUDE\.md'; then
     fi
 fi
 
+# Require train.py to redirect output to logs/train.log
+# Matches: python[3] train.py  |  uv run python train.py  (etc., path-independent)
+if echo "$COMMAND" | grep -qE '\bpython3?\b.*\btrain\.py|uv[[:space:]]+run.*\btrain\.py'; then
+    if ! echo "$COMMAND" | grep -qE 'logs/train\.log'; then
+        echo "Blocked: 'train.py' must redirect output to logs/train.log. Required format: nohup uv run python train.py > logs/train.log 2>&1 &" >&2
+        exit 2
+    fi
+fi
+
+# Require tune.py to redirect output to logs/tune.log
+if echo "$COMMAND" | grep -qE '\bpython3?\b.*\btune\.py|uv[[:space:]]+run.*\btune\.py'; then
+    if ! echo "$COMMAND" | grep -qE 'logs/tune\.log'; then
+        echo "Blocked: 'tune.py' must redirect output to logs/tune.log. Required format: nohup uv run python tune.py > logs/tune.log 2>&1 &" >&2
+        exit 2
+    fi
+fi
+
 exit 0
