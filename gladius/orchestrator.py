@@ -158,6 +158,24 @@ def _update_state(state: CompetitionState, project_dir: Path) -> None:
         state.done = True
 
 
+# Agents required to have status=success for an iteration to be considered complete.
+_REQUIRED_AGENTS = ("ml_engineer", "evaluator", "memory_keeper")
+
+
+def _incomplete_agents(exp_path: Path) -> list[str]:
+    """Return names of required agents that have not yet succeeded."""
+    if not exp_path.exists():
+        return list(_REQUIRED_AGENTS)
+    try:
+        data = json.loads(exp_path.read_text(encoding="utf-8"))
+    except Exception:
+        return list(_REQUIRED_AGENTS)
+    return [
+        k for k in _REQUIRED_AGENTS
+        if not (isinstance(data.get(k), dict) and data[k].get("status") == "success")
+    ]
+
+
 async def run_competition(
     competition_dir: str,
     max_turns: int | None = None,
@@ -203,28 +221,53 @@ async def run_competition(
 
         kickoff = _make_kickoff_prompt(state)
 
-        try:
-            _, _ = await run_agent(
-                agent_name="gladius",
-                prompt=kickoff,
-                system_prompt=_SYSTEM_PROMPT,
-                allowed_tools=_TOP_LEVEL_TOOLS,
-                output_schema=None,
-                cwd=str(project_dir),
-                max_turns=max_turns,
-            )
-            state.consecutive_errors = 0
-        except Exception as exc:
-            logger.error(f"Iteration {state.iteration} agent error: {exc}")
-            state.consecutive_errors += 1
-            state.error_log.append({"iteration": state.iteration, "error": str(exc)})
-            if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
-                logger.error(
-                    f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
+        # Agents that must reach status=success for the iteration to count.
+        # If the orchestrator returns early (text response without finishing the
+        # pipeline), re-dispatch it up to 3 times with the current state.
+        _MAX_REDISPATCH = 3
+        prompt = kickoff
+        for _attempt in range(1 + _MAX_REDISPATCH):
+            try:
+                _, _ = await run_agent(
+                    agent_name="gladius",
+                    prompt=prompt,
+                    system_prompt=_SYSTEM_PROMPT,
+                    allowed_tools=_TOP_LEVEL_TOOLS,
+                    output_schema=None,
+                    cwd=str(project_dir),
+                    max_turns=max_turns,
                 )
-                state.last_stop_reason = "consecutive_errors"
-                state.done = True
-            continue
+                state.consecutive_errors = 0
+            except Exception as exc:
+                logger.error(f"Iteration {state.iteration} agent error: {exc}")
+                state.consecutive_errors += 1
+                state.error_log.append({"iteration": state.iteration, "error": str(exc)})
+                if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                    logger.error(
+                        f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
+                    )
+                    state.last_stop_reason = "consecutive_errors"
+                    state.done = True
+                break
+
+            # Check whether the pipeline actually completed.
+            exp_path = project_dir / ".claude" / "EXPERIMENT_STATE.json"
+            incomplete = _incomplete_agents(exp_path)
+            if not incomplete:
+                break
+            if _attempt < _MAX_REDISPATCH:
+                logger.warning(
+                    f"Iteration {state.iteration}: orchestrator returned early — "
+                    f"agents still pending: {incomplete}. Re-dispatching (attempt {_attempt + 2}/{_MAX_REDISPATCH + 1})."
+                )
+                state_text = exp_path.read_text(encoding="utf-8") if exp_path.exists() else "{}"
+                prompt = (
+                    f"You returned before the pipeline was complete.\n"
+                    f"Current EXPERIMENT_STATE.json:\n```json\n{state_text}\n```\n\n"
+                    f"Agents still pending (null or non-success): {incomplete}.\n"
+                    "Dispatch them now in the correct topology order. "
+                    "Do NOT return until memory-keeper has status: success."
+                )
 
         _update_state(state, project_dir)
 

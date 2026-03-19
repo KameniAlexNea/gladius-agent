@@ -80,8 +80,9 @@ def is_bash_command_scoped_to_cwd(command: str, cwd: str) -> bool:
     """
     # Strip heredoc bodies before tokenising so that absolute paths written
     # inside Python/shell strings don't trip the scope guard.
+    # Handles:  << 'EOF'  |  <<"EOF"  |  <<EOF  |  <<- 'EOF'  (with optional spaces)
     heredoc_body_re = re.compile(
-        r"<<['\"]?(\w+)['\"]?.*?\n.*?\1", re.DOTALL
+        r"<<-?\s*['\"]?(\w+)['\"]?\s*\n.*?\n\1", re.DOTALL
     )
     command_shell = heredoc_body_re.sub("", command)
 
