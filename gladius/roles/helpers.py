@@ -104,11 +104,3 @@ def is_bash_command_scoped_to_cwd(command: str, cwd: str) -> bool:
                 return False
 
     return True
-
-
-PLAN_MODE_DENIED_TOOLS = frozenset(
-    {"Write", "Edit", "MultiEdit", "Bash", "Task", "computer"}
-)
-PLAN_MODE_ALLOWED_TOOLS = frozenset(
-    {"Read", "Glob", "Grep", "WebSearch", "Skill", "TodoWrite", "ExitPlanMode"}
-)

@@ -53,6 +53,13 @@ def write_mcp_json(root: Path, cfg: dict) -> None:
                 "env": {},
             }
 
+    # arxiv MCP server — always added for literature/SOTA research
+    arxiv_storage = str(root / ".claude" / "arxiv-papers")
+    mcp["mcpServers"]["arxiv-mcp-server"] = {
+        "command": "arxiv-mcp-server",
+        "args": ["--storage-path", arxiv_storage],
+    }
+
     for name, server_cfg in (cfg.get("mcp", {}).get("extra") or {}).items():
         mcp["mcpServers"][name] = server_cfg
 

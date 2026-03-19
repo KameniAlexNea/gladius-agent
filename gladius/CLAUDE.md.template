@@ -176,31 +176,14 @@ Your conversation has a fixed context window. Protect it:
 
 ## Warnings Are Errors
 
-> **Never ignore Python warnings. A warning during training is a sign of a bug — fix it before proceeding.**
-
-When a script emits `UserWarning`, `FutureWarning`, `RuntimeWarning`, or any other warning:
-1. **Stop** — do not continue, do not re-run, do not suppress with `warnings.filterwarnings`.
-2. **Read** the full warning text and identify its cause.
-3. **Search** for a solution: `mcp__skills-on-demand__search_skills` or `WebSearch`.
-4. **Fix** the root cause in the source file. Common examples:
-   - `X does not have valid feature names, but model was fitted with feature names` → pass a DataFrame (not `.values`) to `predict`/`predict_proba`.
-   - `DataConversionWarning` → fix dtype mismatch at the source.
-   - `ConvergenceWarning` → increase `max_iter` or fix the input scale.
-5. **Re-run** the smoke test (`uv run python -c "from src.X import Y; ..."`) to confirm the warning is gone.
-6. Only then launch training.
-
-A model trained with warnings is unreliable — its scores cannot be trusted.
+> **Never ignore Python warnings — treat every warning as a bug and fix it before proceeding.**
 
 ## Logging — Use loguru, Not print
 
-> **Never use `print()` for progress or debug output. Use `loguru` — it flushes immediately.**
+> **Never use `print()` — it buffers when piped to a file and output is lost on crash. Use `loguru` instead.** (`uv add loguru`)
 
-`print()` is line-buffered to terminals but **fully buffered** when piped to a file (`> logs/train.log`). Under heavy CPU load, the buffer doesn't flush — your log file stays empty for minutes, and if the process crashes, the output is lost entirely.
-
-**One exception:** `scripts/train.py` MUST still `print()` on the final line:
+**One exception:** the final line of `scripts/train.py` must use `print()` followed by `sys.stdout.flush()` — the evaluator greps for this exact pattern:
 ```python
 print(f"FINAL OOF {METRIC_NAME}: {oof_score:.6f} (+/- {oof_std:.6f})")
+sys.stdout.flush()
 ```
-The evaluator greps for this exact `FINAL OOF` pattern. Use `loguru` for everything else in the script; only this final line uses `print()`, and call `sys.stdout.flush()` immediately after to guarantee it is written.
-
-Install with: `uv add loguru`

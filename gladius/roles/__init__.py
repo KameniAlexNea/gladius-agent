@@ -71,8 +71,33 @@ def _parse(path: Path) -> RoleDefinition:
     )
 
 
+def _strip_web_search(content: str) -> str:
+    """Remove WebSearch from a role template (tools list and body text)."""
+    # Remove from frontmatter tools line: ", WebSearch" or "WebSearch, "
+    content = re.sub(r",\s*WebSearch\b", "", content)
+    content = re.sub(r"\bWebSearch\s*,\s*", "", content)
+    # Replace the Scan step that requires WebSearch (team-lead specific)
+    content = re.sub(
+        r"4\. \*\*Scan\*\* — use `WebSearch`.*?skill catalog\.",
+        (
+            "4. **Scan** — Search arXiv for recent winning approaches: "
+            "`mcp__arxiv-mcp-server__search_papers({\"query\": \"<competition type> machine learning SOTA\", \"max_results\": 5})`. "
+            "Fall back to the `literature-review` skill if the server is unavailable."
+        ),
+        content,
+        flags=re.DOTALL,
+    )
+    return content
+
+
 def copy(
-    dst: Path, spec: str | list, model: str, small_model: str, *, force: bool = False
+    dst: Path,
+    spec: str | list,
+    model: str,
+    small_model: str,
+    *,
+    force: bool = False,
+    use_web_search: bool = False,
 ) -> None:
     """Copy role .md files into dst (.claude/agents/), substituting model placeholders."""
     dst.mkdir(parents=True, exist_ok=True)
@@ -98,6 +123,8 @@ def copy(
             .replace("{{GLADIUS_MODEL}}", model)
             .replace("{{GLADIUS_SMALL_MODEL}}", small_model)
         )
+        if not use_web_search:
+            content = _strip_web_search(content)
         dest.write_text(content, encoding="utf-8")
         print(f"  agent  → .claude/agents/{src.name}")
 

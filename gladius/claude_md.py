@@ -110,9 +110,9 @@ def render(state: "CompetitionState", project_dir: str) -> str:
             f"{threshold_val:.6f}" if threshold_val is not None else "not set"
         )
         threshold_note = (
-            f"> ⛔ **Do not build a submission unless your OOF score beats {threshold_str}.**"
+            f"> ⛔ **Do not submit unless your OOF score beats {threshold_str}.** (Always generate the file; only upload when threshold is beaten.)"
             if threshold_val is not None
-            else "> ⚠️ Threshold not set — `WebSearch` the leaderboard and use the current median score as your bar."
+            else "> ⚠️ Threshold not set — use the current leaderboard median score as your bar (check the competition page)."
         )
         performance_section = (
             f"## Current Best\n\n"
@@ -199,7 +199,11 @@ def render(state: "CompetitionState", project_dir: str) -> str:
                 f"> **Team lead: stop tuning. Go back to first principles.**\n"
                 f"> - Re-examine the task description and deliverables.\n"
                 f"> - Try a completely different approach or architecture.\n"
-                f"> - WebSearch for breakthrough techniques specific to this task type."
+                + (
+                    f"> - WebSearch for breakthrough techniques specific to this task type."
+                    if state.use_web_search
+                    else f"> - Search arXiv for recent SOTA: `mcp__arxiv-mcp-server__search_papers({{\"query\": \"<task type> competition winning approach\", \"max_results\": 5}})`"
+                )
             )
 
     # ── data / submission sections ───────────────────────────────────────────
@@ -214,11 +218,11 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         )
         submission_section = (
             "## Submission Rules\n\n"
-            "1. **Gate:** Only build a submission once your OOF score beats the `Minimum submission threshold` shown above.\n"
-            '   - If threshold is "not set", `WebSearch` the leaderboard first and use the current median score as your bar.\n'
-            "2. Load `sample_submission.csv` to get the exact submission format.\n"
-            "3. Your submission must match its columns and row count exactly.\n"
-            "4. Save to `submissions/submission.csv`.\n"
+            "1. **Always generate `submissions/submission.csv`** at the end of every iteration, regardless of score.\n"
+            "2. **Only upload/submit** if your OOF score beats the `Minimum submission threshold` shown above.\n"
+            '   - If threshold is "not set", use the current leaderboard median score as your bar (check the competition page).\n'
+            "3. Load `sample_submission.csv` to get the exact submission format.\n"
+            "4. Your submission must match its columns and row count exactly.\n"
             "5. Report the path in `submission_file` in your output."
         )
     else:
@@ -239,8 +243,8 @@ def render(state: "CompetitionState", project_dir: str) -> str:
     if briefing_path.is_file():
         data_briefing_section = (
             "## Data Briefing\n\n"
-            "> Produced by the scout agent. All agents may read this for data context.\n\n"
-            + briefing_path.read_text(encoding="utf-8").strip()
+            "> Produced by the scout agent. Read `.claude/DATA_BRIEFING.md` for full data context.\n"
+            "> Do **not** re-read it into this file — reference the path directly."
         )
     else:
         data_briefing_section = (
@@ -328,6 +332,7 @@ def write_from_project(root: Path, cfg: dict) -> "CompetitionState":
         topology=topology,
         submission_threshold=submission_threshold,
         max_submissions_per_day=max_sub_day,
+        use_web_search=bool(cfg.get("use_web_search", False)),
     )
     write(state, str(root))
     print("  claude → CLAUDE.md")

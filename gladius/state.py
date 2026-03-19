@@ -64,9 +64,13 @@ class CompetitionState:
     error_log: list = field(default_factory=list)  # {iteration, error}
     last_stop_reason: Optional[str] = None
 
-    # Submission gate — minimum OOF score required before a submission is built.
-    # None means the agent should WebSearch the leaderboard and set its own bar.
+    # Submission gate — minimum OOF score required before a submission is uploaded.
+    # None means the agent should check the competition page and set its own bar.
     submission_threshold: float | None = None
+
+    # Whether to enable WebSearch tool for the team-lead and in CLAUDE.md guidance.
+    # Default False since local models typically cannot use WebSearch.
+    use_web_search: bool = False
 
     # Leaderboard score tracking — each entry: {score, timestamp, public_lb}
     lb_scores: list = field(default_factory=list)
