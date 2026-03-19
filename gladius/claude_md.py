@@ -35,28 +35,40 @@ def _phase_guidance(iteration: int, max_iterations: int) -> str:
         return ""
 
     if iteration <= 2:
-        phase, label, advice = "EARLY", "🟢 Early (baseline)", (
-            "> **Priority: get a clean, reproducible baseline.**\n"
-            "> - Don't over-engineer features or models.\n"
-            "> - Validate the full pipeline end-to-end (data → features → train → OOF → submission).\n"
-            "> - A simple model with correct CV is worth more than a complex model with broken validation."
+        phase, label, advice = (
+            "EARLY",
+            "🟢 Early (baseline)",
+            (
+                "> **Priority: get a clean, reproducible baseline.**\n"
+                "> - Don't over-engineer features or models.\n"
+                "> - Validate the full pipeline end-to-end (data → features → train → OOF → submission).\n"
+                "> - A simple model with correct CV is worth more than a complex model with broken validation."
+            ),
         )
-    elif iteration >= max_iterations - 1:
-        phase, label, advice = "LATE", "🔴 Late (polish)", (
-            "> **Priority: maximise the final score — no risky pivots.**\n"
-            "> - Ensemble top-performing models from prior iterations.\n"
-            "> - Run HPO on the best model if not done yet.\n"
-            "> - Ensure the best submission is saved. Do NOT start a new approach from scratch."
+    elif iteration >= max_iterations - 2:
+        phase, label, advice = (
+            "LATE",
+            "🔴 Late (polish)",
+            (
+                "> **Priority: maximise the final score — no risky pivots.**\n"
+                "> - Ensemble top-performing models from prior iterations.\n"
+                "> - Run HPO on the best model if not done yet.\n"
+                "> - Ensure the best submission is saved. Do NOT start a new approach from scratch."
+            ),
         )
     else:
-        phase, label, advice = "MID", "🟡 Mid (explore)", (
-            "> **Priority: try diverse approaches to find signal.**\n"
-            "> - Feature engineering and model variety are high-impact.\n"
-            "> - HPO is worthwhile once you have a strong feature set.\n"
-            "> - If stagnating, pivot to a fundamentally different strategy."
+        phase, label, advice = (
+            "MID",
+            "🟡 Mid (explore)",
+            (
+                "> **Priority: try diverse approaches to find signal.**\n"
+                "> - Feature engineering and model variety are high-impact.\n"
+                "> - HPO is worthwhile once you have a strong feature set.\n"
+                "> - If stagnating, pivot to a fundamentally different strategy."
+            ),
         )
 
-    return f"## Iteration Phase: {label}\n\n{advice}"
+    return f"## Iteration Phase ({phase}): {label}\n\n{advice}"
 
 
 def render(state: "CompetitionState", project_dir: str) -> str:
