@@ -48,6 +48,8 @@ Use `mcp__skills-on-demand__search_skills` to load the most relevant skill. Load
 
 **First**, check the `## Management Topology` section of context to confirm which agents exist and how routing works for this run. Not every topology exposes individual specialists — some route through a coordinator, others run parallel branches.
 
+> **Do NOT plan a reproducibility check if the previous iteration completed successfully with a clean OOF score.** The pipeline is reproducible by design — re-running the exact same baseline is wasteful. If the prior OOF is valid and recorded in `MEMORY.md`, treat it as the confirmed baseline and move directly to the next hypothesis (feature engineering, model improvement, HPO, etc.).
+
 Use the table below as a guide to *what kind of work is needed*. Map it to whichever agent actually owns that role in the active topology (e.g. `full-stack-coordinator` in two-pizza, N parallel plans in autonomous):
 
 | Condition | Work needed | Typical agent |

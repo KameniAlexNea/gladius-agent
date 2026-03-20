@@ -117,6 +117,10 @@ Its `EXPERIMENT_STATE` entry will be missing or incomplete.
 You must immediately re-dispatch that same agent, passing the `agentId` value as the `resume` \
 parameter in the new Task call.
 
+**If a resume attempt returns `No task found with ID: <hex>`**, the session has expired. \
+Do **not** retry with the same ID. Instead, re-dispatch the agent as a fresh call (no `resume` \
+parameter) and include the relevant context from the prior task in the prompt.
+
 After each Task call or coordination-file write, validate in 1-2 lines that the expected \
 result was produced; if validation fails, self-correct before continuing.
 

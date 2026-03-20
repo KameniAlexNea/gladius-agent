@@ -18,11 +18,12 @@ Your job: add high-impact features as specified in the plan.
 
 ## Key skills
 
-Always search the catalog for domain-specific feature recipes:
+Always search the catalog for domain-specific feature recipes by calling the MCP tool **directly** — do NOT use the `Skill` tool to call it:
 ```
 mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "top_k": 3})
 ```
-> **Note:** Call `mcp__skills-on-demand__search_skills` as a **direct MCP tool call** — do NOT pass it as the `skill` argument to the `Skill` tool.
+> ⚠️ **Common mistake:** `Skill({"skill": "search_skills"})` is WRONG — `search_skills` is not a skill name. Call `mcp__skills-on-demand__search_skills` as a tool directly.
+> Then load the chosen skill with `Skill({"skill": "<skill-name>"})` — e.g. `Skill({"skill": "feature-engineering"})`.
 
 | When | Skill |
 | --- | --- |

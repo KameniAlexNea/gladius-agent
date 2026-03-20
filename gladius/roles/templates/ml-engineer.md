@@ -92,12 +92,14 @@ The orchestrator archives previous-iteration artifacts, but if YOUR training cra
 # Record launch time and wipe stale training outputs
 LAUNCH_TS=$(date +%s)
 rm -f artifacts/oof.npy artifacts/oof_classes.npy artifacts/model_f*.bin
-rm -f logs/train.log
 mkdir -p logs artifacts
+> logs/train.log   # truncate (redirect, NOT rm — rm on log files is blocked)
 echo "Cleaned stale artifacts. Launch timestamp: $LAUNCH_TS"
 ```
 
 **Launch training:**
+
+> ⚠️ **Wait-loop rule:** Use **only** the PID-based `while kill -0 $TRAIN_PID` pattern below. Do NOT write custom while loops that poll `logs/train.log` for content — multi-line bash inside JSON tool calls is error-prone and will generate `"command" parameter missing` errors.
 
 ```bash
 nohup uv run python scripts/train.py > logs/train.log 2>&1 &
@@ -132,7 +134,7 @@ else
 fi
 ```
 
-> If the freshness check fails, do NOT report success. Read `logs/train.log` to diagnose the failure.
+> If the freshness check fails, do NOT report success. Use `grep "FINAL OOF\|Error\|Traceback" logs/train.log | tail -20` to diagnose — **never use the `Read` tool on `logs/train.log`** (it grows to several MB and will fail with a 256 KB file-size error).
 
 > **Training always takes minutes, never seconds.** A 5-fold CV on a real dataset takes at minimum 2–10 minutes.
 > Do NOT assume training is done until `kill -0 $TRAIN_PID` returns non-zero.

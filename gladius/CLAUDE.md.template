@@ -142,13 +142,12 @@ The single shared state file for the current iteration. Path: `.claude/EXPERIMEN
 
 > **Never trust an artifact you didn't produce.** The orchestrator archives `artifacts/` and `logs/` between iterations, but if training crashes mid-iteration, stale files from a failed retry may linger.
 
-- **ml-engineer**: **do not delete or wipe any file before training** — `rm` on artifacts or logs is forbidden.
-  Instead: record a launch timestamp (`LAUNCH_TS=$(date +%s)`) immediately before starting training.
+- **ml-engineer**: before launching training, wipe stale artifacts (`rm -f artifacts/oof.npy artifacts/model_f*.bin`) and truncate the log (`> logs/train.log`). **Never `rm logs/*.log`** — log deletion is blocked; use redirect to truncate.
+  Record a launch timestamp (`LAUNCH_TS=$(date +%s)`) immediately before starting training.
   After training completes, verify **all three** of the following or the run is considered failed:
   1. `artifacts/oof.npy` modification time is **after** `$LAUNCH_TS`.
   2. `logs/train.log` modification time is **after** `$LAUNCH_TS`.
   3. `logs/train.log` contains the `FINAL OOF` line.
-  The redirect (`nohup uv run python scripts/train.py > logs/train.log 2>&1 &`) naturally overwrites the log — that is fine. Deleting it with `rm` is forbidden and will be blocked.
 - **evaluator**: verify `artifacts/oof.npy` and `logs/train.log` are both newer than `scripts/train.py` before trusting them. A stale artifact or log means training failed silently.
 
 ## Package Management
@@ -177,6 +176,17 @@ Your conversation has a fixed context window. Protect it:
 ## Warnings Are Errors
 
 > **Never ignore Python warnings — treat every warning as a bug and fix it before proceeding.**
+
+## Logs Are Large — Never Read Them With the Read Tool
+
+`logs/train.log` grows to several MB during training. **Never use the `Read` tool on it** — you will hit the 256 KB file-size limit and waste a turn.
+
+Always extract what you need with `grep` or `tail`:
+```bash
+grep "FINAL OOF" logs/train.log          # extract score
+tail -n 30 logs/train.log                # last 30 lines for diagnostics
+grep -i "error\|exception\|traceback" logs/train.log | tail -20
+```
 
 ## Logging — Use loguru, Not print
 
