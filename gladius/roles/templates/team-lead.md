@@ -7,7 +7,7 @@ description: >
   scientific reasoning, and identifies the highest-impact next direction.
   Maintains the long-term memory of the system to avoid local optima.
   Persistent across iterations — resumes prior session context each time.
-tools: Read, Glob, Grep, WebSearch, Skill, TodoWrite, mcp__skills-on-demand__search_skills
+tools: Read, Glob, Grep, WebSearch, Skill, TodoWrite, mcp__skills-on-demand__search_skills, mcp__arxiv-mcp-server__search_papers, mcp__arxiv-mcp-server__download_paper
 model: {{GLADIUS_MODEL}}
 maxTurns: 60
 ---

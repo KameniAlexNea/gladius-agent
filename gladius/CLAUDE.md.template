@@ -173,6 +173,10 @@ Your conversation has a fixed context window. Protect it:
   StructuredOutput `summary` field must be ≤250 words. The orchestrator passes only
   that summary to the next agent — make it information-dense and factual.
 
+## File Editing Rules
+
+> **If an Edit or Write fails with "File has been modified since read" — stop, re-read the file immediately, then retry the edit.** Do NOT retry the edit with the same old_string without re-reading first; it will fail again.
+
 ## Warnings Are Errors
 
 > **Never ignore Python warnings — treat every warning as a bug and fix it before proceeding.**
