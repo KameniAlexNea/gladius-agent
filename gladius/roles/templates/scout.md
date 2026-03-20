@@ -43,7 +43,15 @@ You produce exactly one artifact: `.claude/DATA_BRIEFING.md`.
 
 ## Key skills
 
-Optionally search for domain-specific context, but do NOT block on it:
+### MANDATORY — load this skill FIRST, before writing a single line of the briefing:
+
+```
+Skill({"skill": "metrics"})
+```
+
+The `metrics` skill tells you which prediction type (probability vs label vs value) each metric requires. Without it you will write an incorrect `## Submission Format` section and destroy the entire pipeline.
+
+Optionally search for domain-specific context:
 
 ```
 mcp__skills-on-demand__search_skills({"query": "<competition domain> data profiling", "top_k": 3})
@@ -56,6 +64,8 @@ mcp__skills-on-demand__search_skills({"query": "<competition domain> data profil
 Always read `sample_submission.csv` **and** the README evaluation section to determine:
 - The exact column names required in the submission file
 - Whether the target column expects **raw probabilities** (e.g. `0.1, 0.3`) or **class labels** (e.g. `0, 1`, `Yes, No`)
+
+Use the **`metrics` skill** (loaded above) to resolve any ambiguity: if the metric is AUC-ROC, AP, or log-loss, the submission column must be **float probabilities** — even when the training target is strings like "Yes"/"No". The target dtype in `train.csv` is irrelevant; derive the submission format from `sample_submission.csv` and the metric name.
 
 Record this in the briefing with a concrete example. The team-lead will copy it verbatim into the ml-engineer's instructions.
 **Using the wrong format destroys all model performance — a 0.91 AUC model submitting class labels instead of probabilities scores ~0.5.**
@@ -74,10 +84,13 @@ write code. Focus on what matters for decision-making.
      What metric is used? Any special rules or constraints? -->
 
 ## Submission Format
+- **Metric**: ... (quote from README)
+- **Prediction type**: probabilities (float 0–1) OR class labels — derived from metric name via `metrics` skill
 - **File**: `sample_submission.csv` columns: ...
-- **Target column**: ... — **probabilities** (float 0–1) or **class labels** (list them)
+- **Target column**: ... — **probabilities** (float 0–1) or **class labels** (list them exactly)
 - **Example rows**: copy 2–3 rows from sample_submission.csv verbatim
 - **Source**: README evaluation section quote that confirms the format
+- ⚠️ Note if train target dtype differs from submission format (e.g. train has "Yes"/"No" but submission needs float)
 
 ## Dataset Overview
 | File | Rows | Columns | Size |
