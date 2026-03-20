@@ -18,11 +18,12 @@ Your job: add high-impact features as specified in the plan.
 
 ## Key skills
 
-Always search the catalog for domain-specific feature recipes:
+Always search the catalog for domain-specific feature recipes by calling the MCP tool **directly** — do NOT use the `Skill` tool to call it:
 ```
 mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "top_k": 3})
 ```
-> **Note:** Call `mcp__skills-on-demand__search_skills` as a **direct MCP tool call** — do NOT pass it as the `skill` argument to the `Skill` tool.
+> ⚠️ **Common mistake:** `Skill({"skill": "search_skills"})` is WRONG — `search_skills` is not a skill name. Call `mcp__skills-on-demand__search_skills` as a tool directly.
+> Then load the chosen skill with `Skill({"skill": "<skill-name>"})` — e.g. `Skill({"skill": "feature-engineering"})`.
 
 | When | Skill |
 | --- | --- |
@@ -54,47 +55,52 @@ mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "
 
 ### Output contract
 - All code lives in `src/features.py`; expose a single `get_features(df, is_train=True) -> pd.DataFrame`.
-- The returned DataFrame must be **all-numeric** — all categoricals must be encoded before returning. The ml-engineer must be able to call `.values.astype(np.float32)` without error.
-- Use `pd.api.types.is_string_dtype(col)` to detect categoricals — **never** `dtype == "object"` (breaks on pandas 4.x).
+- **Match the format the model needs.** Tree-based ensemble models (LightGBM, CatBoost, XGBoost) support categorical columns natively — keep them as `pd.Categorical` or string dtype so the model can exploit them properly. Only convert to float if the model explicitly requires it (e.g. sklearn estimators, neural nets).
+- Use `pd.api.types.is_string_dtype(col)` to detect string categoricals — **never** `dtype == "object"` (breaks on pandas 4.x).
 - Use `pathlib`; `random_state=42`.
 - Do NOT modify `src/data.py`, `src/config.py`, or `scripts/train.py` unless the plan explicitly requires it.
 
 ## Verification (REQUIRED before finalizing)
-Run a numeric-output smoke test:
+Run a smoke test to confirm `get_features` executes without error and shapes are consistent:
 ```bash
 uv run python -c "
 from src.data import load_train, load_test
 from src.features import get_features
-import numpy as np
 
 train = load_train(); test = load_test()
 X_train = get_features(train, is_train=True)
 X_test  = get_features(test, is_train=False)
-# Must convert cleanly to float
-_ = X_train.values.astype(np.float32)
-_ = X_test.values.astype(np.float32)
+assert X_train.shape[1] == X_test.shape[1], f'Column mismatch: {X_train.shape[1]} vs {X_test.shape[1]}'
+assert X_train.shape[0] == len(train), 'Row count mismatch on train'
+assert X_test.shape[0] == len(test), 'Row count mismatch on test'
 print('OK — train:', X_train.shape, '  test:', X_test.shape)
+print('dtypes:', X_train.dtypes.value_counts().to_dict())
 "
 ```
 If this fails, fix `src/features.py` until it passes. If the root cause is in `src/data.py` or `src/config.py`, report a `data_issue` in EXPERIMENT_STATE and stop.
 
 ## State finalizer (REQUIRED last action)
 
-**First read** `.claude/EXPERIMENT_STATE.json` (use `Read`), then update only the `feature_engineer` key in the dict, and write the full object back.
+Use Bash to **merge** your entry into the existing state — NEVER overwrite the whole file:
 
-```json
-{
-  "feature_engineer": {
-    "status": "success" | "error" | "data_issue",
-    "new_feature_count": <int>,
-    "feature_names": ["<name>", "..."],
-    "shap_pruned": <int>,
-    "message": "<summary of what was added, or full error + broken file/function if status != success>"
-  }
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path('.claude/EXPERIMENT_STATE.json')
+state = json.loads(p.read_text()) if p.exists() else {}
+state['feature_engineer'] = {
+    "status": "success",       # or "error" | "data_issue"
+    "new_feature_count": 0,    # replace with actual count
+    "feature_names": [],       # replace with actual names
+    "shap_pruned": 0,
+    "message": ""
 }
+p.write_text(json.dumps(state, indent=2))
+print("EXPERIMENT_STATE updated")
+PY
 ```
 
-`status` and `new_feature_count` are required. If `status` is `"data_issue"`, populate `message` with the broken file, function name, and full traceback — do not attempt further retries.
+`status` and `new_feature_count` are required. If `status` is `"data_issue"`, populate `message` with the broken file, function name, and full traceback — do not attempt further retries. All other keys in the file **must be preserved** — the merge above guarantees this.
 
 ### Encoder state — avoid global mutable singletons
 Do NOT use module-level variables (e.g. `_encoder_fitted`, `_encoders_cache`) to track fit state. Instead, expose `get_features(df, is_train=True) -> pd.DataFrame` that:

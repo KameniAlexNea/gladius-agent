@@ -72,13 +72,24 @@ def is_path_within_cwd(path_token: str, cwd: str) -> bool:
 
 
 def is_bash_command_scoped_to_cwd(command: str, cwd: str) -> bool:
-    """Best-effort guard: reject Bash commands that reference paths outside cwd."""
+    """Best-effort guard: reject Bash commands that reference paths outside cwd.
+
+    Heredoc bodies (everything between a <<'MARKER' / <<"MARKER" line and the
+    closing MARKER line) are excluded from path checks — they contain Python/shell
+    string literals, not Bash path arguments.
+    """
+    # Strip heredoc bodies before tokenising so that absolute paths written
+    # inside Python/shell strings don't trip the scope guard.
+    # Handles:  << 'EOF'  |  <<"EOF"  |  <<EOF  |  <<- 'EOF'  (with optional spaces)
+    heredoc_body_re = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?\s*\n.*?\n\1", re.DOTALL)
+    command_shell = heredoc_body_re.sub("", command)
+
     try:
-        tokens = shlex.split(command)
+        tokens = shlex.split(command_shell)
     except Exception:
         return True
 
-    for match in re.finditer(r"(?:^|[;&|]\s*)cd\s+([^;&|\s]+)", command):
+    for match in re.finditer(r"(?:^|[;&|]\s*)cd\s+([^;&|\s]+)", command_shell):
         target = match.group(1).strip().strip("\"'")
         if target and not is_path_within_cwd(target, cwd):
             return False
@@ -93,11 +104,3 @@ def is_bash_command_scoped_to_cwd(command: str, cwd: str) -> bool:
                 return False
 
     return True
-
-
-PLAN_MODE_DENIED_TOOLS = frozenset(
-    {"Write", "Edit", "MultiEdit", "Bash", "Task", "computer"}
-)
-PLAN_MODE_ALLOWED_TOOLS = frozenset(
-    {"Read", "Glob", "Grep", "WebSearch", "Skill", "TodoWrite", "ExitPlanMode"}
-)

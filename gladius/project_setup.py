@@ -93,6 +93,7 @@ def load_config(path: str | Path) -> dict[str, Any]:
     mcp_cfg.setdefault("platform_server", True)
     mcp_cfg.setdefault("extra", {})
     raw.setdefault("force", False)
+    raw.setdefault("use_web_search", False)
 
     mt = raw.setdefault("max_turns", {})
     mt.setdefault("coordinator", 40)
@@ -294,6 +295,7 @@ def setup(config_path: str | Path, *, force: bool = False) -> Path:
         cfg["model"],
         cfg["small_model"],
         force=f,
+        use_web_search=cfg.get("use_web_search", False),
     )
     skills.copy(root / ".claude" / "skills", cfg["gladius_skills"], force=f)
     if cfg["scientific_skills"]:

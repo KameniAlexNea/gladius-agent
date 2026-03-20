@@ -28,6 +28,49 @@ _STAGNATION_THRESHOLD_METRIC = 0.001
 _STAGNATION_THRESHOLD_QUALITY = 3.0
 
 
+def _phase_guidance(iteration: int, max_iterations: int) -> str:
+    """Return a short phase-appropriate guidance block."""
+    if max_iterations <= 2:
+        # Too few iterations for phasing — skip
+        return ""
+
+    if iteration <= 2:
+        phase, label, advice = (
+            "EARLY",
+            "🟢 Early (baseline)",
+            (
+                "> **Priority: get a clean, reproducible baseline.**\n"
+                "> - Don't over-engineer features or models.\n"
+                "> - Validate the full pipeline end-to-end (data → features → train → OOF → submission).\n"
+                "> - A simple model with correct CV is worth more than a complex model with broken validation."
+            ),
+        )
+    elif iteration >= max_iterations - 2:
+        phase, label, advice = (
+            "LATE",
+            "🔴 Late (polish)",
+            (
+                "> **Priority: maximise the final score — no risky pivots.**\n"
+                "> - Ensemble top-performing models from prior iterations.\n"
+                "> - Run HPO on the best model if not done yet.\n"
+                "> - Ensure the best submission is saved. Do NOT start a new approach from scratch."
+            ),
+        )
+    else:
+        phase, label, advice = (
+            "MID",
+            "🟡 Mid (explore)",
+            (
+                "> **Priority: try diverse approaches to find signal.**\n"
+                "> - Feature engineering and model variety are high-impact.\n"
+                "> - HPO is worthwhile once you have a strong feature set.\n"
+                "> - If stagnating, pivot to a fundamentally different strategy."
+            ),
+        )
+
+    return f"## Iteration Phase ({phase}): {label}\n\n{advice}"
+
+
 def render(state: "CompetitionState", project_dir: str) -> str:
     """Return the rendered CLAUDE.md content for the current state."""
     template = _TEMPLATE.read_text(encoding="utf-8")
@@ -67,9 +110,9 @@ def render(state: "CompetitionState", project_dir: str) -> str:
             f"{threshold_val:.6f}" if threshold_val is not None else "not set"
         )
         threshold_note = (
-            f"> ⛔ **Do not build a submission unless your OOF score beats {threshold_str}.**"
+            f"> ⛔ **Do not submit unless your OOF score beats {threshold_str}.** (Always generate the file; only upload when threshold is beaten.)"
             if threshold_val is not None
-            else "> ⚠️ Threshold not set — `WebSearch` the leaderboard and use the current median score as your bar."
+            else "> ⚠️ Threshold not set — use the current leaderboard median score as your bar (check the competition page)."
         )
         performance_section = (
             f"## Current Best\n\n"
@@ -108,13 +151,12 @@ def render(state: "CompetitionState", project_dir: str) -> str:
                     else "?"
                 )
             )
-            files = ", ".join(Path(f).name for f in e.get("solution_files", []))
-            notes = e.get("notes", "")[:100]
+            approach = e.get("approach_summary") or e.get("notes", "")[:100]
             rows.append(
-                f"| iter {e.get('iteration', '?')} | {score_col} | {files} | {notes} |"
+                f"| iter {e.get('iteration', '?')} | {score_col} | {approach} |"
             )
         recent_experiments = (
-            f"| Iteration | {score_header} | Files | Notes |\n| --- | --- | --- | --- |\n"
+            f"| Iteration | {score_header} | Approach |\n| --- | --- | --- |\n"
             + "\n".join(rows)
         )
     else:
@@ -157,7 +199,11 @@ def render(state: "CompetitionState", project_dir: str) -> str:
                 f"> **Team lead: stop tuning. Go back to first principles.**\n"
                 f"> - Re-examine the task description and deliverables.\n"
                 f"> - Try a completely different approach or architecture.\n"
-                f"> - WebSearch for breakthrough techniques specific to this task type."
+                + (
+                    f"> - WebSearch for breakthrough techniques specific to this task type."
+                    if state.use_web_search
+                    else f"> - Search arXiv for recent SOTA: `mcp__arxiv-mcp-server__search_papers({{\"query\": \"<task type> competition winning approach\", \"max_results\": 5}})`"
+                )
             )
 
     # ── data / submission sections ───────────────────────────────────────────
@@ -172,11 +218,11 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         )
         submission_section = (
             "## Submission Rules\n\n"
-            "1. **Gate:** Only build a submission once your OOF score beats the `Minimum submission threshold` shown above.\n"
-            '   - If threshold is "not set", `WebSearch` the leaderboard first and use the current median score as your bar.\n'
-            "2. Load `sample_submission.csv` to get the exact submission format.\n"
-            "3. Your submission must match its columns and row count exactly.\n"
-            "4. Save to `submissions/submission.csv`.\n"
+            "1. **Always generate `submissions/submission.csv`** at the end of every iteration, regardless of score.\n"
+            "2. **Only upload/submit** if your OOF score beats the `Minimum submission threshold` shown above.\n"
+            '   - If threshold is "not set", use the current leaderboard median score as your bar (check the competition page).\n'
+            "3. Load `sample_submission.csv` to get the exact submission format.\n"
+            "4. Your submission must match its columns and row count exactly.\n"
             "5. Report the path in `submission_file` in your output."
         )
     else:
@@ -192,6 +238,24 @@ def render(state: "CompetitionState", project_dir: str) -> str:
 
     memory_path = str(team_lead_memory_path(project_dir).resolve())
 
+    # ── data briefing (produced by scout in iteration 1) ─────────────────────
+    briefing_path = Path(project_dir) / ".claude" / "DATA_BRIEFING.md"
+    if briefing_path.is_file():
+        data_briefing_section = (
+            "## Data Briefing\n\n"
+            "> Produced by the scout agent. Read `.claude/DATA_BRIEFING.md` for full data context.\n"
+            "> Do **not** re-read it into this file — reference the path directly."
+        )
+    else:
+        data_briefing_section = (
+            "## Data Briefing\n\n"
+            "_(not yet available — the scout agent will produce `.claude/DATA_BRIEFING.md` "
+            "in iteration 1)_"
+        )
+
+    # ── phase guidance ───────────────────────────────────────────────────────
+    phase_guidance = _phase_guidance(state.iteration, state.max_iterations)
+
     # ── substitute ───────────────────────────────────────────────────────────
     replacements = {
         "competition_id": state.competition_id,
@@ -206,7 +270,9 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         "recent_experiments": recent_experiments,
         "failed_approaches": failed_approaches,
         "stagnation_block": stagnation_block,
+        "phase_guidance": phase_guidance,
         "data_section": data_section,
+        "data_briefing_section": data_briefing_section,
         "submission_section": submission_section,
         "memory_path": memory_path,
     }
@@ -266,6 +332,7 @@ def write_from_project(root: Path, cfg: dict) -> "CompetitionState":
         topology=topology,
         submission_threshold=submission_threshold,
         max_submissions_per_day=max_sub_day,
+        use_web_search=bool(cfg.get("use_web_search", False)),
     )
     write(state, str(root))
     print("  claude → CLAUDE.md")

@@ -14,127 +14,22 @@ CLAUDE.md is automatically injected into the agent context — no explicit read 
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from pathlib import Path
 
 from loguru import logger
 
 import gladius.claude_md as claude_md
+from gladius._orchestrator_helper import (
+    MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS,
+)
+from gladius._orchestrator_helper import SYSTEM_PROMPT as _SYSTEM_PROMPT
+from gladius._orchestrator_helper import TOP_LEVEL_TOOLS as _TOP_LEVEL_TOOLS
+from gladius._orchestrator_helper import make_kickoff_prompt as _make_kickoff_prompt
 from gladius.project_setup import load_competition_config
 from gladius.roles.agent_runner import run_agent
 from gladius.state import CompetitionState
-
-_SYSTEM_PROMPT = """\
-You are a top-tier ML competition agent. Your goal for this iteration is one \
-focused, high-impact experiment.
-
-## Step 1 — Plan (read-only)
-`CLAUDE.md` is already in your context — do not read it again.
-**Do NOT explore data directories, run scripts, or write any files yourself.**
-Your role is coordination only — delegate all implementation and exploration to specialists.
-
-## Step 2 — Execute (delegate)
-The active management topology is defined in `## Management Topology` in your context (`CLAUDE.md`).
-Follow that topology's flow **exactly** — it specifies which agents to call and in what order.
-Do NOT substitute a different flow.
-
-Available specialists in `.claude/agents/`:
-- `team-lead` — strategic direction and hypothesis (always first)
-- `data-expert` — EDA, data loading, feature infrastructure
-- `feature-engineer` — feature transforms and selection
-- `ml-engineer` — model, training loop, artifacts
-- `evaluator` — OOF metric verification
-- `validator` — submission format and improvement gate
-- `memory-keeper` — update MEMORY.md with learnings
-- `full-stack-coordinator` — owns full pipeline; delegates selectively (two-pizza topology)
-- `domain-expert` — domain review and leakage/CV checks (matrix topology)
-
-**Re-dispatch rule:** before calling any specialist, read `.claude/EXPERIMENT_STATE.json`.
-If that specialist's entry already has `"status": "success"`, skip them — their work is done.
-Only re-dispatch a specialist if their status is missing, `"error"`, or if new upstream work requires it.
-
-**Incomplete-agent rule:** after every Task call, check whether the result contains a line like:
-`agentId: <hex> (for resuming to continue this agent's work if needed)`
-This means the agent hit its turn limit and stopped **before finishing**. Its EXPERIMENT_STATE entry
-will be missing or incomplete. You MUST re-dispatch that same agent immediately, passing the
-`agentId` value as the `resume` parameter in the new Task call.
-
-## Step 3 — Signal stop (ONLY if submission was made AND plateau confirmed)
-After memory-keeper finishes, if the validator returned **both** `stop=True` AND `submit=True`,
-the competition has plateaued at a strong score — write the following as the **last action**:
-```json
-{"done": true}
-```
-to `.claude/EXPERIMENT_STATE.json` (merge with existing content, do not overwrite other keys).
-
-**CRITICAL:** if the validator returned `submit=False` (score too low to submit), do NOT write
-`done=true` regardless of the `stop` value — the competition must continue to the next iteration.
-
-## Constraints
-- Do not repeat any approach listed under "Failed Approaches" in your context.
-- Search skills before writing new code: `mcp__skills-on-demand__search_skills`.
-- Save the final submission to `submissions/submission.csv` if the validator approves."""
-
-_TOP_LEVEL_TOOLS = [
-    "Read",
-    "Write",
-    "Edit",
-    "MultiEdit",
-    "Bash",
-    "Glob",
-    "Grep",
-    "WebSearch",
-    "Skill",
-    "TodoWrite",
-    "Task",
-]
-
-_MAX_CONSECUTIVE_ERRORS = 3
-
-
-_TOPOLOGY_FIRST_STEP: dict[str, str] = {
-    "functional": "data-expert → feature-engineer → ml-engineer → evaluator → validator → memory-keeper",
-    "two-pizza": "full-stack-coordinator (who decides which specialists to spawn) → validator → memory-keeper",
-    "matrix": "ml-engineer (full pipeline) → dual review (team-lead + domain-expert) → evaluator → validator → memory-keeper",
-    "autonomous": "N parallel mini-teams each running (data-expert → feature-engineer → ml-engineer → evaluator) → validator → memory-keeper",
-    "platform": "platform-layer (data-expert) → product-layer (feature-engineer → ml-engineer) → evaluator → validator → memory-keeper",
-}
-
-
-def _make_kickoff_prompt(state: CompetitionState) -> str:
-    """Build an iteration-aware kickoff prompt."""
-    flow = _TOPOLOGY_FIRST_STEP.get(
-        state.topology, "follow the topology defined in CLAUDE.md"
-    )
-
-    if state.iteration == 1:
-        return (
-            "This is the FIRST iteration — no experiments have run yet.\n"
-            "1. Delegate to `team-lead` to plan a baseline experiment "
-            "(team-lead will read MEMORY.md itself).\n"
-            f"2. Then follow the **{state.topology}** topology: {flow}.\n"
-            "Focus on getting a clean, reproducible baseline score above all else."
-        )
-
-    best = (
-        f"{state.best_oof_score:.6f}"
-        if state.best_oof_score is not None
-        else (
-            f"{state.best_quality_score}/100"
-            if state.best_quality_score is not None
-            else "none yet"
-        )
-    )
-    metric_label = state.target_metric or "quality"
-    return (
-        f"This is iteration {state.iteration}/{state.max_iterations}. "
-        f"Current best {metric_label}: **{best}**.\n\n"
-        "1. Delegate to `team-lead` to plan the next experiment "
-        "(team-lead will read MEMORY.md itself).\n"
-        f"2. Then follow the **{state.topology}** topology: {flow}.\n"
-        '   Skip any agent whose EXPERIMENT_STATE.json entry is already `"status": "success"`.'
-        "\n3. After validation, have `memory-keeper` update MEMORY.md.\n\n"
-        "Avoid any approach listed under 'Failed Approaches' in your context."
-    )
 
 
 def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
@@ -142,6 +37,53 @@ def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
     state = claude_md.write_from_project(project_dir, cfg)
     state.max_iterations = int(cfg.get("max_iterations", state.max_iterations))
     return state
+
+
+# Files in artifacts/ that are intentionally reusable across iterations.
+_PERSISTENT_ARTIFACTS = {"best_params.json"}
+
+
+def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
+    """Move stale artifacts/ and agent logs to iteration-stamped archives.
+
+    Prevents agents from mistaking previous-iteration outputs (oof.npy,
+    model_f*.bin, train.log) for current-iteration results.
+    ``best_params.json`` is copied forward since HPO results are reusable.
+    ``logs/gladius.log`` is never touched — it's the orchestrator's own log.
+    """
+    prev = iteration - 1
+    if prev < 1:
+        return
+
+    # --- artifacts/: move the whole directory ---
+    art_dir = project_dir / "artifacts"
+    if art_dir.is_dir() and any(art_dir.iterdir()):
+        archive_dir = project_dir / f"artifacts_iter{prev}"
+        shutil.move(str(art_dir), str(archive_dir))
+        art_dir.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Archived artifacts/ → {archive_dir.name}/")
+
+        # Copy forward persistent artifacts
+        for keep in _PERSISTENT_ARTIFACTS:
+            archived = archive_dir / keep
+            if archived.is_file():
+                shutil.copy2(str(archived), str(art_dir / keep))
+                logger.debug(f"Carried forward {keep} from iter {prev}")
+
+    # --- logs/: move only agent-produced files, leave gladius.log in place ---
+    logs_dir = project_dir / "logs"
+    if logs_dir.is_dir():
+        agent_logs = [
+            f for f in logs_dir.iterdir() if f.is_file() and f.name != "gladius.log"
+        ]
+        if agent_logs:
+            archive_dir = project_dir / f"logs_iter{prev}"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            for f in agent_logs:
+                shutil.move(str(f), str(archive_dir / f.name))
+            logger.debug(
+                f"Archived {len(agent_logs)} log file(s) → {archive_dir.name}/"
+            )
 
 
 def _update_state(state: CompetitionState, project_dir: Path) -> None:
@@ -157,8 +99,25 @@ def _update_state(state: CompetitionState, project_dir: Path) -> None:
         return
 
     # Extract OOF score — evaluator is authoritative, ml_engineer as fallback
-    evaluator = data.get("evaluator", {})
-    ml_eng = data.get("ml_engineer", {})
+    # Guard against agents writing a non-dict value (e.g. an error string) for these keys.
+    _raw_evaluator = data.get("evaluator", {})
+    _raw_ml_eng = data.get("ml_engineer", {})
+    _raw_team_lead = data.get("team_lead", {})
+    evaluator = _raw_evaluator if isinstance(_raw_evaluator, dict) else {}
+    ml_eng = _raw_ml_eng if isinstance(_raw_ml_eng, dict) else {}
+    team_lead = _raw_team_lead if isinstance(_raw_team_lead, dict) else {}
+    if not isinstance(_raw_evaluator, dict) and _raw_evaluator:
+        logger.warning(
+            f"EXPERIMENT_STATE.json: 'evaluator' is not a dict ({type(_raw_evaluator).__name__!r}), ignoring."
+        )
+    if not isinstance(_raw_ml_eng, dict) and _raw_ml_eng:
+        logger.warning(
+            f"EXPERIMENT_STATE.json: 'ml_engineer' is not a dict ({type(_raw_ml_eng).__name__!r}), ignoring."
+        )
+    if not isinstance(_raw_team_lead, dict) and _raw_team_lead:
+        logger.warning(
+            f"EXPERIMENT_STATE.json: 'team_lead' is not a dict ({type(_raw_team_lead).__name__!r}), ignoring."
+        )
     oof_score: float | None = evaluator.get("oof_score") or ml_eng.get("oof_score")
     quality_score: float | None = ml_eng.get("quality_score")
     metric = evaluator.get("metric") or state.target_metric
@@ -172,8 +131,9 @@ def _update_state(state: CompetitionState, project_dir: Path) -> None:
         "quality_score": quality_score,
         "metric": metric,
         "notes": notes,
+        "approach_summary": team_lead.get("approach_summary", ""),
         "solution_files": solution_files,
-        "approach": ml_eng.get("notes", ""),
+        "approach": team_lead.get("approach_summary") or ml_eng.get("notes", ""),
     }
     state.experiments.append(entry)
 
@@ -199,6 +159,25 @@ def _update_state(state: CompetitionState, project_dir: Path) -> None:
         state.done = True
 
 
+# Agents required to have status=success for an iteration to be considered complete.
+_REQUIRED_AGENTS = ("ml_engineer", "evaluator", "memory_keeper")
+
+
+def _incomplete_agents(exp_path: Path) -> list[str]:
+    """Return names of required agents that have not yet succeeded."""
+    if not exp_path.exists():
+        return list(_REQUIRED_AGENTS)
+    try:
+        data = json.loads(exp_path.read_text(encoding="utf-8"))
+    except Exception:
+        return list(_REQUIRED_AGENTS)
+    return [
+        k
+        for k in _REQUIRED_AGENTS
+        if not (isinstance(data.get(k), dict) and data[k].get("status") == "success")
+    ]
+
+
 async def run_competition(
     competition_dir: str,
     max_turns: int | None = None,
@@ -207,6 +186,14 @@ async def run_competition(
 ) -> None:
     cfg = load_competition_config(competition_dir, config_path=config_path)
     project_dir = Path(competition_dir)
+
+    # Ensure GLADIUS_MODEL / GLADIUS_SMALL_MODEL are in the environment so
+    # validate_runtime_invocation() and get_runtime_model() can find them.
+    # project.yaml takes precedence; existing env vars are only used as fallback.
+    if cfg.get("model"):
+        os.environ.setdefault("GLADIUS_MODEL", cfg["model"])
+    if cfg.get("small_model") and cfg["small_model"] != "inherit":
+        os.environ.setdefault("GLADIUS_SMALL_MODEL", cfg["small_model"])
 
     state = _build_state(project_dir, cfg)
     if max_iterations is not None:
@@ -229,6 +216,11 @@ async def run_competition(
             exp_path.rename(archive)
             logger.debug(f"Archived previous EXPERIMENT_STATE → {archive.name}")
 
+        # Archive stale artifacts and logs so agents can't confuse old outputs
+        # with current iteration results.  best_params.json is preserved
+        # (intentionally reusable across iterations).
+        _archive_stale_outputs(project_dir, state.iteration)
+
         # Refresh CLAUDE.md with current state before each iteration
         claude_md.write(state, str(project_dir))
 
@@ -239,28 +231,57 @@ async def run_competition(
 
         kickoff = _make_kickoff_prompt(state)
 
-        try:
-            _, _ = await run_agent(
-                agent_name="gladius",
-                prompt=kickoff,
-                system_prompt=_SYSTEM_PROMPT,
-                allowed_tools=_TOP_LEVEL_TOOLS,
-                output_schema=None,
-                cwd=str(project_dir),
-                max_turns=max_turns,
-            )
-            state.consecutive_errors = 0
-        except Exception as exc:
-            logger.error(f"Iteration {state.iteration} agent error: {exc}")
-            state.consecutive_errors += 1
-            state.error_log.append({"iteration": state.iteration, "error": str(exc)})
-            if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
-                logger.error(
-                    f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
+        # Agents that must reach status=success for the iteration to count.
+        # If the orchestrator returns early (text response without finishing the
+        # pipeline), re-dispatch it up to 3 times with the current state.
+        _MAX_REDISPATCH = 3
+        prompt = kickoff
+        for _attempt in range(1 + _MAX_REDISPATCH):
+            try:
+                _, _ = await run_agent(
+                    agent_name="gladius",
+                    prompt=prompt,
+                    system_prompt=_SYSTEM_PROMPT,
+                    allowed_tools=_TOP_LEVEL_TOOLS,
+                    output_schema=None,
+                    cwd=str(project_dir),
+                    max_turns=max_turns,
                 )
-                state.last_stop_reason = "consecutive_errors"
-                state.done = True
-            continue
+                state.consecutive_errors = 0
+            except Exception as exc:
+                logger.error(f"Iteration {state.iteration} agent error: {exc}")
+                state.consecutive_errors += 1
+                state.error_log.append(
+                    {"iteration": state.iteration, "error": str(exc)}
+                )
+                if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                    logger.error(
+                        f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
+                    )
+                    state.last_stop_reason = "consecutive_errors"
+                    state.done = True
+                break
+
+            # Check whether the pipeline actually completed.
+            exp_path = project_dir / ".claude" / "EXPERIMENT_STATE.json"
+            incomplete = _incomplete_agents(exp_path)
+            if not incomplete:
+                break
+            if _attempt < _MAX_REDISPATCH:
+                logger.warning(
+                    f"Iteration {state.iteration}: orchestrator returned early — "
+                    f"agents still pending: {incomplete}. Re-dispatching (attempt {_attempt + 2}/{_MAX_REDISPATCH + 1})."
+                )
+                state_text = (
+                    exp_path.read_text(encoding="utf-8") if exp_path.exists() else "{}"
+                )
+                prompt = (
+                    f"You returned before the pipeline was complete.\n"
+                    f"Current EXPERIMENT_STATE.json:\n```json\n{state_text}\n```\n\n"
+                    f"Agents still pending (null or non-success): {incomplete}.\n"
+                    "Dispatch them now in the correct topology order. "
+                    "Do NOT return until memory-keeper has status: success."
+                )
 
         _update_state(state, project_dir)
 

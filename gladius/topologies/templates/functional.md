@@ -1,24 +1,39 @@
 ---
 name: functional
 style: Apple — deep-expertise pipeline
-flow: team-lead → data-expert → feature-engineer → ml-engineer → evaluator → validator → memory-keeper
+flow: scout (iter 1) → team-lead → data-expert → feature-engineer → ml-engineer → evaluator → validator → memory-keeper
 ---
 
 **Functional topology** — sequential pipeline, each role hands off to the next via `EXPERIMENT_STATE.json`.
 
 ```mermaid
 graph LR
-    TL[team-lead] --> DE[data-expert]
+    subgraph Initialization
+    SC[scout] -.->|iter 1| TL[team-lead]
+    end
+
+    subgraph Pipeline
+    TL --> DE[data-expert]
     DE --> FE[feature-engineer]
     FE --> ME[ml-engineer]
     ME --> EV[evaluator]
+    end
+
+    subgraph Finalization
     EV --> V[validator]
     V --> MK[memory-keeper]
+    end
+
+    %% Failure Logic
+    DE -.->|failure| TL
+    FE -.->|failure| DE
+    ME -.->|failure| FE
 ```
 
 ### How this iteration works
 
-1. **team-lead** reads `MEMORY.md` + experiment history, outputs `{"plan": "...", "approach_summary": "..."}`.
+0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `.claude/DATA_BRIEFING.md`. Skip if the briefing already exists.
+1. **team-lead** reads `DATA_BRIEFING.md` + `MEMORY.md` + experiment history, outputs `{"plan": "...", "approach_summary": "..."}`.
 2. **data-expert** reads the plan, sets up `src/` scaffold, runs EDA. Writes `EXPERIMENT_STATE.json["data_expert"]`.
 3. **feature-engineer** reads the plan + `src/data.py`, implements features in `src/features.py`. Writes `EXPERIMENT_STATE.json["feature_engineer"]`.
 4. **ml-engineer** reads the plan + `src/`, writes `src/models.py` + `scripts/train.py`, runs training, saves `artifacts/oof.npy`. Writes `EXPERIMENT_STATE.json["ml_engineer"]`.

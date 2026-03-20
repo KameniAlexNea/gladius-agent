@@ -1,14 +1,15 @@
 ---
 name: two-pizza
 style: Amazon — cross-functional ownership
-flow: team-lead → full-stack-coordinator → (data-expert | feature-engineer | ml-engineer) → validator → memory-keeper
+flow: scout (iter 1) → team-lead → full-stack-coordinator → (data-expert | feature-engineer | ml-engineer) → validator → memory-keeper
 ---
 
 **Two-Pizza topology** — one coordinator owns the full experiment, delegates to specialists only when needed.
 
 ```mermaid
 graph TD
-    TL[team-lead] --> FSC[full-stack-coordinator]
+    SC[scout] -.->|iter 1| TL[team-lead]
+    TL --> FSC[full-stack-coordinator]
     FSC --> DE[data-expert]
     FSC --> ME[ml-engineer]
     FSC --> V[validator]
@@ -17,7 +18,8 @@ graph TD
 
 ### How this iteration works
 
-1. **team-lead** reads `MEMORY.md` + experiment history, outputs `{"plan": "...", "approach_summary": "..."}`.
+0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `.claude/DATA_BRIEFING.md`. Skip if the briefing already exists.
+1. **team-lead** reads `DATA_BRIEFING.md` + `MEMORY.md` + experiment history, outputs `{"plan": "...", "approach_summary": "..."}`. 
 2. **full-stack-coordinator** receives the plan, reads `EXPERIMENT_STATE.json` to assess what already exists, then decides which specialists to spawn and in what order:
    - spawn **data-expert** if `src/` scaffold is missing or `data_expert.status` is not `"success"`
    - spawn **feature-engineer** if the plan requires new feature work
