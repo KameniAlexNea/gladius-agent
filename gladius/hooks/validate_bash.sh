@@ -16,6 +16,14 @@ except Exception:
     print('')
 " <<< "$INPUT" 2>/dev/null || echo "")
 
+# Block any attempt to modify this hook file via Bash.
+if echo "$COMMAND" | grep -qE 'validate_bash\.sh'; then
+    if echo "$COMMAND" | grep -qE '(>>|>|tee|sed -i|awk.*>|perl.*-i|patch|truncate|rm|mv|cp[[:space:]])'; then
+        echo "Blocked: modifying hook infrastructure files is not allowed." >&2
+        exit 2
+    fi
+fi
+
 # Block recursive delete of absolute paths (outside project)
 if echo "$COMMAND" | grep -qE 'rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*f[[:space:]]+/'; then
     echo "Blocked: 'rm -rf /' style command is not allowed. Use relative paths only." >&2

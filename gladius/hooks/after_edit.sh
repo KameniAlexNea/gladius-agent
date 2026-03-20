@@ -19,6 +19,12 @@ except Exception:
     print('')
 " <<< "$INPUT" 2>/dev/null || echo "")
 
+# Block any attempt to edit this hook file itself.
+if [[ "$(basename "$FILE_PATH")" == "after_edit.sh" ]]; then
+    echo "Editing hook infrastructure files is not allowed." >&2
+    exit 2
+fi
+
 if [[ "$FILE_PATH" == *.py ]] && [[ -f "$FILE_PATH" ]]; then
     ERRORS=$(python3 -m py_compile "$FILE_PATH" 2>&1)
     if [[ -n "$ERRORS" ]]; then
