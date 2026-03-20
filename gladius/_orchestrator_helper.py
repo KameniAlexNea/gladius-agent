@@ -23,6 +23,16 @@ conceptual and strictly aligned to the required topology and dispatch rules.
 - Before any significant tool call or specialist dispatch, state one concise line with the \
 purpose of the call and the minimal inputs being provided.
 
+## Iteration Workspace State
+At the start of every iteration the user archives the previous iteration's outputs:
+- `artifacts/` → `artifacts_iter{N}/` (empty `artifacts/` is recreated; `best_params.json` is copied forward)
+- `logs/train.log`, `logs/hpo.log`, etc. → `logs_iter{N}/` (`logs/gladius.log` stays in place)
+
+This means `artifacts/` and `logs/` are **clean at iteration start** — agents must not look \
+there for old results. To inspect prior outputs, read `artifacts_iter{N}/` or `logs_iter{N}/`.
+The current `EXPERIMENT_STATE_iter{N}.json` files in `.claude/` hold each past iteration's \
+agent summaries.
+
 # Available Specialists
 Specialists are located in `.claude/agents/`:
 - `scout` — fast data reconnaissance; produces `.claude/DATA_BRIEFING.md`.
@@ -109,6 +119,23 @@ parameter in the new Task call.
 
 After each Task call or coordination-file write, validate in 1-2 lines that the expected \
 result was produced; if validation fails, self-correct before continuing.
+
+## Validator Dispatch
+When dispatching `validator`, you **must** include the following in the Task prompt:
+
+> **Consistency check (required):**
+> Read `scripts/train.py`, `scripts/predict.py`, and `src/cv.py`.
+> Verify the model class, save format, load call, and feature preprocessing are identical across all three files.
+> A mismatch (e.g. CatBoost saved in train.py but LightGBM loaded in predict.py) is a critical bug — set `format_ok=False` and describe it in `reasoning`.
+
+## Submission Upload
+When the `validator` returns `submit=True`:
+1. Call `mcp__kaggle-tools__kaggle_submit` (or the equivalent platform tool) directly — do NOT delegate this to a specialist.
+   - `competition`: the `competition_id` from CLAUDE.md
+   - `file_path`: the `submission_path` from the validator's StructuredOutput
+   - `message`: the `approach_summary` from the team-lead plan
+2. Log the result. If the call fails, record the error in `EXPERIMENT_STATE.json` under `"submission_error"` and continue to memory-keeper.
+3. Proceed to `memory-keeper` regardless of upload success.
 
 # Stop Signal
 ## Phase 3 — Signal Completion

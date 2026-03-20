@@ -51,6 +51,15 @@ mcp__skills-on-demand__search_skills({"query": "<competition domain> data profil
 
 > **Note:** Call `mcp__skills-on-demand__search_skills` as a **direct MCP tool call** — do NOT pass it as the `skill` argument to the `Skill` tool.
 
+## Submission Format (CRITICAL)
+
+Always read `sample_submission.csv` **and** the README evaluation section to determine:
+- The exact column names required in the submission file
+- Whether the target column expects **raw probabilities** (e.g. `0.1, 0.3`) or **class labels** (e.g. `0, 1`, `Yes, No`)
+
+Record this in the briefing with a concrete example. The team-lead will copy it verbatim into the ml-engineer's instructions.
+**Using the wrong format destroys all model performance — a 0.91 AUC model submitting class labels instead of probabilities scores ~0.5.**
+
 ## Output: DATA_BRIEFING.md
 
 Write the briefing to `.claude/DATA_BRIEFING.md` using the exact structure below.
@@ -63,6 +72,12 @@ write code. Focus on what matters for decision-making.
 ## Task Summary
 <!-- One paragraph: what is the competition asking? What is being predicted?
      What metric is used? Any special rules or constraints? -->
+
+## Submission Format
+- **File**: `sample_submission.csv` columns: ...
+- **Target column**: ... — **probabilities** (float 0–1) or **class labels** (list them)
+- **Example rows**: copy 2–3 rows from sample_submission.csv verbatim
+- **Source**: README evaluation section quote that confirms the format
 
 ## Dataset Overview
 | File | Rows | Columns | Size |

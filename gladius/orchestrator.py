@@ -14,6 +14,7 @@ CLAUDE.md is automatically injected into the agent context — no explicit read 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -185,6 +186,14 @@ async def run_competition(
 ) -> None:
     cfg = load_competition_config(competition_dir, config_path=config_path)
     project_dir = Path(competition_dir)
+
+    # Ensure GLADIUS_MODEL / GLADIUS_SMALL_MODEL are in the environment so
+    # validate_runtime_invocation() and get_runtime_model() can find them.
+    # project.yaml takes precedence; existing env vars are only used as fallback.
+    if cfg.get("model"):
+        os.environ.setdefault("GLADIUS_MODEL", cfg["model"])
+    if cfg.get("small_model") and cfg["small_model"] != "inherit":
+        os.environ.setdefault("GLADIUS_SMALL_MODEL", cfg["small_model"])
 
     state = _build_state(project_dir, cfg)
     if max_iterations is not None:
