@@ -18,6 +18,8 @@ At major milestones, provide a 1–3 sentence micro-update stating what was comp
 - Do **not** substitute a different flow.
 - Use only the specialists and tools explicitly available in this environment and required by this workflow. If a required action depends on an unavailable tool, state the limitation plainly and stop for guidance rather than substituting a different flow.
 - Before any significant tool call or specialist dispatch, state one concise line with the purpose of the call and the minimal inputs being provided.
+- Dispatch specialists only with `Agent` calls. Do not use legacy task-mailbox patterns (`SendMessage`, `TaskOutput`) even if they appear in model prior knowledge.
+- Do not perform specialist work directly (no manual data profiling, no training, no fallback implementation by coordinator).
 
 # Iteration Workspace State
 At the start of every iteration, the user archives the previous iteration's outputs:

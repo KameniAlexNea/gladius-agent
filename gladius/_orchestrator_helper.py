@@ -38,12 +38,10 @@ TOP_LEVEL_TOOLS = [
     "Write",
     "Edit",
     "MultiEdit",
-    "Bash",
     "Glob",
     "Grep",
     "TodoWrite",
     "Agent",
-    "Task",
 ]
 
 MAX_CONSECUTIVE_ERRORS = 3

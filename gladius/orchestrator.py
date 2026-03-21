@@ -23,6 +23,7 @@ from loguru import logger
 import gladius.claude_md as claude_md
 from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
 from gladius import RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH
+from gladius import runtime_data_briefing_path
 from gladius import runtime_experiment_state_path
 from gladius._orchestrator_helper import (
     MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS,
@@ -165,7 +166,8 @@ def _update_state(state: CompetitionState, project_dir: Path) -> None:
 
 
 # Agents required to have status=success for an iteration to be considered complete.
-_REQUIRED_AGENTS = ("ml_engineer", "evaluator", "memory_keeper")
+# team_lead is required so coordinators cannot skip planning and jump straight to execution.
+_REQUIRED_AGENTS = ("team_lead", "ml_engineer", "evaluator", "memory_keeper")
 
 
 def _incomplete_agents(exp_path: Path) -> list[str]:
@@ -181,6 +183,13 @@ def _incomplete_agents(exp_path: Path) -> list[str]:
         for k in _REQUIRED_AGENTS
         if not (isinstance(data.get(k), dict) and data[k].get("status") == "success")
     ]
+
+
+def _missing_scout_artifact(state: CompetitionState, project_dir: Path) -> bool:
+    """Scout is mandatory in iteration 1 unless briefing already exists."""
+    if state.iteration != 1:
+        return False
+    return not runtime_data_briefing_path(project_dir).exists()
 
 
 def _read_experiment_state_snippet(exp_path: Path) -> str:
@@ -309,6 +318,8 @@ async def run_competition(
             # Check whether the pipeline actually completed.
             exp_path = runtime_experiment_state_path(project_dir)
             incomplete = _incomplete_agents(exp_path)
+            if _missing_scout_artifact(state, project_dir):
+                incomplete = ["scout", *incomplete]
             if not incomplete:
                 break
             if _attempt < _MAX_REDISPATCH:
