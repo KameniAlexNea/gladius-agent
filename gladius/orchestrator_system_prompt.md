@@ -32,7 +32,9 @@ Specialists are located in `.claude/agents/`:
   - Run once, before `team-lead`.
   - Skip if `.claude/DATA_BRIEFING.md` already exists.
   - Do **not** check `EXPERIMENT_STATE` for scout status; `scout` has no entry there.
-- `team-lead` — strategic direction and hypothesis; always first after `scout`
+- `team-lead` — strategic + technical planner (non-coding); always first after `scout`
+  - Must not write or edit code files.
+  - Must propose plans only via StructuredOutput.
 - `data-expert` — EDA, data loading, feature infrastructure
 - `feature-engineer` — feature transforms and selection
 - `ml-engineer` — model, training loop, artifacts
@@ -56,6 +58,13 @@ Only re-dispatch a specialist if:
 
 ## Team-Lead Handoff
 `team-lead` cannot write files and returns StructuredOutput only.
+
+Before asking `team-lead` for the next iteration plan, require it to read, in this order:
+1. `.claude/DATA_BRIEFING.md`
+2. the latest archived state file `.claude/EXPERIMENT_STATE_iter*.json`
+3. current `.claude/EXPERIMENT_STATE.json` (if present)
+
+`team-lead` is technical and managerial, but it must not write code; it only analyzes context and produces planning output.
 
 After the `team-lead` Task call returns, write its result into `EXPERIMENT_STATE.json` using this structure:
 ```json

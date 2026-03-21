@@ -205,12 +205,16 @@ def _build_redispatch_prompt(
         "Current `.claude/EXPERIMENT_STATE.json`:\n"
         f"```json\n{state_text}\n```\n\n"
         "Required actions:\n"
-        "1. Read `.claude/EXPERIMENT_STATE.json` first.\n"
-        "2. Dispatch only pending/failed specialists in correct topology order.\n"
-        "3. Skip any specialist already marked `status: success` unless upstream changes require rerun.\n"
-        "4. For each downstream specialist, include the exact relevant section under "
+        "1. Start with a concise todo task list (3–7 bullets) and keep it updated while working.\n"
+        "2. Read `.claude/EXPERIMENT_STATE.json` first.\n"
+        "3. Dispatch only pending/failed specialists in correct topology order.\n"
+        "4. Skip any specialist already marked `status: success` unless upstream changes require rerun.\n"
+        "5. If dispatching `team-lead`, require it to read `.claude/DATA_BRIEFING.md`, "
+        "latest `.claude/EXPERIMENT_STATE_iter*.json`, and current `.claude/EXPERIMENT_STATE.json` "
+        "before suggesting the next iteration; team-lead is non-coding and must only return planning output.\n"
+        "6. For each downstream specialist, include the exact relevant section under "
         "`## Your Instructions from the Team-Lead` verbatim.\n"
-        "5. Do not return until all required agents are success and memory-keeper is success."
+        "7. Do not return until all required agents are success and memory-keeper is success."
     )
 
 
