@@ -53,8 +53,10 @@ def is_tool_allowed(tool_name: str, allowed_tools: list[str]) -> bool:
         return True
     if tool_name in allowed_tools:
         return True
-    # Claude SDK emits the Agent() delegation tool as Task in messages.
-    if tool_name == "Task" and any(t.startswith("Agent(") for t in allowed_tools):
+    # Claude SDK may emit Agent delegation as Task in message blocks.
+    if tool_name == "Task" and (
+        "Agent" in allowed_tools or any(t.startswith("Agent(") for t in allowed_tools)
+    ):
         return True
     return False
 
