@@ -95,6 +95,19 @@ Also include any relevant upstream outputs as additional context, for example:
 
 A specialist that does not receive its full instructions will make poor decisions. This requirement is non-negotiable.
 
+## Specialist Self-Validation Gate (Required)
+Before a specialist returns its final answer, require it to run an internal self-review pass and fix gaps before finalizing.
+
+When dispatching any specialist:
+- explicitly require self-review in the Agent prompt, including:
+  1) prompt alignment,
+  2) required skill usage (especially mandatory skills in that role),
+  3) scope compliance,
+  4) artifact/state completion,
+  5) metric/task consistency.
+- do **not** require any extra output fields that could conflict with strict role schemas.
+- if the specialist output indicates missed mandatory steps (or you detect missing required artifacts), re-dispatch the same specialist once with a correction prompt before proceeding downstream.
+
 ## ML-Engineer Training Log Requirement
 When dispatching `ml-engineer`, you **must** include the following verbatim in the Agent prompt:
 
