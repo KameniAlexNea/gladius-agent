@@ -66,7 +66,7 @@ Before asking `team-lead` for the next iteration plan, require it to read, in th
 
 `team-lead` is technical and managerial, but it must not write code; it only analyzes context and produces planning output.
 
-After the `team-lead` Task call returns, write its result into `EXPERIMENT_STATE.json` using this structure:
+After the `team-lead` Agent call returns, write its result into `EXPERIMENT_STATE.json` using this structure:
 ```json
 {"team_lead": {"status": "success", "plan": "<plan>", "approach_summary": "<summary>"}}
 ```
@@ -80,7 +80,7 @@ The `team-lead` plan contains instructions scoped to each specialist.
 When calling a downstream specialist, you must:
 - read the plan,
 - extract the section relevant to that specialist,
-- include it verbatim in the Task prompt under a `## Your Instructions from the Team-Lead` heading.
+- include it verbatim in the Agent prompt under a `## Your Instructions from the Team-Lead` heading.
 
 Do **not**:
 - summarize it,
@@ -94,7 +94,7 @@ Also include any relevant upstream outputs as additional context, for example:
 A specialist that does not receive its full instructions will make poor decisions. This requirement is non-negotiable.
 
 ## ML-Engineer Training Log Requirement
-When dispatching `ml-engineer`, you **must** include the following verbatim in the Task prompt:
+When dispatching `ml-engineer`, you **must** include the following verbatim in the Agent prompt:
 
 > **Training log contract (non-negotiable):**
 > Any execution of a training script (`train.py` or any script whose name contains "train") must redirect all output to `logs/train.log`. The required format is:
@@ -105,13 +105,13 @@ When dispatching `ml-engineer`, you **must** include the following verbatim in t
 > Training runs that do not produce `logs/train.log` will be treated as failed and discarded by the evaluator. No exceptions.
 
 ## Incomplete-Agent Rule
-After every Task call, check whether the result contains a line like:
+After every Agent call, check whether the result contains a line like:
 ```text
 agentId: <hex> (for resuming to continue this agent's work if needed)
 ```
 If present, the agent hit its turn limit and stopped **before finishing**. Its `EXPERIMENT_STATE` entry will be missing or incomplete.
 
-You must immediately re-dispatch that same agent, passing the `agentId` value as the `resume` parameter in the new Task call.
+You must immediately re-dispatch that same agent, passing the `agentId` value as the `resume` parameter in the new Agent call.
 
 **If a resume attempt returns `No task found with ID: <hex>`**, the session has expired. Do **not** retry with the same ID. Instead, re-dispatch the agent as a fresh call with no `resume` parameter and include the relevant context from the prior task in the prompt.
 
@@ -121,10 +121,10 @@ When re-dispatched by the orchestrator because the pipeline is incomplete:
 - dispatch only pending or failed specialists,
 - do not restart specialists already marked `"status": "success"` unless new upstream work requires it.
 
-After each Task call or coordination-file write, validate in 1–2 lines that the expected result was produced. If validation fails, self-correct before continuing. Validation should explicitly name the expected artifact, state transition, or return field being checked.
+After each Agent call or coordination-file write, validate in 1–2 lines that the expected result was produced. If validation fails, self-correct before continuing. Validation should explicitly name the expected artifact, state transition, or return field being checked.
 
 ## Validator Dispatch
-When dispatching `validator`, you **must** include the following in the Task prompt:
+When dispatching `validator`, you **must** include the following in the Agent prompt:
 
 > **Consistency check (required):**
 > Read `scripts/train.py`, `scripts/predict.py`, and `src/cv.py`.
