@@ -1,5 +1,5 @@
 """
-Ensembling utilities: hill-climbing (greedy forward selection) and weighted blend.
+Prediction blending utilities: hill-climbing (greedy forward selection) and weighted blend.
 
 Usage:
     from scripts.blend import hill_climb, optimised_blend, rank_average

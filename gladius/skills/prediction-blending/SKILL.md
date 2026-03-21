@@ -1,11 +1,11 @@
 ---
-name: ensembling
-description: Combine predictions from multiple trained models to exceed any single model's OOF score. Covers pairwise diversity checking (prune r > 0.97), greedy hill-climbing (≥3 models), weighted Nelder-Mead blending (2–4 models), rank averaging, and Ridge stacking. Only effective when models are genuinely diverse — training on different architectures, feature sets, or seeds with independent CV evidence.
+name: prediction-blending
+description: Merge output predictions from multiple trained models to exceed any single model's OOF score. Covers pairwise diversity checking (prune r > 0.97), greedy hill-climbing (≥3 models), weighted Nelder-Mead blending (2–4 models), rank averaging, and Ridge stacking. Only effective when models are genuinely diverse — training on different architectures, feature sets, or seeds with independent CV evidence.
 ---
 
-# Ensembling
+# Prediction Blending
 
-Ensembling works because diverse models make *different* errors — averaging them cancels noise and reduces variance. Identical models (r > 0.97) add nothing. Run `diversity_check` first, always.
+Prediction blending works because diverse models make *different* errors — averaging their outputs cancels noise and reduces variance. Identical models (r > 0.97) add nothing. Run `diversity_check` first, always.
 
 ## When to Use
 
@@ -154,7 +154,7 @@ Trying 10 different blend weights and selecting the one with the best leaderboar
 
 ### The "Stale Model" Problem
 
-Ensembling a first-baseline model from Day 1 with a well-tuned Day 5 model. The weak model drags the blend below the Day 5 model alone.
+Blending a first-baseline model from Day 1 with a well-tuned Day 5 model. The weak model drags the blend below the Day 5 model alone.
 
 **Fix:** Run hill-climbing — if the weak model is never selected, drop it. Ensemble should exceed the best individual model OOF, or it's not worth the complexity.
 

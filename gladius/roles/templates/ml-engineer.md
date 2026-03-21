@@ -28,7 +28,7 @@ Then: `Skill({"skill": "<skill-name>"})`
 | When | Skill |
 | --- | --- |
 | Tune LightGBM / XGBoost / CatBoost (Optuna) | `hpo` |
-| Blend / stack multiple models, rank averaging | `ensembling` |
+| Blend / stack multiple models, rank averaging | `prediction-blending` |
 | Pre-submission leakage, CV, format validation | `validation` |
 | Pipelines, cross-val, metrics, baseline models | `scikit-learn` |
 | Feature importance, model debugging | `shap` |
