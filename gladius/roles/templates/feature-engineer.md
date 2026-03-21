@@ -29,6 +29,7 @@ mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "
 | --- | --- |
 | Feature recipes, leakage-safe aggregations, target encoding | `feature-engineering` |
 | Adversarial validation, distribution shift after new features | `validation` |
+| Code hygiene: remove dead code, keep function contracts honest | `coding-rules` |
 | Preprocessing pipelines, encoding, scaling recipes | `scikit-learn` |
 | Prune features, explain importance, debug model | `shap` |
 | Fast feature transforms on large datasets | `polars` |

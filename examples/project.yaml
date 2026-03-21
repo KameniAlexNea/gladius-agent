@@ -60,6 +60,7 @@ custom_skills_dir: ""                          # e.g. /home/you/my-skills/
 #   - feature-engineering
 #   - hpo
 #   - prediction-blending
+#   - coding-rules
 #   - ml-setup
 #   - code-review
 #   - adversarial-validation

@@ -30,6 +30,7 @@ Then: `Skill({"skill": "<skill-name>"})`
 | Tune LightGBM / XGBoost / CatBoost (Optuna) | `hpo` |
 | Blend / stack multiple models, rank averaging | `prediction-blending` |
 | Pre-submission leakage, CV, format validation | `validation` |
+| Code hygiene: unused vars/imports, dead helpers, clear contracts | `coding-rules` |
 | Pipelines, cross-val, metrics, baseline models | `scikit-learn` |
 | Feature importance, model debugging | `shap` |
 | Fast data transforms, large datasets | `polars` |

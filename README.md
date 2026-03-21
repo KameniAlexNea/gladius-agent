@@ -59,7 +59,7 @@ All roles are defined in `ROLE_CATALOG` (`gladius/agents/roles/catalog.py`). Eac
 Active roles (`team-lead`, `data-expert`, `feature-engineer`, `ml-engineer`, `domain-expert`) carry pre-categorised skill hints in their `## Key skills` sections. At the start of each iteration they search the MCP `skills-on-demand` server and load a single relevant skill with `Skill({skill: "<name>"})`.
 
 The skill server serves skills from two sources:
-- **Bundled skills** in `gladius/utils/templates/skills/` — ML-specific (CV patterns, prediction blending, HPO, feature engineering, submission format, …)
+- **Bundled skills** in `gladius/utils/templates/skills/` — ML-specific (CV patterns, prediction blending, HPO, feature engineering, coding rules, submission format, …)
 - **Scientific skills** from the `claude-scientific-skills/` submodule (170+ upstream skills: bioinformatics, cheminformatics, time-series, NLP, clinical, …)
 
 Skills are loaded on-demand per iteration — no bulk injection, no per-turn latency cost once loaded.
@@ -99,6 +99,7 @@ Bootstrapped on first run (idempotent — safe to re-run on resume). Templates l
     feature-engineering/     — feature recipes, SHAP importance, pruning
     hpo/                     — Optuna Bayesian search
     prediction-blending/     — OOF blending, hill-climbing model selection
+    coding-rules/            — no dead code, no unused vars/imports, clear contracts
     adversarial-validation/  — train/test distribution shift detection
     polars/                  — fast DataFrame ops
     submit-check/            — submission validation checklist
