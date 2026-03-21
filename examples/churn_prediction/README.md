@@ -26,7 +26,7 @@ Submissions are evaluated on [area under the ROC curve](http://en.wikipedia.org/
 
 ## Submission File
 
-For each id in the test set, you must predict a probability for the `Churn` variable. The file should contain a header and have the following format:
+For each id in the test set, you must predict a **probability** for the `Churn` variable. The file should contain a header and have the following format:
 
 ```apache
 id,Churn

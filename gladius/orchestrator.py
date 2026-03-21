@@ -189,7 +189,8 @@ def _missing_scout_artifact(state: CompetitionState, project_dir: Path) -> bool:
     """Scout is mandatory in iteration 1 unless briefing already exists."""
     if state.iteration != 1:
         return False
-    return not runtime_data_briefing_path(project_dir).exists()
+    briefing_path = runtime_data_briefing_path(project_dir)
+    return not briefing_path.exists()
 
 
 def _read_experiment_state_snippet(exp_path: Path) -> str:
