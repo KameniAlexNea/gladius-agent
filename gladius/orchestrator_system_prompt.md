@@ -89,8 +89,10 @@ When dispatching `ml-engineer`, you **must** include the following verbatim in t
 
 > **Training log contract (non-negotiable):**
 > Any execution of a training script (`train.py` or any script whose name contains "train") must redirect all output to `logs/train.log`. The required format is:
+> `uv run python scripts/train.py > logs/train.log 2>&1`
 >
 > The same applies to tuning scripts: redirect to `logs/tune.log`.
+> `uv run python scripts/hpo.py > logs/tune.log 2>&1`
 > Training runs that do not produce `logs/train.log` will be treated as failed and discarded by the evaluator. No exceptions.
 
 ## Incomplete-Agent Rule
@@ -103,6 +105,12 @@ If present, the agent hit its turn limit and stopped **before finishing**. Its `
 You must immediately re-dispatch that same agent, passing the `agentId` value as the `resume` parameter in the new Task call.
 
 **If a resume attempt returns `No task found with ID: <hex>`**, the session has expired. Do **not** retry with the same ID. Instead, re-dispatch the agent as a fresh call with no `resume` parameter and include the relevant context from the prior task in the prompt.
+
+When re-dispatched by the orchestrator because the pipeline is incomplete:
+- treat the message as a continuation for the same iteration,
+- read `.claude/EXPERIMENT_STATE.json` first,
+- dispatch only pending or failed specialists,
+- do not restart specialists already marked `"status": "success"` unless new upstream work requires it.
 
 After each Task call or coordination-file write, validate in 1–2 lines that the expected result was produced. If validation fails, self-correct before continuing. Validation should explicitly name the expected artifact, state transition, or return field being checked.
 

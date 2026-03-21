@@ -41,6 +41,8 @@ def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
 
 # Files in artifacts/ that are intentionally reusable across iterations.
 _PERSISTENT_ARTIFACTS = {"best_params.json"}
+_MAX_REDISPATCH = 3
+_MAX_STATE_SNIPPET_CHARS = 12000
 
 
 def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
@@ -178,6 +180,40 @@ def _incomplete_agents(exp_path: Path) -> list[str]:
     ]
 
 
+def _read_experiment_state_snippet(exp_path: Path) -> str:
+    """Return a bounded EXPERIMENT_STATE.json snippet for re-dispatch prompts."""
+    if not exp_path.exists():
+        return "{}"
+    text = exp_path.read_text(encoding="utf-8")
+    if len(text) <= _MAX_STATE_SNIPPET_CHARS:
+        return text
+    return text[:_MAX_STATE_SNIPPET_CHARS] + "\n...<truncated>..."
+
+
+def _build_redispatch_prompt(
+    state: CompetitionState,
+    exp_path: Path,
+    incomplete: list[str],
+) -> str:
+    """Build a strict continuation prompt when coordinator exits early."""
+    state_text = _read_experiment_state_snippet(exp_path)
+    pending = ", ".join(incomplete)
+    return (
+        "You returned before this iteration pipeline was complete. Continue immediately.\n\n"
+        f"Iteration context: {state.iteration}/{state.max_iterations}, topology={state.topology}.\n"
+        f"Pending required agents (non-success): {pending}.\n\n"
+        "Current `.claude/EXPERIMENT_STATE.json`:\n"
+        f"```json\n{state_text}\n```\n\n"
+        "Required actions:\n"
+        "1. Read `.claude/EXPERIMENT_STATE.json` first.\n"
+        "2. Dispatch only pending/failed specialists in correct topology order.\n"
+        "3. Skip any specialist already marked `status: success` unless upstream changes require rerun.\n"
+        "4. For each downstream specialist, include the exact relevant section under "
+        "`## Your Instructions from the Team-Lead` verbatim.\n"
+        "5. Do not return until all required agents are success and memory-keeper is success."
+    )
+
+
 async def run_competition(
     competition_dir: str,
     max_turns: int | None = None,
@@ -233,9 +269,9 @@ async def run_competition(
 
         # Agents that must reach status=success for the iteration to count.
         # If the orchestrator returns early (text response without finishing the
-        # pipeline), re-dispatch it up to 3 times with the current state.
-        _MAX_REDISPATCH = 3
+        # pipeline), re-dispatch it up to _MAX_REDISPATCH times with current state.
         prompt = kickoff
+        incomplete: list[str] = []
         for _attempt in range(1 + _MAX_REDISPATCH):
             try:
                 _, _ = await run_agent(
@@ -272,16 +308,26 @@ async def run_competition(
                     f"Iteration {state.iteration}: orchestrator returned early — "
                     f"agents still pending: {incomplete}. Re-dispatching (attempt {_attempt + 2}/{_MAX_REDISPATCH + 1})."
                 )
-                state_text = (
-                    exp_path.read_text(encoding="utf-8") if exp_path.exists() else "{}"
+                prompt = _build_redispatch_prompt(state, exp_path, incomplete)
+
+        if incomplete:
+            logger.error(
+                f"Iteration {state.iteration}: required agents still incomplete after "
+                f"{_MAX_REDISPATCH + 1} orchestrator attempt(s): {incomplete}"
+            )
+            state.consecutive_errors += 1
+            state.error_log.append(
+                {
+                    "iteration": state.iteration,
+                    "error": f"incomplete_pipeline: {incomplete}",
+                }
+            )
+            if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                logger.error(
+                    f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
                 )
-                prompt = (
-                    f"You returned before the pipeline was complete.\n"
-                    f"Current EXPERIMENT_STATE.json:\n```json\n{state_text}\n```\n\n"
-                    f"Agents still pending (null or non-success): {incomplete}.\n"
-                    "Dispatch them now in the correct topology order. "
-                    "Do NOT return until memory-keeper has status: success."
-                )
+                state.last_stop_reason = "consecutive_errors"
+                state.done = True
 
         _update_state(state, project_dir)
 

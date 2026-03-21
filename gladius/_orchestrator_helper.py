@@ -2,7 +2,20 @@ from pathlib import Path
 
 from gladius.state import CompetitionState
 
-SYSTEM_PROMPT = (Path(__file__).parent / "orchestrator_system_prompt.md").read_text()
+_SYSTEM_PROMPT_PATH = Path(__file__).with_name("orchestrator_system_prompt.md")
+
+
+def _load_system_prompt() -> str:
+    """Load and validate the coordinator system prompt markdown."""
+    text = _SYSTEM_PROMPT_PATH.read_text(encoding="utf-8").strip()
+    if len(text) < 500:
+        raise RuntimeError(
+            f"System prompt at {_SYSTEM_PROMPT_PATH} is unexpectedly short ({len(text)} chars)."
+        )
+    return text
+
+
+SYSTEM_PROMPT = _load_system_prompt()
 
 
 TOP_LEVEL_TOOLS = [
@@ -44,6 +57,8 @@ def make_kickoff_prompt(state: CompetitionState) -> str:
             "2. Delegate to `team-lead` to plan a baseline experiment "
             "(team-lead will read DATA_BRIEFING.md and MEMORY.md itself).\n"
             f"3. Then follow the **{state.topology}** topology: {flow}.\n"
+            "4. For every downstream specialist, forward the exact relevant team-lead section verbatim "
+            "under `## Your Instructions from the Team-Lead` (no paraphrase).\n"
             "Focus on getting a clean, reproducible baseline score above all else."
         )
 
@@ -65,6 +80,8 @@ def make_kickoff_prompt(state: CompetitionState) -> str:
         "(team-lead will read DATA_BRIEFING.md and MEMORY.md itself).\n"
         f"3. Then follow the **{state.topology}** topology: {flow}.\n"
         '   Skip any agent whose EXPERIMENT_STATE.json entry is already `"status": "success"`.'
-        "\n4. After validation, have `memory-keeper` update MEMORY.md.\n\n"
+        "\n4. Forward each downstream specialist's team-lead section verbatim under "
+        "`## Your Instructions from the Team-Lead`; do not summarize.\n"
+        "5. After validation, have `memory-keeper` update MEMORY.md.\n\n"
         "Avoid any approach listed under 'Failed Approaches' in your context."
     )
