@@ -12,6 +12,11 @@ import sys  # noqa: E402
 from dataclasses import dataclass
 from pathlib import Path
 
+from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
+from gladius import RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH
+from gladius import RUNTIME_RELATIVE_PATH
+from gladius import TEAM_LEAD_MEMORY_RELATIVE_PATH
+
 _TEMPLATES = Path(__file__).parent / "templates"
 
 ROLES = (
@@ -40,8 +45,23 @@ class RoleDefinition:
     prompt: str
 
 
+def _apply_path_placeholders(content: str) -> str:
+    return (
+        content.replace(
+            "{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}",
+            RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+        )
+        .replace(
+            "{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}",
+            RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+        )
+        .replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", TEAM_LEAD_MEMORY_RELATIVE_PATH)
+        .replace("{{RUNTIME_RELATIVE_PATH}}", RUNTIME_RELATIVE_PATH)
+    )
+
+
 def _parse(path: Path) -> RoleDefinition:
-    text = path.read_text(encoding="utf-8")
+    text = _apply_path_placeholders(path.read_text(encoding="utf-8"))
     match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
     if not match:
         raise ValueError(f"No frontmatter in {path}")
@@ -123,6 +143,7 @@ def copy(
             .replace("{{GLADIUS_MODEL}}", model)
             .replace("{{GLADIUS_SMALL_MODEL}}", small_model)
         )
+        content = _apply_path_placeholders(content)
         if not use_web_search:
             content = _strip_web_search(content)
         dest.write_text(content, encoding="utf-8")

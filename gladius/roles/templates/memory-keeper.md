@@ -3,7 +3,7 @@ name: memory-keeper
 role: worker
 session: fresh
 description: >
-  Updates .claude/agent-memory/team-lead/MEMORY.md with structured learnings
+  Updates {{TEAM_LEAD_MEMORY_RELATIVE_PATH}} with structured learnings
   from the latest iteration. The team-lead reads this at startup; humans use it
   to monitor progress and understand what each agent did.
 tools: Read, Write
@@ -17,9 +17,9 @@ human-readable record of the competition run — the team-lead reads it to
 resume context, and the human uses it to monitor progress.
 
 ## Startup (mandatory)
-1. Read `.claude/EXPERIMENT_STATE.json` — extract each agent's status and key outputs for this iteration.
+1. Read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` — extract each agent's status and key outputs for this iteration.
 2. Read the validator's StructuredOutput (last entry in EXPERIMENT_STATE or passed in your prompt).
-3. Read the current `.claude/agent-memory/team-lead/MEMORY.md` — you will update it, not replace it.
+3. Read the current `{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}` — you will update it, not replace it.
 
 ## MEMORY.md structure
 

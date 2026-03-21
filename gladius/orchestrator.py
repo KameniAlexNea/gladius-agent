@@ -4,7 +4,7 @@ Agent launcher — iterative competition loop.
 Each iteration:
   1. Renders CLAUDE.md from current CompetitionState.
   2. Runs the top-level coordinator agent (fresh session per iteration).
-  3. Reads .claude/EXPERIMENT_STATE.json to extract scores and update state.
+        3. Reads runtime EXPERIMENT_STATE.json to extract scores and update state.
   4. Stops when max_iterations reached, a stop sentinel is found, or
      3 consecutive agent errors occur.
 
@@ -21,6 +21,9 @@ from pathlib import Path
 from loguru import logger
 
 import gladius.claude_md as claude_md
+from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
+from gladius import RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH
+from gladius import runtime_experiment_state_path
 from gladius._orchestrator_helper import (
     MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS,
 )
@@ -90,7 +93,7 @@ def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
 
 def _update_state(state: CompetitionState, project_dir: Path) -> None:
     """Read EXPERIMENT_STATE.json written by agents and update CompetitionState."""
-    exp_path = project_dir / ".claude" / "EXPERIMENT_STATE.json"
+    exp_path = runtime_experiment_state_path(project_dir)
     if not exp_path.exists():
         return
 
@@ -202,15 +205,16 @@ def _build_redispatch_prompt(
         "You returned before this iteration pipeline was complete. Continue immediately.\n\n"
         f"Iteration context: {state.iteration}/{state.max_iterations}, topology={state.topology}.\n"
         f"Pending required agents (non-success): {pending}.\n\n"
-        "Current `.claude/EXPERIMENT_STATE.json`:\n"
+        f"Current `{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}`:\n"
         f"```json\n{state_text}\n```\n\n"
         "Required actions:\n"
         "1. Start with a concise todo task list (3–7 bullets) and keep it updated while working.\n"
-        "2. Read `.claude/EXPERIMENT_STATE.json` first.\n"
+        f"2. Read `{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}` first.\n"
         "3. Dispatch only pending/failed specialists in correct topology order.\n"
         "4. Skip any specialist already marked `status: success` unless upstream changes require rerun.\n"
-        "5. If dispatching `team-lead`, require it to read `.claude/DATA_BRIEFING.md`, "
-        "latest `.claude/EXPERIMENT_STATE_iter*.json`, and current `.claude/EXPERIMENT_STATE.json` "
+        f"5. If dispatching `team-lead`, require it to read `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}`, "
+        "latest EXPERIMENT_STATE_iter*.json, and current "
+        f"`{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}` "
         "before suggesting the next iteration; team-lead is non-coding and must only return planning output.\n"
         "6. For each downstream specialist, include the exact relevant section under "
         "`## Your Instructions from the Team-Lead` verbatim.\n"
@@ -248,7 +252,7 @@ async def run_competition(
         state.iteration += 1
 
         # Archive EXPERIMENT_STATE from the previous iteration so agents start fresh
-        exp_path = project_dir / ".claude" / "EXPERIMENT_STATE.json"
+        exp_path = runtime_experiment_state_path(project_dir)
         if exp_path.exists():
             archive = exp_path.with_name(
                 f"EXPERIMENT_STATE_iter{state.iteration - 1}.json"
@@ -303,7 +307,7 @@ async def run_competition(
                 break
 
             # Check whether the pipeline actually completed.
-            exp_path = project_dir / ".claude" / "EXPERIMENT_STATE.json"
+            exp_path = runtime_experiment_state_path(project_dir)
             incomplete = _incomplete_agents(exp_path)
             if not incomplete:
                 break

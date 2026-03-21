@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
+from gladius import RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH
+from gladius import TEAM_LEAD_MEMORY_RELATIVE_PATH
 from gladius.state import CompetitionState
 
 _SYSTEM_PROMPT_PATH = Path(__file__).with_name("orchestrator_system_prompt.md")
@@ -7,7 +10,19 @@ _SYSTEM_PROMPT_PATH = Path(__file__).with_name("orchestrator_system_prompt.md")
 
 def _load_system_prompt() -> str:
     """Load and validate the coordinator system prompt markdown."""
-    text = _SYSTEM_PROMPT_PATH.read_text(encoding="utf-8").strip()
+    text = (
+        _SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+        .replace(
+            "{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}",
+            RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+        )
+        .replace(
+            "{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}",
+            RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+        )
+        .replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", TEAM_LEAD_MEMORY_RELATIVE_PATH)
+        .strip()
+    )
     if len(text) < 500:
         raise RuntimeError(
             f"System prompt at {_SYSTEM_PROMPT_PATH} is unexpectedly short ({len(text)} chars)."
@@ -27,6 +42,7 @@ TOP_LEVEL_TOOLS = [
     "Glob",
     "Grep",
     "TodoWrite",
+    "Agent",
     "Task",
 ]
 
@@ -51,7 +67,7 @@ def make_kickoff_prompt(state: CompetitionState) -> str:
     if state.iteration == 1:
         return (
             "This is the FIRST iteration — no experiments have run yet.\n"
-            "1. Check if `.claude/DATA_BRIEFING.md` exists. If NOT, delegate to `scout` — "
+            f"1. Check if `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` exists. If NOT, delegate to `scout` — "
             "it will explore the data and write the briefing with shapes, distributions, "
             "risks, and strategic angles. If it already exists, skip scout entirely.\n"
             "2. Delegate to `team-lead` to plan a baseline experiment "
@@ -77,7 +93,7 @@ def make_kickoff_prompt(state: CompetitionState) -> str:
     return (
         f"This is iteration {state.iteration}/{state.max_iterations}. "
         f"Current best {metric_label}: **{best}**.\n\n"
-        "1. Skip `scout` — `.claude/DATA_BRIEFING.md` already exists from iteration 1.\n"
+        f"1. Skip `scout` — `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` already exists from iteration 1.\n"
         "2. Delegate to `team-lead` to plan the next experiment "
         "(team-lead must read DATA_BRIEFING.md, latest EXPERIMENT_STATE_iter*.json, "
         "current EXPERIMENT_STATE.json, and MEMORY.md before suggesting the next iteration; "

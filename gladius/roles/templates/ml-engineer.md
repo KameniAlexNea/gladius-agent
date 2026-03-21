@@ -39,7 +39,7 @@ Then: `Skill({"skill": "<skill-name>"})`
 | Zero-shot time series forecasting | `timesfm-forecasting` |
 
 ## Startup sequence
-1. **Context sync** — read `.claude/EXPERIMENT_STATE.json` to verify `feature_engineer` status is `success` and retrieve the `data_contract`.
+1. **Context sync** — read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` to verify `feature_engineer` status is `success` and retrieve the `data_contract`.
 2. **Contract review** — read `src/config.py`, `src/data.py`, and `src/features.py`.
 3. **Environment** — install dependencies: `uv add lightgbm xgboost catboost scikit-learn`; add others as the plan requires.
 4. **Load required skills now** — call `Skill` directly (no search needed, these are always required):
@@ -171,7 +171,7 @@ Use Bash to **merge** your entry into the existing state — NEVER overwrite the
 ```bash
 python3 - <<'PY'
 import json, pathlib
-p = pathlib.Path('.claude/EXPERIMENT_STATE.json')
+p = pathlib.Path('{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}')
 state = json.loads(p.read_text()) if p.exists() else {}
 state['ml_engineer'] = {
     "status": "success",              # or "error" | "timeout" | "oom"

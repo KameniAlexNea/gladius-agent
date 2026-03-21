@@ -32,14 +32,14 @@ graph LR
 
 ### How this iteration works
 
-0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `.claude/DATA_BRIEFING.md`. Skip if the briefing already exists.
+0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`. Skip if the briefing already exists.
 1. **team-lead** reads `DATA_BRIEFING.md` + `MEMORY.md` + experiment history, outputs `{"plan": "...", "approach_summary": "..."}`.
 2. **data-expert** reads the plan, sets up `src/` scaffold, runs EDA. Writes `EXPERIMENT_STATE.json["data_expert"]`.
 3. **feature-engineer** reads the plan + `src/data.py`, implements features in `src/features.py`. Writes `EXPERIMENT_STATE.json["feature_engineer"]`.
 4. **ml-engineer** reads the plan + `src/`, writes `src/models.py` + `scripts/train.py`, runs training, saves `artifacts/oof.npy`. Writes `EXPERIMENT_STATE.json["ml_engineer"]`.
 5. **evaluator** confirms `OOF <metric>: <value>` appears in `train.log`, verifies `artifacts/oof.npy`. Writes `EXPERIMENT_STATE.json["evaluator"]`.
 6. **validator** compares OOF to best score, checks submission format. Emits structured JSON — does NOT write files.
-7. **memory-keeper** rewrites `.claude/agent-memory/team-lead/MEMORY.md`.
+7. **memory-keeper** rewrites `{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}`.
 
 ### Handoff contract — EXPERIMENT_STATE.json
 

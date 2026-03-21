@@ -36,7 +36,7 @@ graph TD
 
 ### How this iteration works
 
-0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `.claude/DATA_BRIEFING.md`. Skip if the briefing already exists.
+0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`. Skip if the briefing already exists.
 1. **team-lead** reads `DATA_BRIEFING.md` + produces exactly N plans — each plan MUST use a genuinely different approach (different model family, different feature strategy, different CV). Outputs `{"plans": [{"plan": "...", "approach_summary": "..."}, ...]}`. 
 2. N **mini-teams** run concurrently via `asyncio.gather`. Each team is a full functional pipeline: **data-expert → feature-engineer → ml-engineer → evaluator**. Each team works in its own isolated working directory.
 3. **validator** receives all N results, compares OOF scores, selects the winner. All results are recorded regardless of outcome.

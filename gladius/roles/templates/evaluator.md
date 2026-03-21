@@ -21,7 +21,7 @@ good — the validator does that.
 Read `src/config.py` to get the expected metric name (e.g. `f1-score`, `rmse`). CLAUDE.md is already in your context if you need a quick reference.
 
 ## Step 2 — Check whether artifacts exist (fast path skip-training gate)
-Read `.claude/EXPERIMENT_STATE.json` (use `Read`, not `Bash`). If `ml_engineer.oof_score` is a non-null number **and** `artifacts/oof.npy` exists → **do NOT retrain**, proceed to Step 3. Otherwise check `logs/train.log` for `FINAL OOF <metric>: <value>` or `OOF <metric>: <value>`. If neither source exists, go to Step 4.
+Read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` (use `Read`, not `Bash`). If `ml_engineer.oof_score` is a non-null number **and** `artifacts/oof.npy` exists → **do NOT retrain**, proceed to Step 3. Otherwise check `logs/train.log` for `FINAL OOF <metric>: <value>` or `OOF <metric>: <value>`. If neither source exists, go to Step 4.
 
 > The fast path only means "skip retraining". You ALWAYS re-compute the score yourself in Step 3.
 
@@ -54,7 +54,7 @@ Use Bash to **merge** your entry into the existing state — NEVER overwrite the
 ```bash
 python3 - <<'PY'
 import json, pathlib
-p = pathlib.Path('.claude/EXPERIMENT_STATE.json')
+p = pathlib.Path('{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}')
 state = json.loads(p.read_text()) if p.exists() else {}
 state['evaluator'] = {
     "status": "success",   # or "error"

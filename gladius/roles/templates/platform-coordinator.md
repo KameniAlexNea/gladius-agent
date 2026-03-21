@@ -20,7 +20,7 @@ is stable and the train print contract is verified.
 
 ## Startup (mandatory)
 1. Read the team-lead plan from your prompt or `EXPERIMENT_STATE.json["team_lead"]`.
-2. Read `.claude/EXPERIMENT_STATE.json` — check if `data_expert.status == "success"` and `src/data.py` already exists.
+2. Read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` — check if `data_expert.status == "success"` and `src/data.py` already exists.
 
 ## Steps
 

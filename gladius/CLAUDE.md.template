@@ -117,14 +117,14 @@ Each file has exactly one owner. Every agent has a defined read/write scope and 
 
 | Agent | Writes | Never touches |
 | --- | --- | --- |
-| **scout** | `.claude/DATA_BRIEFING.md` only (iteration 1) | all source files; never writes `EXPERIMENT_STATE.json` |
+| **scout** | `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}` only (iteration 1) | all source files; never writes `EXPERIMENT_STATE.json` |
 | **data-expert** | `src/config.py`, `src/data.py`, `src/__init__.py` | everything else in `src/` |
 | **feature-engineer** | `src/features.py` | `src/data.py`, `src/config.py`, `src/models.py` |
 | **ml-engineer** | `src/models.py`, `scripts/train.py`, `scripts/evaluate.py` | `src/data.py`, `src/features.py` |
 | **domain-expert** | targeted bug fixes only (fix mode); nothing (review mode) | source files during review |
 | **evaluator** | `EXPERIMENT_STATE.json["evaluator"]` only | all source files and scripts |
 | **validator** | nothing — emits StructuredOutput only | all files |
-| **memory-keeper** | `.claude/agent-memory/team-lead/MEMORY.md` only | all source files and scripts |
+| **memory-keeper** | `{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}` only | all source files and scripts |
 | **team-lead** | `EXPERIMENT_STATE.json["team_lead"]` + `MEMORY.md` (via memory-keeper) | all source files |
 
 ## Escalation Rule
@@ -140,7 +140,7 @@ If your script crashes with an error originating in a file you do not own:
 - `ml-engineer` trusts these contracts and fails fast, without retrying, if they are violated.
 
 # Shared State: `EXPERIMENT_STATE.json`
-The single shared state file for the current iteration is `.claude/EXPERIMENT_STATE.json`.
+The single shared state file for the current iteration is `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}`.
 
 - Every agent except `validator` reads it at startup to avoid redoing already-complete work.
 - Every executing agent with a state-file write scope writes its entry as its final action; never leave the file in a partial state.

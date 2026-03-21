@@ -16,6 +16,11 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
+from gladius import RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH
+from gladius import RUNTIME_RELATIVE_PATH
+from gladius import TEAM_LEAD_MEMORY_RELATIVE_PATH
+from gladius import runtime_data_briefing_path
 from gladius import team_lead_memory_path
 from gladius.topologies._catalog import TOPOLOGY_CATALOG
 
@@ -239,17 +244,17 @@ def render(state: "CompetitionState", project_dir: str) -> str:
     memory_path = str(team_lead_memory_path(project_dir).resolve())
 
     # ── data briefing (produced by scout in iteration 1) ─────────────────────
-    briefing_path = Path(project_dir) / ".claude" / "DATA_BRIEFING.md"
+    briefing_path = runtime_data_briefing_path(project_dir)
     if briefing_path.is_file():
         data_briefing_section = (
             "## Data Briefing\n\n"
-            "> Produced by the scout agent. Read `.claude/DATA_BRIEFING.md` for full data context.\n"
+            f"> Produced by the scout agent. Read `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` for full data context.\n"
             "> Do **not** re-read it into this file — reference the path directly."
         )
     else:
         data_briefing_section = (
             "## Data Briefing\n\n"
-            "_(not yet available — the scout agent will produce `.claude/DATA_BRIEFING.md` "
+            f"_(not yet available — the scout agent will produce `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` "
             "in iteration 1)_"
         )
 
@@ -275,6 +280,10 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         "data_briefing_section": data_briefing_section,
         "submission_section": submission_section,
         "memory_path": memory_path,
+        "RUNTIME_RELATIVE_PATH": RUNTIME_RELATIVE_PATH,
+        "RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH": RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+        "RUNTIME_DATA_BRIEFING_RELATIVE_PATH": RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+        "TEAM_LEAD_MEMORY_RELATIVE_PATH": TEAM_LEAD_MEMORY_RELATIVE_PATH,
     }
 
     content = template

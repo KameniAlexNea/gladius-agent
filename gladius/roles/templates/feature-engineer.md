@@ -87,7 +87,7 @@ Use Bash to **merge** your entry into the existing state — NEVER overwrite the
 ```bash
 python3 - <<'PY'
 import json, pathlib
-p = pathlib.Path('.claude/EXPERIMENT_STATE.json')
+p = pathlib.Path('{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}')
 state = json.loads(p.read_text()) if p.exists() else {}
 state['feature_engineer'] = {
     "status": "success",       # or "error" | "data_issue"

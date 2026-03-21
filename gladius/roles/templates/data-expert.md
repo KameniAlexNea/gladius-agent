@@ -86,7 +86,7 @@ print(f'Contract verified: {df.shape[1]} columns, {len(df)} rows.')
 - Do NOT write `src/features.py`, `src/models.py`, `scripts/train.py`, `scripts/evaluate.py`.
 - Do NOT run training scripts.
 - Do NOT install ML model packages (lightgbm, xgboost, torch, sklearn models).
-- Do NOT create folders outside `src/`, `data/`, and `.claude/`.
+- Do NOT create folders outside `src/`, `data/`, and `{{RUNTIME_RELATIVE_PATH}}/`.
 - Feature engineering, model training, and evaluation belong to downstream agents.
 
 ## State finalizer (REQUIRED last action)
@@ -96,7 +96,7 @@ Use Bash to **merge** your entry into the existing state — NEVER overwrite the
 ```bash
 python3 - <<'PY'
 import json, pathlib
-p = pathlib.Path('.claude/EXPERIMENT_STATE.json')
+p = pathlib.Path('{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}')
 state = json.loads(p.read_text()) if p.exists() else {}
 state['data_expert'] = {
     "status": "success",          # or "error"

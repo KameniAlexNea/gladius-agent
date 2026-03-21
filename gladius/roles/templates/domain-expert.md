@@ -18,7 +18,7 @@ bugs that code correctness checks miss: leakage, contamination, metric misuse, a
 
 ## Mode detection
 
-Read `.claude/EXPERIMENT_STATE.json` first to determine your mode:
+Read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` first to determine your mode:
 
 | Condition                                                            | Mode                  |
 | -------------------------------------------------------------------- | --------------------- |
@@ -66,7 +66,7 @@ Use Bash to **merge** your entry into the existing state — NEVER overwrite the
 ```bash
 python3 - <<'PY'
 import json, pathlib
-p = pathlib.Path('.claude/EXPERIMENT_STATE.json')
+p = pathlib.Path('{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}')
 state = json.loads(p.read_text()) if p.exists() else {}
 state['domain_review'] = {
     "status": "approved",   # or "rejected"
@@ -101,7 +101,7 @@ Use Bash to **merge** your entry into the existing state — NEVER overwrite the
 ```bash
 python3 - <<'PY'
 import json, pathlib
-p = pathlib.Path('.claude/EXPERIMENT_STATE.json')
+p = pathlib.Path('{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}')
 state = json.loads(p.read_text()) if p.exists() else {}
 state['domain_expert_fix'] = {
     "status": "fixed",          # or "unfixable"

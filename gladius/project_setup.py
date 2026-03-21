@@ -14,6 +14,10 @@ import gladius.claude_md as claude_md
 import gladius.roles as roles
 import gladius.skills as skills
 import gladius.tools as tools
+from gladius import AGENT_MEMORY_DIRNAME
+from gladius import GLADIUS_DIRNAME
+from gladius import RUNTIME_DIRNAME
+from gladius import TEAM_LEAD_MEMORY_RELATIVE_PATH
 from gladius import team_lead_memory_path
 
 _TEMPLATES = Path(__file__).parent
@@ -172,7 +176,7 @@ def _dir_skeleton(root: Path) -> None:
     for sub in (
         root / ".claude" / "agents",
         root / ".claude" / "skills",
-        root / ".claude" / "agent-memory",
+        root / GLADIUS_DIRNAME / RUNTIME_DIRNAME / AGENT_MEMORY_DIRNAME,
         root / "src",
         root / "scripts",
         root / "artifacts",
@@ -266,7 +270,7 @@ def _seed_memory(root: Path, cfg: dict, *, force: bool) -> None:
     if template.exists():
         mem_file.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(template, mem_file)
-        print("  memory → .claude/agent-memory/team-lead/MEMORY.md")
+        print(f"  memory → {TEAM_LEAD_MEMORY_RELATIVE_PATH}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

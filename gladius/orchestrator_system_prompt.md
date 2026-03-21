@@ -24,13 +24,13 @@ At the start of every iteration, the user archives the previous iteration's outp
 - `artifacts/` → `artifacts_iter{N}/` (empty `artifacts/` is recreated; `best_params.json` is copied forward)
 - `logs/train.log`, `logs/hpo.log`, etc. → `logs_iter{N}/` (`logs/gladius.log` stays in place)
 
-As a result, `artifacts/` and `logs/` are **clean at iteration start**. Agents must not inspect those locations for old results. To review prior outputs, read `artifacts_iter{N}/` or `logs_iter{N}/`. The current `EXPERIMENT_STATE_iter{N}.json` files in `.claude/` contain each past iteration's agent summaries.
+As a result, `artifacts/` and `logs/` are **clean at iteration start**. Agents must not inspect those locations for old results. To review prior outputs, read `artifacts_iter{N}/` or `logs_iter{N}/`. The current `EXPERIMENT_STATE_iter{N}.json` files in `{{RUNTIME_RELATIVE_PATH}}/` contain each past iteration's agent summaries.
 
 # Available Specialists
 Specialists are located in `.claude/agents/`:
-- `scout` — fast data reconnaissance; produces `.claude/DATA_BRIEFING.md`
+- `scout` — fast data reconnaissance; produces `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`
   - Run once, before `team-lead`.
-  - Skip if `.claude/DATA_BRIEFING.md` already exists.
+  - Skip if `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}` already exists.
   - Do **not** check `EXPERIMENT_STATE` for scout status; `scout` has no entry there.
 - `team-lead` — strategic + technical planner (non-coding); always first after `scout`
   - Must not write or edit code files.
@@ -47,7 +47,7 @@ Specialists are located in `.claude/agents/`:
 
 # Dispatch Rules
 ## Re-dispatch Rule
-Before calling any specialist, read `.claude/EXPERIMENT_STATE.json`.
+Before calling any specialist, read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}`.
 
 If that specialist's entry already has `"status": "success"`, skip them because their work is already complete.
 
@@ -60,9 +60,9 @@ Only re-dispatch a specialist if:
 `team-lead` cannot write files and returns StructuredOutput only.
 
 Before asking `team-lead` for the next iteration plan, require it to read, in this order:
-1. `.claude/DATA_BRIEFING.md`
-2. the latest archived state file `.claude/EXPERIMENT_STATE_iter*.json`
-3. current `.claude/EXPERIMENT_STATE.json` (if present)
+1. `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`
+2. the latest archived state file `{{RUNTIME_RELATIVE_PATH}}/EXPERIMENT_STATE_iter*.json`
+3. current `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` (if present)
 
 `team-lead` is technical and managerial, but it must not write code; it only analyzes context and produces planning output.
 
@@ -117,7 +117,7 @@ You must immediately re-dispatch that same agent, passing the `agentId` value as
 
 When re-dispatched by the orchestrator because the pipeline is incomplete:
 - treat the message as a continuation for the same iteration,
-- read `.claude/EXPERIMENT_STATE.json` first,
+- read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` first,
 - dispatch only pending or failed specialists,
 - do not restart specialists already marked `"status": "success"` unless new upstream work requires it.
 
@@ -148,7 +148,7 @@ After `memory-keeper` finishes, if the `validator` returned both:
 - `stop=True`
 - `submit=True`
 
-then write the following as the **last action** to `.claude/EXPERIMENT_STATE.json`:
+then write the following as the **last action** to `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}`:
 ```json
 {"done": true}
 ```

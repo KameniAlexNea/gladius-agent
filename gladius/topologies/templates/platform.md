@@ -31,12 +31,12 @@ graph TD
 
 ### How this iteration works
 
-0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `.claude/DATA_BRIEFING.md`. Skip if the briefing already exists.
+0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`. Skip if the briefing already exists.
 1. **team-lead** reads `DATA_BRIEFING.md` + `MEMORY.md` + experiment history, outputs `{"plan": "...", "approach_summary": "..."}`.
 2. **platform-coordinator** runs **data-expert** to build the `src/` scaffold and `src/data.py`, then verifies the `OOF <metric>: <value>` print contract in `scripts/train.py`. Writes `EXPERIMENT_STATE.json["platform"]`.
 3. **full-stack-coordinator** (product layer) reads the plan + platform outputs, skips `data-expert` (already done), runs **feature-engineer → ml-engineer → evaluator**. Writes `EXPERIMENT_STATE.json["product"]`.
 4. **validator** compares OOF to best score, checks submission format. Emits structured JSON — does NOT write files.
-5. **memory-keeper** rewrites `.claude/agent-memory/team-lead/MEMORY.md`.
+5. **memory-keeper** rewrites `{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}`.
 
 ### Handoff contract — EXPERIMENT_STATE.json
 

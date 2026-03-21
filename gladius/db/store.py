@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from gladius import STATE_DB_RELATIVE_PATH
+
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
@@ -16,7 +18,7 @@ if TYPE_CHECKING:
 class StateStore:
     """No-op store — all methods are safe no-ops until the DB is implemented."""
 
-    def __init__(self, db_path: str = ".gladius/state.db") -> None:
+    def __init__(self, db_path: str = STATE_DB_RELATIVE_PATH) -> None:
         self._state: "CompetitionState | None" = None
 
     def save(self, state: "CompetitionState") -> None:
