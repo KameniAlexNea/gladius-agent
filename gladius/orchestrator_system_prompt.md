@@ -146,6 +146,10 @@ When dispatching `validator`, you **must** include the following in the Agent pr
 > Read `scripts/train.py`, `scripts/predict.py`, and `src/cv.py`.
 > Verify the model class, save format, load call, and feature preprocessing are identical across all three files.
 > A mismatch (e.g. CatBoost saved in train.py but LightGBM loaded in predict.py) is a critical bug — set `format_ok=False` and describe it in `reasoning`.
+>
+> **Degenerate submission check (required):**
+> Read the produced submission file and compute `n_unique`, `std`, `min`, `max` of the prediction column.
+> If predictions are constant/near-constant (`n_unique < 2` or `std <= 1e-8` or `max-min <= 1e-8`), set `format_ok=False` and explain it as a degenerate submission.
 
 ## Submission Upload
 When the `validator` returns `submit=True`:
