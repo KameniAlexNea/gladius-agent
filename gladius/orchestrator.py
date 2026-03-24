@@ -45,7 +45,7 @@ def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
 
 # Files in artifacts/ that are intentionally reusable across iterations.
 _PERSISTENT_ARTIFACTS = {"best_params.json"}
-_MAX_REDISPATCH = 3
+_MAX_REDISPATCH = 10
 _MAX_STATE_SNIPPET_CHARS = 12000
 
 
@@ -310,10 +310,8 @@ async def run_competition(
                 state.consecutive_errors = 0
             except Exception as exc:
                 logger.error(f"Iteration {state.iteration} agent error: {exc}")
-                # Even if run_agent raised (e.g. a forbidden-tool violation detected
-                # post-hoc), the pipeline may have completed successfully.  Check
-                # before counting this as a failure — a policy note on an otherwise
-                # successful iteration must not kill the run.
+                # Check whether the pipeline completed despite the exception
+                # (e.g. a forbidden-tool violation detected post-hoc).
                 exp_path = runtime_experiment_state_path(project_dir)
                 incomplete = _incomplete_agents(exp_path)
                 if _missing_scout_artifact(state, project_dir):
@@ -321,9 +319,8 @@ async def run_competition(
                 if not incomplete:
                     logger.warning(
                         f"Iteration {state.iteration}: pipeline complete despite agent "
-                        f"error — resetting consecutive_errors."
+                        f"error — not counting as failure."
                     )
-                    state.consecutive_errors = 0
                     state.error_log.append(
                         {
                             "iteration": state.iteration,
@@ -332,10 +329,18 @@ async def run_competition(
                         }
                     )
                     break
-                state.consecutive_errors += 1
                 state.error_log.append(
-                    {"iteration": state.iteration, "error": str(exc)}
+                    {"iteration": state.iteration, "attempt": _attempt + 1, "error": str(exc)}
                 )
+                if _attempt < _MAX_REDISPATCH:
+                    logger.warning(
+                        f"Iteration {state.iteration}: agent error on attempt {_attempt + 1}/{_MAX_REDISPATCH + 1} "
+                        f"— re-dispatching. agents still pending: {incomplete}"
+                    )
+                    prompt = _build_redispatch_prompt(state, exp_path, incomplete)
+                    continue
+                # All redispatch attempts exhausted — count as one iteration failure.
+                state.consecutive_errors += 1
                 if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
                     logger.error(
                         f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
