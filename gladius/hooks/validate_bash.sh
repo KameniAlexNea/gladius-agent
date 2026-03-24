@@ -30,6 +30,13 @@ if echo "$COMMAND" | grep -qE 'rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*f[[:space:]]+/'
     exit 2
 fi
 
+# Block pkill -f / killall — pattern-based kills can accidentally SIGTERM the agent itself.
+# Use 'kill PID' with an explicit PID instead.
+if echo "$COMMAND" | grep -qE '\bpkill[[:space:]]+(-[a-zA-Z]*f[a-zA-Z]*|.*-f)\b|\bkillall\b'; then
+    echo "Blocked: 'pkill -f' and 'killall' are not allowed — they can match and kill the agent process itself. Use 'kill PID' with an explicit PID captured from nohup/launch output." >&2
+    exit 2
+fi
+
 # Block recursive delete of home directory
 if echo "$COMMAND" | grep -qE 'rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*f[[:space:]]+~'; then
     echo "Blocked: 'rm -rf ~' is not allowed." >&2
@@ -55,11 +62,14 @@ fi
 
 # Require any script with "train" in its name to redirect output to logs/train.log.
 # Matches execution via: python[3], bash, uv run, or direct ./
-# Does NOT match read-only uses like: cat, tail, grep, head on those files.
+# Does NOT match read-only uses like: cat, tail, grep, head, py_compile, or --help invocations.
 if echo "$COMMAND" | grep -qE '(python3?|bash)[[:space:]]+[^[:space:]]*train[^[:space:]]*(\.(py|sh))|uv[[:space:]]+run[[:space:]].*\btrain[^[:space:]]*(\.(py|sh))|\./[^[:space:]]*train[^[:space:]]*(\.(py|sh))'; then
-    if ! echo "$COMMAND" | grep -qE 'logs/train\.log'; then
-        echo "Blocked: any training script must redirect output to logs/train.log. Required format: nohup uv run python train.py > logs/train.log 2>&1 &" >&2
-        exit 2
+    # Exclude syntax checks and help requests — these are not training runs.
+    if ! echo "$COMMAND" | grep -qE '(-m[[:space:]]+py_compile|py_compile[[:space:]]|--help|--version)'; then
+        if ! echo "$COMMAND" | grep -qE 'logs/train\.log'; then
+            echo "Blocked: any training script must redirect output to logs/train.log. Required format: nohup uv run python train.py > logs/train.log 2>&1 &" >&2
+            exit 2
+        fi
     fi
 fi
 

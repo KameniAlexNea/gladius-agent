@@ -96,8 +96,13 @@ def is_bash_command_scoped_to_cwd(command: str, cwd: str) -> bool:
         if target and not is_path_within_cwd(target, cwd):
             return False
 
+    # Paths that are always safe regardless of cwd: pseudo-filesystems and null device.
+    _ALWAYS_ALLOWED_PREFIXES = ("/dev/", "/proc/", "/sys/", "/tmp/")
+
     for tok in tokens:
         if tok.startswith("/"):
+            if any(tok.startswith(p) for p in _ALWAYS_ALLOWED_PREFIXES):
+                continue
             if not is_path_within_cwd(tok, cwd):
                 return False
             continue
