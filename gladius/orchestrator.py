@@ -290,6 +290,7 @@ async def run_competition(
         # pipeline), re-dispatch it up to _MAX_REDISPATCH times with current state.
         prompt = kickoff
         incomplete: list[str] = []
+        _iteration_error = False
         for _attempt in range(1 + _MAX_REDISPATCH):
             try:
                 _, _ = await run_agent(
@@ -304,6 +305,28 @@ async def run_competition(
                 state.consecutive_errors = 0
             except Exception as exc:
                 logger.error(f"Iteration {state.iteration} agent error: {exc}")
+                # Even if run_agent raised (e.g. a forbidden-tool violation detected
+                # post-hoc), the pipeline may have completed successfully.  Check
+                # before counting this as a failure — a policy note on an otherwise
+                # successful iteration must not kill the run.
+                exp_path = runtime_experiment_state_path(project_dir)
+                incomplete = _incomplete_agents(exp_path)
+                if _missing_scout_artifact(state, project_dir):
+                    incomplete = ["scout", *incomplete]
+                if not incomplete:
+                    logger.warning(
+                        f"Iteration {state.iteration}: pipeline complete despite agent "
+                        f"error — resetting consecutive_errors."
+                    )
+                    state.consecutive_errors = 0
+                    state.error_log.append(
+                        {
+                            "iteration": state.iteration,
+                            "error": str(exc),
+                            "pipeline_complete": True,
+                        }
+                    )
+                    break
                 state.consecutive_errors += 1
                 state.error_log.append(
                     {"iteration": state.iteration, "error": str(exc)}
@@ -314,6 +337,7 @@ async def run_competition(
                     )
                     state.last_stop_reason = "consecutive_errors"
                     state.done = True
+                _iteration_error = True
                 break
 
             # Check whether the pipeline actually completed.
@@ -330,7 +354,7 @@ async def run_competition(
                 )
                 prompt = _build_redispatch_prompt(state, exp_path, incomplete)
 
-        if incomplete:
+        if incomplete and not _iteration_error:
             logger.error(
                 f"Iteration {state.iteration}: required agents still incomplete after "
                 f"{_MAX_REDISPATCH + 1} orchestrator attempt(s): {incomplete}"
