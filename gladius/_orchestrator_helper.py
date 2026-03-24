@@ -1,5 +1,5 @@
 from pathlib import Path
-
+import os
 from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
 from gladius import RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH
 from gladius import TEAM_LEAD_MEMORY_RELATIVE_PATH
@@ -44,7 +44,7 @@ TOP_LEVEL_TOOLS = [
     "Agent",
 ]
 
-MAX_CONSECUTIVE_ERRORS = 3
+MAX_CONSECUTIVE_ERRORS = int(os.getenv("GLADIUS_MAX_CONSECUTIVE_ERRORS", 10))
 
 
 _TOPOLOGY_FIRST_STEP: dict[str, str] = {

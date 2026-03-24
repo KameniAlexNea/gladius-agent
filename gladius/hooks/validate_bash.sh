@@ -37,11 +37,12 @@ if echo "$COMMAND" | grep -qE 'rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*f[[:space:]]+~'
 fi
 
 # Block deletion of log files — logs are permanent audit trails, not disposable temp files.
-if echo "$COMMAND" | grep -qE 'rm[[:space:]]'; then
-    if echo "$COMMAND" | grep -qE 'logs/[a-zA-Z_.-]*\.log'; then
-        echo "Blocked: deleting log files is not allowed. logs/*.log are permanent audit trails. Overwrite via redirect (> logs/train.log) is fine; rm is not." >&2
-        exit 2
-    fi
+# Uses a single combined regex so that `rm artifacts/*.bin && > logs/train.log` does NOT
+# false-positive: [^;&|>]* stops at shell separators, so rm and the log path must be in
+# the same shell segment (i.e. the log path is an argument to rm, not a later redirect).
+if echo "$COMMAND" | grep -qE 'rm[[:space:]][^;&|>]*logs/[a-zA-Z_.-]*\.log'; then
+    echo "Blocked: deleting log files is not allowed. logs/*.log are permanent audit trails. Overwrite via redirect (> logs/train.log) is fine; rm is not." >&2
+    exit 2
 fi
 
 # Block any bash modification of CLAUDE.md (e.g. cat >> CLAUDE.md, tee CLAUDE.md)

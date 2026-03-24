@@ -285,6 +285,11 @@ async def run_competition(
 
         kickoff = _make_kickoff_prompt(state)
 
+        # Reset consecutive error counter at the start of each iteration — the
+        # threshold is meant to stop a genuinely stuck run, not to penalise the
+        # next iteration for a previous one's transient failure.
+        state.consecutive_errors = 0
+
         # Agents that must reach status=success for the iteration to count.
         # If the orchestrator returns early (text response without finishing the
         # pipeline), re-dispatch it up to _MAX_REDISPATCH times with current state.
