@@ -45,7 +45,7 @@ def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
 
 # Files in artifacts/ that are intentionally reusable across iterations.
 _PERSISTENT_ARTIFACTS = {"best_params.json"}
-_MAX_REDISPATCH = 10
+_MAX_REDISPATCH = int(os.getenv("GLADIUS_MAX_REDISPATCH", 10))  # Number of times to re-dispatch an iteration when pipeline incomplete.
 _MAX_STATE_SNIPPET_CHARS = 12000
 
 
@@ -167,7 +167,9 @@ def _update_state(state: CompetitionState, project_dir: Path) -> None:
 
 # Agents required to have status=success for an iteration to be considered complete.
 # team_lead is required so coordinators cannot skip planning and jump straight to execution.
-_REQUIRED_AGENTS = ("team_lead", "ml_engineer", "evaluator", "memory_keeper")
+# memory_keeper is excluded — it writes MEMORY.md, not EXPERIMENT_STATE.json, so including it
+# here would cause _incomplete_agents() to always return ["memory_keeper"] and redispatch forever.
+_REQUIRED_AGENTS = ("team_lead", "ml_engineer", "evaluator")
 
 
 def _incomplete_agents(exp_path: Path) -> list[str]:
