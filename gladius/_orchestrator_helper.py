@@ -1,8 +1,11 @@
-from pathlib import Path
 import os
-from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
-from gladius import RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH
-from gladius import TEAM_LEAD_MEMORY_RELATIVE_PATH
+from pathlib import Path
+
+from gladius import (
+    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+    TEAM_LEAD_MEMORY_RELATIVE_PATH,
+)
 from gladius.state import CompetitionState
 
 _SYSTEM_PROMPT_PATH = Path(__file__).with_name("orchestrator_system_prompt.md")

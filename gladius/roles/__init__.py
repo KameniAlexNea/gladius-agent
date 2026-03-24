@@ -12,10 +12,12 @@ import sys  # noqa: E402
 from dataclasses import dataclass
 from pathlib import Path
 
-from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
-from gladius import RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH
-from gladius import RUNTIME_RELATIVE_PATH
-from gladius import TEAM_LEAD_MEMORY_RELATIVE_PATH
+from gladius import (
+    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+    RUNTIME_RELATIVE_PATH,
+    TEAM_LEAD_MEMORY_RELATIVE_PATH,
+)
 
 _TEMPLATES = Path(__file__).parent / "templates"
 
@@ -101,7 +103,7 @@ def _strip_web_search(content: str) -> str:
         r"4\. \*\*Scan\*\* — use `WebSearch`.*?skill catalog\.",
         (
             "4. **Scan** — Search arXiv for recent winning approaches: "
-            "`mcp__arxiv-mcp-server__search_papers({\"query\": \"<competition type> machine learning SOTA\", \"max_results\": 5})`. "
+            '`mcp__arxiv-mcp-server__search_papers({"query": "<competition type> machine learning SOTA", "max_results": 5})`. '
             "Fall back to the `literature-review` skill if the server is unavailable."
         ),
         content,

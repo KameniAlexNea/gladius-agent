@@ -148,7 +148,9 @@ async def run_agent(
                                     )
                                     forbidden_tool_error = msg
                                     if is_subagent:
-                                        logger.error(f"sub-agent scope violation: {msg}")
+                                        logger.error(
+                                            f"sub-agent scope violation: {msg}"
+                                        )
                     last_assistant_msg = message
                 if isinstance(message, ResultMessage):
                     result_msg = message

@@ -21,10 +21,12 @@ from pathlib import Path
 from loguru import logger
 
 import gladius.claude_md as claude_md
-from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
-from gladius import RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH
-from gladius import runtime_data_briefing_path
-from gladius import runtime_experiment_state_path
+from gladius import (
+    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+    runtime_data_briefing_path,
+    runtime_experiment_state_path,
+)
 from gladius._orchestrator_helper import (
     MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS,
 )
@@ -45,7 +47,9 @@ def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
 
 # Files in artifacts/ that are intentionally reusable across iterations.
 _PERSISTENT_ARTIFACTS = {"best_params.json"}
-_MAX_REDISPATCH = int(os.getenv("GLADIUS_MAX_REDISPATCH", 10))  # Number of times to re-dispatch an iteration when pipeline incomplete.
+_MAX_REDISPATCH = int(
+    os.getenv("GLADIUS_MAX_REDISPATCH", 10)
+)  # Number of times to re-dispatch an iteration when pipeline incomplete.
 _MAX_STATE_SNIPPET_CHARS = 12000
 
 
@@ -332,7 +336,11 @@ async def run_competition(
                     )
                     break
                 state.error_log.append(
-                    {"iteration": state.iteration, "attempt": _attempt + 1, "error": str(exc)}
+                    {
+                        "iteration": state.iteration,
+                        "attempt": _attempt + 1,
+                        "error": str(exc),
+                    }
                 )
                 if _attempt < _MAX_REDISPATCH:
                     logger.warning(

@@ -16,12 +16,14 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
-from gladius import RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH
-from gladius import RUNTIME_RELATIVE_PATH
-from gladius import TEAM_LEAD_MEMORY_RELATIVE_PATH
-from gladius import runtime_data_briefing_path
-from gladius import team_lead_memory_path
+from gladius import (
+    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+    RUNTIME_RELATIVE_PATH,
+    TEAM_LEAD_MEMORY_RELATIVE_PATH,
+    runtime_data_briefing_path,
+    team_lead_memory_path,
+)
 from gladius.topologies._catalog import TOPOLOGY_CATALOG
 
 if TYPE_CHECKING:
@@ -205,9 +207,9 @@ def render(state: "CompetitionState", project_dir: str) -> str:
                 f"> - Re-examine the task description and deliverables.\n"
                 f"> - Try a completely different approach or architecture.\n"
                 + (
-                    f"> - WebSearch for breakthrough techniques specific to this task type."
+                    "> - WebSearch for breakthrough techniques specific to this task type."
                     if state.use_web_search
-                    else f"> - Search arXiv for recent SOTA: `mcp__arxiv-mcp-server__search_papers({{\"query\": \"<task type> competition winning approach\", \"max_results\": 5}})`"
+                    else '> - Search arXiv for recent SOTA: `mcp__arxiv-mcp-server__search_papers({"query": "<task type> competition winning approach", "max_results": 5})`'
                 )
             )
 

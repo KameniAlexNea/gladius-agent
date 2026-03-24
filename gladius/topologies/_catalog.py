@@ -11,8 +11,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH
-from gladius import TEAM_LEAD_MEMORY_RELATIVE_PATH
+from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH, TEAM_LEAD_MEMORY_RELATIVE_PATH
 
 _TEMPLATES = Path(__file__).parent / "templates"
 
@@ -26,12 +25,10 @@ class TopologyDefinition:
 
 
 def _apply_path_placeholders(content: str) -> str:
-    return (
-        content.replace(
-            "{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}",
-            RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
-        ).replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", TEAM_LEAD_MEMORY_RELATIVE_PATH)
-    )
+    return content.replace(
+        "{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}",
+        RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+    ).replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", TEAM_LEAD_MEMORY_RELATIVE_PATH)
 
 
 def _parse(path: Path) -> TopologyDefinition:
