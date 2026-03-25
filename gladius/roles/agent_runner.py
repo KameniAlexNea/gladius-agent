@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 from typing import Any
 
 from claude_agent_sdk import (
@@ -90,6 +91,10 @@ async def run_agent(
             forbidden_tool_error: str | None = None
             early_session_id: str | None = None
             delegated_tool_policies: dict[str, list[str]] = {}
+            # FIFO queue of tool-lists for dispatched subagents.
+            # Used as a fallback when the CLI assigns a different parent_tool_use_id
+            # to subagent messages than the block.id stored in delegated_tool_policies.
+            _pending_subagent_tools: collections.deque[list[str]] = collections.deque()
 
             if verbose:
                 resume_str = f"  resume={resume[:8]}…" if resume else ""
@@ -116,9 +121,11 @@ async def run_agent(
                                     or ""
                                 )
                                 if subagent_type in ROLE_CATALOG:
-                                    delegated_tool_policies[block.id] = list(
+                                    tools = list(
                                         ROLE_CATALOG[subagent_type].tools
                                     )
+                                    delegated_tool_policies[block.id] = tools
+                                    _pending_subagent_tools.append(tools)
                                 else:
                                     forbidden_tool_error = (
                                         f"[{agent_name}] Agent called without a valid "
@@ -137,6 +144,20 @@ async def run_agent(
                                 delegated = delegated_tool_policies.get(
                                     message.parent_tool_use_id
                                 )
+                                if delegated is None and _pending_subagent_tools:
+                                    # The CLI assigned a different parent_tool_use_id
+                                    # than the block.id we stored — resolve via FIFO.
+                                    logger.debug(
+                                        f"[{agent_name}] parent_tool_use_id "
+                                        f"{message.parent_tool_use_id!r} not in "
+                                        f"delegated_tool_policies (keys="
+                                        f"{list(delegated_tool_policies)!r}); "
+                                        "applying FIFO subagent policy fallback."
+                                    )
+                                    delegated = _pending_subagent_tools.popleft()
+                                    delegated_tool_policies[
+                                        message.parent_tool_use_id
+                                    ] = delegated
                                 if delegated is not None:
                                     effective_allowed_tools = delegated
                                     policy_label = f"subagent_allowed_tools={effective_allowed_tools}"

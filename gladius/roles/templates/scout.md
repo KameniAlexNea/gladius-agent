@@ -21,7 +21,7 @@ You produce exactly one artifact: `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`.
 
 ## Startup sequence
 
-1. **Load mandatory metrics skill first** — call:
+1. **Load mandatory ml-competition skill first** — call:
    ```
    Skill({"skill": "ml-competition"})
    ```
