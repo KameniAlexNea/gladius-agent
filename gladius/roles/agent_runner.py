@@ -23,7 +23,7 @@ from claude_agent_sdk.types import (
 from llm_output_parser import parse_json as _parse_json
 from loguru import logger
 
-from gladius.roles import ROLE_CATALOG
+from gladius.roles import ROLE_CATALOG, ROLES
 from gladius.roles._console import _BLUE, _BOLD, _c, _log_message
 from gladius.roles.helpers import (
     get_runtime_model,
@@ -119,6 +119,17 @@ async def run_agent(
                                     delegated_tool_policies[block.id] = list(
                                         ROLE_CATALOG[subagent_type].tools
                                     )
+                                else:
+                                    forbidden_tool_error = (
+                                        f"[{agent_name}] Agent called without a valid "
+                                        f"agent_name (got {subagent_type!r}). "
+                                        f"You MUST pass agent_name as one of: {list(ROLES)}. "
+                                        f"Example: Agent({{\"agent_name\": \"feature-engineer\", \"prompt\": \"...\"}})"
+                                    )
+                                    logger.error(forbidden_tool_error)
+                                    # Lock out ALL tools for this sub-agent so
+                                    # nothing slips through via the fallback path.
+                                    delegated_tool_policies[block.id] = []
 
                             effective_allowed_tools = allowed_tools
                             policy_label = f"allowed_tools={allowed_tools}"
@@ -126,7 +137,7 @@ async def run_agent(
                                 delegated = delegated_tool_policies.get(
                                     message.parent_tool_use_id
                                 )
-                                if delegated:
+                                if delegated is not None:
                                     effective_allowed_tools = delegated
                                     policy_label = f"subagent_allowed_tools={effective_allowed_tools}"
 
