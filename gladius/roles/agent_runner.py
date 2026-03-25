@@ -126,15 +126,17 @@ async def run_agent(
                                     )
                                     delegated_tool_policies[block.id] = tools
                                     _pending_subagent_tools.append(tools)
+                                    continue  # delegation validated; skip generic tool-policy check
                                 else:
                                     msg = (
                                         f"[{agent_name}] Agent called without a valid "
-                                        f"agent_name (got {subagent_type!r}). "
-                                        f"You MUST pass agent_name as one of: {list(ROLES)}. "
-                                        f"Example: Agent({{\"agent_name\": \"feature-engineer\", \"prompt\": \"...\"}})"
+                                        f"subagent_type (got {subagent_type!r}). "
+                                        f"You MUST pass subagent_type as one of: {list(ROLES)}. "
+                                        f"Example: Agent({{\"subagent_type\": \"feature-engineer\", \"prompt\": \"...\"}})"
                                     )
                                     logger.error(msg)
-                                    raise RuntimeError(msg)
+                                    forbidden_tool_error = msg
+                                    break
 
                             effective_allowed_tools = allowed_tools
                             policy_label = f"allowed_tools={allowed_tools}"
