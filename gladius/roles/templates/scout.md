@@ -12,6 +12,8 @@ model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 20
 skills:
   - ml-competition
+mcpServers:
+  - skills-on-demand
 ---
 # Scout (Data Reconnaissance)
 

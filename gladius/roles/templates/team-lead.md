@@ -12,6 +12,9 @@ model: {{GLADIUS_MODEL}}
 maxTurns: 60
 skills:
   - ml-competition
+mcpServers:
+  - skills-on-demand
+  - arxiv-mcp-server
 ---
 # Team Lead (Strategist)
 

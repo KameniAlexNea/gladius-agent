@@ -12,6 +12,8 @@ model: {{GLADIUS_MODEL}}
 maxTurns: 30
 skills:
   - ml-competition
+mcpServers:
+  - skills-on-demand
 ---
 # Data Expert
 

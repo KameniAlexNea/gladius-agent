@@ -11,6 +11,8 @@ model: {{GLADIUS_MODEL}}
 maxTurns: 40
 skills:
   - ml-competition
+mcpServers:
+  - skills-on-demand
 ---
 # Full-Stack Coordinator
 

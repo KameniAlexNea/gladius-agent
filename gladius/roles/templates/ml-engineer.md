@@ -12,6 +12,8 @@ maxTurns: 80
 skills:
   - ml-competition
   - pre-submit
+mcpServers:
+  - skills-on-demand
 ---
 # ML Engineer
 
