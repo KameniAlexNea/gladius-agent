@@ -30,10 +30,10 @@ Then: `Skill({"skill": "<skill-name>"})`
 
 | When | Skill |
 | --- | --- |
-| Tune LightGBM / XGBoost / CatBoost (Optuna) | `ml-competition` |
-| Blend / stack multiple models, rank averaging | `ml-competition` |
-| Pre-submission leakage, CV, format validation | `pre-submit` |
-| Code hygiene: unused vars/imports, dead helpers, clear contracts | `ml-competition` |
+| Tune LightGBM / XGBoost / CatBoost (Optuna) | `ml-competition` *(pre-loaded)* |
+| Blend / stack multiple models, rank averaging | `ml-competition` *(pre-loaded)* |
+| Pre-submission leakage, CV, format validation | `pre-submit` *(pre-loaded)* |
+| Code hygiene: unused vars/imports, dead helpers, clear contracts | `ml-competition` *(pre-loaded)* |
 | Pipelines, cross-val, metrics, baseline models | `scikit-learn` |
 | Feature importance, model debugging | `shap` |
 | Fast data transforms, large datasets | `polars` |
@@ -45,9 +45,7 @@ Then: `Skill({"skill": "<skill-name>"})`
 1. **Context sync** — read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` to verify `feature_engineer` status is `success` and retrieve the `data_contract`.
 2. **Contract review** — read `src/config.py`, `src/data.py`, and `src/features.py`.
 3. **Environment** — install dependencies: `uv add lightgbm xgboost catboost scikit-learn`; add others as the plan requires.
-4. **Load required skills now** — call `Skill` directly (no search needed, these are always required):
-   - `Skill({"skill": "pre-submit"})` — read it fully before writing any code
-   - `Skill({"skill": "ml-competition"})` — read it fully before launching training
+4. **Required skills are pre-loaded** — `ml-competition` and `pre-submit` content is already in your context. Read both before writing any code or launching training — no Skill() calls needed.
 
 ## Your scope — ONLY these tasks
 

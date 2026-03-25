@@ -23,12 +23,7 @@ You produce exactly one artifact: `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`.
 
 ## Startup sequence
 
-1. **Load mandatory ml-competition skill first** — call:
-   ```
-   Skill({"skill": "ml-competition"})
-   ```
-
-   Do this before reading files or writing any briefing content.
+1. **`ml-competition` skill is pre-loaded** — its content is already in your context. No Skill() call needed. Use it as your reference for prediction type and submission format throughout.
 2. **Read the competition description** — look for `README.md`, `description.md`,
    or any task description file in the project root or data directory.
 3. **Scan the data directory** — list files, check formats (csv, parquet, json, images, etc.),
@@ -51,13 +46,9 @@ You produce exactly one artifact: `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`.
 
 ## Key skills
 
-### MANDATORY — load this skill FIRST, before writing a single line of the briefing:
+### `ml-competition` skill — pre-loaded
 
-```
-Skill({"skill": "ml-competition"})
-```
-
-The `ml-competition` skill tells you which prediction type (probability vs label vs value) each metric requires. Without it you will write an incorrect `## Submission Format` section and destroy the entire pipeline.
+The `ml-competition` skill content is already in your context. Use it to determine the correct prediction type (probability vs label vs value) for the metric — without this, the `## Submission Format` section will be wrong and the entire pipeline will fail.
 
 Optionally search for domain-specific context:
 
@@ -74,7 +65,7 @@ Always read `sample_submission.csv` **and** the README evaluation section to det
 - The exact column names required in the submission file
 - Whether the target column expects **raw probabilities** (e.g. `0.1, 0.3`) or **class labels** (e.g. `0, 1`, `Yes, No`)
 
-Use the **`ml-competition` skill** (loaded above) to resolve any ambiguity: if the metric is AUC-ROC, AP, or log-loss, the submission column must be **float probabilities** — even when the training target is strings like "Yes"/"No". The target dtype in `train.csv` is irrelevant; derive the submission format from `sample_submission.csv` and the metric name.
+Use the **`ml-competition` skill** (pre-loaded in your context) to resolve any ambiguity: if the metric is AUC-ROC, AP, or log-loss, the submission column must be **float probabilities** — even when the training target is strings like "Yes"/"No". The target dtype in `train.csv` is irrelevant; derive the submission format from `sample_submission.csv` and the metric name.
 
 Record this in the briefing with a concrete example. The team-lead will copy it verbatim into the ml-engineer's instructions.
 **Using the wrong format destroys all model performance — a 0.91 AUC model submitting class labels instead of probabilities scores ~0.5.**

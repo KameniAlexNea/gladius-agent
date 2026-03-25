@@ -18,7 +18,7 @@ You are a brutal, impartial judge of competition results. Your sole purpose is t
 
 ## Key skills
 
-Use the `pre-submit` skill before judging submission format and OOF score.
+The `pre-submit` skill is pre-loaded in your context. Refer to its guidance before judging submission format and OOF score — no Skill() call needed.
 
 ## ML mode (metric provided)
 
