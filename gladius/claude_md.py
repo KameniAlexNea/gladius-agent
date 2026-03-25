@@ -29,7 +29,7 @@ from gladius.topologies._catalog import TOPOLOGY_CATALOG
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
-_TEMPLATE = Path(__file__).parent / "CLAUDE.md.template"
+_TEMPLATE = Path(__file__).parent/ "prompts" / "CLAUDE.md.template"
 
 _STAGNATION_THRESHOLD_METRIC = 0.001
 _STAGNATION_THRESHOLD_QUALITY = 3.0
