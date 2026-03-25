@@ -42,6 +42,7 @@ class RoleDefinition:
     """
     RoleDefinition aka AgentDefinition
     """
+
     name: str
     session: str  # "persistent" | "fresh"
     max_turns: int

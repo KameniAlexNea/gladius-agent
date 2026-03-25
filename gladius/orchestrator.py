@@ -27,14 +27,12 @@ from gladius import (
     runtime_data_briefing_path,
     runtime_experiment_state_path,
 )
-from gladius._orchestrator_helper import DEFAULT_MAX_TURNS as _DEFAULT_MAX_TURNS
-from gladius._orchestrator_helper import (
-    MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS,
-)
 from gladius._orchestrator_helper import SYSTEM_PROMPT as _SYSTEM_PROMPT
 from gladius._orchestrator_helper import TOP_LEVEL_TOOLS as _TOP_LEVEL_TOOLS
 from gladius._orchestrator_helper import make_kickoff_prompt as _make_kickoff_prompt
+from gladius.config import MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS
 from gladius.config import MAX_REDISPATCH as _MAX_REDISPATCH
+from gladius.config import MAX_TURNS as _DEFAULT_MAX_TURNS
 from gladius.project_setup import load_competition_config
 from gladius.roles.agent_runner import run_agent
 from gladius.state import CompetitionState
