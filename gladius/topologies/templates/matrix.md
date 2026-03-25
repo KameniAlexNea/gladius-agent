@@ -26,7 +26,7 @@ graph TD
 
 ### How this iteration works
 
-0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `.claude/DATA_BRIEFING.md`. Skip if the briefing already exists.
+0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`. Skip if the briefing already exists.
 1. **team-lead** reads `DATA_BRIEFING.md` + `MEMORY.md` + experiment history, outputs `{"plan": "...", "approach_summary": "..."}`. 
 2. **ml-engineer** implements the full pipeline (`src/features.py`, `src/models.py`, `scripts/train.py`), runs training, saves `artifacts/oof.npy`. Writes `EXPERIMENT_STATE.json["ml_engineer"]`.
 3. **team-lead** (review mode) reads all deliverables, checks technical correctness. Writes `EXPERIMENT_STATE.json["technical_review"]`.

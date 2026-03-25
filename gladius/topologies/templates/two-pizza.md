@@ -18,7 +18,7 @@ graph TD
 
 ### How this iteration works
 
-0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `.claude/DATA_BRIEFING.md`. Skip if the briefing already exists.
+0. **scout** _(iteration 1 only)_ scans the data directory, profiles shapes/distributions/risks, and writes `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`. Skip if the briefing already exists.
 1. **team-lead** reads `DATA_BRIEFING.md` + `MEMORY.md` + experiment history, outputs `{"plan": "...", "approach_summary": "..."}`. 
 2. **full-stack-coordinator** receives the plan, reads `EXPERIMENT_STATE.json` to assess what already exists, then decides which specialists to spawn and in what order:
    - spawn **data-expert** if `src/` scaffold is missing or `data_expert.status` is not `"success"`
@@ -26,7 +26,7 @@ graph TD
    - spawn **ml-engineer** to run training (always)
    - spawn **evaluator** to verify the OOF score
 3. **validator** compares OOF to best score, checks submission format. Emits structured JSON — does NOT write files.
-4. **memory-keeper** rewrites `.claude/agent-memory/team-lead/MEMORY.md`.
+4. **memory-keeper** rewrites `{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}`.
 
 ### Handoff contract — EXPERIMENT_STATE.json
 

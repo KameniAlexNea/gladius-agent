@@ -52,7 +52,7 @@ class IterationResult:
     memory_content: str | None = None
     memory_summary: str | None = None
 
-    # Plan text (saved to .claude/plans/ by orchestrator)
+    # Plan text (saved to <runtime>/plans/ by orchestrator)
     plan_text: str = ""
     approach_summary: str = ""
 

@@ -151,12 +151,22 @@ def _log_tool_use(agent_name: str, sub_tag: str, block: ToolUseBlock) -> None:
             + _c(_DIM, f"  {plan_preview}")
         )
 
-    elif block.name == "Task":
-        subagent_type = block.input.get("subagent_type", "?")
-        description = block.input.get("description", "")
+    elif block.name in {"Task", "Agent"}:
+        target = (
+            block.input.get("subagent_type")
+            or block.input.get("agent_name")
+            or block.input.get("agent")
+            or block.input.get("name")
+            or "?"
+        )
+        description = str(block.input.get("description", "")).strip()
+        if target == "?" and description:
+            maybe_name = description.split(":", 1)[0].strip().lower()
+            if maybe_name:
+                target = maybe_name
         snippet = block.input.get("prompt", "")[:80].replace("\n", " ")
         logger.debug(
-            _c(_BOLD + _BLUE, f"  🤖 [{agent_name}]{sub_tag} Task → {subagent_type}")
+            _c(_BOLD + _BLUE, f"  🤖 [{agent_name}]{sub_tag} {block.name} → {target}")
             + _c(_DIM, f"  [{description}]  {snippet}…")
         )
 

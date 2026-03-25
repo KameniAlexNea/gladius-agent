@@ -1,11 +1,49 @@
-# Gladius Improved Architecture
-
-from pathlib import Path
-
 from dotenv import load_dotenv
+
+from gladius.config import (
+    AGENT_MEMORY_DIRNAME,
+    DATA_BRIEFING_FILENAME,
+    EXPERIMENT_STATE_FILENAME,
+    GLADIUS_DIRNAME,
+    GLADIUS_RELATIVE_PATH,
+    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+    RUNTIME_DIRNAME,
+    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+    RUNTIME_RELATIVE_PATH,
+    STATE_DB_FILENAME,
+    STATE_DB_RELATIVE_PATH,
+    TEAM_LEAD_MEMORY_FILENAME,
+    TEAM_LEAD_MEMORY_RELATIVE_PATH,
+    TEAM_LEAD_ROLE_NAME,
+    gladius_workspace_path,
+    runtime_data_briefing_path,
+    runtime_experiment_state_path,
+    runtime_workspace_path,
+    state_db_path,
+    team_lead_memory_path,
+)
 
 load_dotenv()
 
-
-def team_lead_memory_path(project_dir: str | Path) -> Path:
-    return Path(project_dir) / ".claude" / "agent-memory" / "team-lead" / "MEMORY.md"
+__all__ = [
+    "AGENT_MEMORY_DIRNAME",
+    "DATA_BRIEFING_FILENAME",
+    "EXPERIMENT_STATE_FILENAME",
+    "GLADIUS_DIRNAME",
+    "GLADIUS_RELATIVE_PATH",
+    "RUNTIME_DATA_BRIEFING_RELATIVE_PATH",
+    "RUNTIME_DIRNAME",
+    "RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH",
+    "RUNTIME_RELATIVE_PATH",
+    "STATE_DB_FILENAME",
+    "STATE_DB_RELATIVE_PATH",
+    "TEAM_LEAD_MEMORY_FILENAME",
+    "TEAM_LEAD_MEMORY_RELATIVE_PATH",
+    "TEAM_LEAD_ROLE_NAME",
+    "gladius_workspace_path",
+    "runtime_data_briefing_path",
+    "runtime_experiment_state_path",
+    "runtime_workspace_path",
+    "state_db_path",
+    "team_lead_memory_path",
+]

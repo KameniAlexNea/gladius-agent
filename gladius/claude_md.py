@@ -16,7 +16,14 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from gladius import team_lead_memory_path
+from gladius import (
+    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+    RUNTIME_RELATIVE_PATH,
+    TEAM_LEAD_MEMORY_RELATIVE_PATH,
+    runtime_data_briefing_path,
+    team_lead_memory_path,
+)
 from gladius.topologies._catalog import TOPOLOGY_CATALOG
 
 if TYPE_CHECKING:
@@ -200,9 +207,9 @@ def render(state: "CompetitionState", project_dir: str) -> str:
                 f"> - Re-examine the task description and deliverables.\n"
                 f"> - Try a completely different approach or architecture.\n"
                 + (
-                    f"> - WebSearch for breakthrough techniques specific to this task type."
+                    "> - WebSearch for breakthrough techniques specific to this task type."
                     if state.use_web_search
-                    else f"> - Search arXiv for recent SOTA: `mcp__arxiv-mcp-server__search_papers({{\"query\": \"<task type> competition winning approach\", \"max_results\": 5}})`"
+                    else '> - Search arXiv for recent SOTA: `mcp__arxiv-mcp-server__search_papers({"query": "<task type> competition winning approach", "max_results": 5})`'
                 )
             )
 
@@ -239,17 +246,17 @@ def render(state: "CompetitionState", project_dir: str) -> str:
     memory_path = str(team_lead_memory_path(project_dir).resolve())
 
     # ── data briefing (produced by scout in iteration 1) ─────────────────────
-    briefing_path = Path(project_dir) / ".claude" / "DATA_BRIEFING.md"
+    briefing_path = runtime_data_briefing_path(project_dir)
     if briefing_path.is_file():
         data_briefing_section = (
             "## Data Briefing\n\n"
-            "> Produced by the scout agent. Read `.claude/DATA_BRIEFING.md` for full data context.\n"
+            f"> Produced by the scout agent. Read `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` for full data context.\n"
             "> Do **not** re-read it into this file — reference the path directly."
         )
     else:
         data_briefing_section = (
             "## Data Briefing\n\n"
-            "_(not yet available — the scout agent will produce `.claude/DATA_BRIEFING.md` "
+            f"_(not yet available — the scout agent will produce `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` "
             "in iteration 1)_"
         )
 
@@ -275,6 +282,10 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         "data_briefing_section": data_briefing_section,
         "submission_section": submission_section,
         "memory_path": memory_path,
+        "RUNTIME_RELATIVE_PATH": RUNTIME_RELATIVE_PATH,
+        "RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH": RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+        "RUNTIME_DATA_BRIEFING_RELATIVE_PATH": RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+        "TEAM_LEAD_MEMORY_RELATIVE_PATH": TEAM_LEAD_MEMORY_RELATIVE_PATH,
     }
 
     content = template

@@ -27,13 +27,13 @@ The orchestrator is a thin loop. It never orchestrates individual agent phases d
 
 Set `topology:` in `project.yaml`. Default is `functional`.
 
-| Topology | Style | Agent flow |
-|---|---|---|
-| `functional` | Apple — deep expertise pipeline | team-lead → data-expert → feature-engineer → ml-engineer → evaluator → validator → memory-keeper |
-| `two-pizza` | Amazon — small cross-functional team | team-lead → full-stack coordinator (delegates to specialists) → validator → memory-keeper |
-| `platform` | Google — shared infra layer | team-lead → platform layer (data-expert + evaluator) → product layer (feature-engineer + ml-engineer) → validator → memory-keeper |
-| `autonomous` | Meta — parallel independent teams | team-lead (N plans) → N concurrent mini-teams → validator picks best → memory-keeper |
-| `matrix` | Microsoft — dual authority | team-lead (plan) → ml-engineer → both team-lead + domain-expert approve → evaluator → validator → memory-keeper |
+| Topology       | Style                                 | Agent flow                                                                                                                            |
+| -------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `functional` | Apple — deep expertise pipeline      | team-lead → data-expert → feature-engineer → ml-engineer → evaluator → validator → memory-keeper                                |
+| `two-pizza`  | Amazon — small cross-functional team | team-lead → full-stack coordinator (delegates to specialists) → validator → memory-keeper                                          |
+| `platform`   | Google — shared infra layer          | team-lead → platform layer (data-expert + evaluator) → product layer (feature-engineer + ml-engineer) → validator → memory-keeper |
+| `autonomous` | Meta — parallel independent teams    | team-lead (N plans) → N concurrent mini-teams → validator picks best → memory-keeper                                               |
+| `matrix`     | Microsoft — dual authority           | team-lead (plan) → ml-engineer → both team-lead + domain-expert approve → evaluator → validator → memory-keeper                  |
 
 The `autonomous` topology uses `--parallel N` to set N. Each branch is a full functional pipeline; the validator selects the best result.
 
@@ -41,16 +41,16 @@ The `autonomous` topology uses `--parallel N` to set N. Each branch is a full fu
 
 All roles are defined in `ROLE_CATALOG` (`gladius/agents/roles/catalog.py`). Each role is a `RoleDefinition` — name, description, system prompt, allowed tools, and skill-search hints.
 
-| Role | Mode | Session | Purpose |
-|---|---|---|---|
-| `team-lead` | read-only execute | **Resumed** across iterations | Reads MEMORY.md + experiment history; produces ordered experiment strategy as structured JSON `{"plan", "approach_summary"}` |
-| `data-expert` | execute | Fresh per iteration | Bootstraps `src/` project scaffold; EDA — schema, distributions, missing values, class balance |
-| `feature-engineer` | execute | Fresh per iteration | Categorical encoding, numerical transforms, temporal features, interaction terms, SHAP pruning |
-| `ml-engineer` | execute | Fresh per iteration | Model training, CV, OOF evaluation; install deps; write-run-fix loop until script runs clean |
-| `domain-expert` | execute | Fresh per iteration | Diagnoses logical bugs (data leakage, CV contamination, wrong metric); dual approver in matrix topology |
-| `evaluator` | execute | Fresh per iteration | Verifies `train.log`, extracts OOF score, re-runs if missing |
-| `validator` | read-only | Fresh per iteration | Compares OOF to best, checks submission format, recommends submit/hold, signals stop |
-| `memory-keeper` | write | Fresh per iteration | Rewrites `MEMORY.md` with what worked, what failed, patterns, and score history |
+| Role                 | Mode              | Session                             | Purpose                                                                                                                        |
+| -------------------- | ----------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `team-lead`        | read-only execute | **Resumed** across iterations | Reads MEMORY.md + experiment history; produces ordered experiment strategy as structured JSON `{"plan", "approach_summary"}` |
+| `data-expert`      | execute           | Fresh per iteration                 | Bootstraps `src/` project scaffold; EDA — schema, distributions, missing values, class balance                              |
+| `feature-engineer` | execute           | Fresh per iteration                 | Categorical encoding, numerical transforms, temporal features, interaction terms, SHAP pruning                                 |
+| `ml-engineer`      | execute           | Fresh per iteration                 | Model training, CV, OOF evaluation; install deps; write-run-fix loop until script runs clean                                   |
+| `domain-expert`    | execute           | Fresh per iteration                 | Diagnoses logical bugs (data leakage, CV contamination, wrong metric); dual approver in matrix topology                        |
+| `evaluator`        | execute           | Fresh per iteration                 | Verifies `train.log`, extracts OOF score, re-runs if missing                                                                 |
+| `validator`        | read-only         | Fresh per iteration                 | Compares OOF to best, checks submission format, recommends submit/hold, signals stop                                           |
+| `memory-keeper`    | write             | Fresh per iteration                 | Rewrites `MEMORY.md` with what worked, what failed, patterns, and score history                                              |
 
 `team-lead` is the only persistent role — its Claude SDK session is resumed every iteration so it accumulates deep competition context without paying context-window cost for full reinitialisation.
 
@@ -59,25 +59,26 @@ All roles are defined in `ROLE_CATALOG` (`gladius/agents/roles/catalog.py`). Eac
 Active roles (`team-lead`, `data-expert`, `feature-engineer`, `ml-engineer`, `domain-expert`) carry pre-categorised skill hints in their `## Key skills` sections. At the start of each iteration they search the MCP `skills-on-demand` server and load a single relevant skill with `Skill({skill: "<name>"})`.
 
 The skill server serves skills from two sources:
-- **Bundled skills** in `gladius/utils/templates/skills/` — ML-specific (CV patterns, ensembling, HPO, feature engineering, submission format, …)
+
+- **Bundled skills** in `gladius/utils/templates/skills/` — ML-specific (CV patterns, prediction blending, HPO, feature engineering, coding rules, submission format, …)
 - **Scientific skills** from the `claude-scientific-skills/` submodule (170+ upstream skills: bioinformatics, cheminformatics, time-series, NLP, clinical, …)
 
 Skills are loaded on-demand per iteration — no bulk injection, no per-turn latency cost once loaded.
 
 ### State
 
-`CompetitionState` is a Python dataclass persisted to a normalised SQLite database (`.gladius/state.db`). The system resumes correctly after a crash; if `best_oof_score` was never flushed, it is recalibrated from experiment history on resume.
+`CompetitionState` is a Python dataclass persisted to a normalised SQLite database (configured by `STATE_DB_RELATIVE_PATH` in `gladius/config.py`). The system resumes correctly after a crash; if `best_oof_score` was never flushed, it is recalibrated from experiment history on resume.
 
-| Table | Contents |
-|---|---|
-| `competition` | Static: competition_id, topology, metric, direction, data_dir — written once |
-| `current_state` | Mutable: iteration, best scores, session IDs, submission count |
-| `experiments` | One row per completed experiment with OOF score and solution files |
-| `failed_runs` | One row per failed run |
-| `plans` | One row per team-lead plan (approach summary + full plan text) |
-| `event_log` | Append-only event trace (iteration_complete, submission, error, …) |
-| `agent_runs` | Per-agent timing and error records |
-| `error_log` | Unhandled orchestrator errors |
+| Table             | Contents                                                                      |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `competition`   | Static: competition_id, topology, metric, direction, data_dir — written once |
+| `current_state` | Mutable: iteration, best scores, session IDs, submission count                |
+| `experiments`   | One row per completed experiment with OOF score and solution files            |
+| `failed_runs`   | One row per failed run                                                        |
+| `plans`         | One row per team-lead plan (approach summary + full plan text)                |
+| `event_log`     | Append-only event trace (iteration_complete, submission, error, …)           |
+| `agent_runs`    | Per-agent timing and error records                                            |
+| `error_log`     | Unhandled orchestrator errors                                                 |
 
 ### `.claude/` project layout
 
@@ -98,7 +99,8 @@ Bootstrapped on first run (idempotent — safe to re-run on resume). Templates l
     ml-pipeline/             — CV patterns, baseline models, metric formulas
     feature-engineering/     — feature recipes, SHAP importance, pruning
     hpo/                     — Optuna Bayesian search
-    ensembling/              — OOF blending, hill-climbing model selection
+    prediction-blending/     — OOF blending, hill-climbing model selection
+    coding-rules/            — no dead code, no unused vars/imports, clear contracts
     adversarial-validation/  — train/test distribution shift detection
     polars/                  — fast DataFrame ops
     submit-check/            — submission validation checklist
@@ -122,12 +124,12 @@ CLAUDE.md                    — shared live context, rewritten by orchestrator 
 
 ### Platform support
 
-| Platform | Submit | `platform:` value |
-|---|---|---|
-| Kaggle | `kaggle competitions submit` CLI | `kaggle` |
-| Zindi | `zindi` Python package | `zindi` |
-| Fake (offline) | Local scoring vs `.answers.csv` (AUC-ROC) | `fake` |
-| None | Record artifact only, no upload | `none` |
+| Platform       | Submit                                      | `platform:` value |
+| -------------- | ------------------------------------------- | ------------------- |
+| Kaggle         | `kaggle competitions submit` CLI          | `kaggle`          |
+| Zindi          | `zindi` Python package                    | `zindi`           |
+| Fake (offline) | Local scoring vs `.answers.csv` (AUC-ROC) | `fake`            |
+| None           | Record artifact only, no upload             | `none`            |
 
 Platform MCP servers run as subprocess stdio servers — not in-process Python objects — so they are reachable from the Claude Code CLI subprocess over IPC.
 
@@ -144,7 +146,7 @@ Platform MCP servers run as subprocess stdio servers — not in-process Python o
 ### Install
 
 ```bash
-git clone https://github.com/your-org/gladius-agent
+git clone https://github.com/KameniAlexNea/gladius-agent
 cd gladius-agent
 uv sync
 source .venv/bin/activate
@@ -245,6 +247,7 @@ submission_threshold: 0.85
 For open-ended (non-metric) tasks the README is the primary source of truth — agents derive goal, deliverables, and self-assessment criteria from it.
 
 `data_dir` must contain at minimum:
+
 - `train.csv`
 - `test.csv`
 - `sample_submission.csv`
@@ -266,9 +269,9 @@ gladius project.yaml
 gladius CONFIG [--max-turns N]
 ```
 
-| Argument | Description |
-|---|---|
-| `CONFIG` | Path to `project.yaml` |
+| Argument          | Description                                                |
+| ----------------- | ---------------------------------------------------------- |
+| `CONFIG`        | Path to `project.yaml`                                   |
 | `--max-turns N` | Hard cap on agent turns per iteration (default: unlimited) |
 
 ```bash
@@ -360,21 +363,12 @@ uv run python app.py --log /path/to/gladius.log
 ## Design principles
 
 1. **Topology-driven — not hard-coded phases.** The orchestrator selects a management topology (functional, two-pizza, platform, autonomous, matrix) from the competition config and calls `topology.run_iteration()`. All agent coordination lives inside the topology class; the orchestrator loop is a thin wrapper that acts on the returned `IterationResult`.
-
 2. **ROLE_CATALOG is the single source of truth.** All 14 agent roles (8 workers + 6 coordinators) are declared as frozen `RoleDefinition` dataclasses loaded from `templates/agents/*.md`. Topologies wire them together differently; the roles themselves never change.
-
 3. **One persistent role, rest are fresh.** `team-lead` resumes its Claude SDK session across iterations — it accumulates deep competition context in memory. Every other role starts fresh, ensuring clean context for each phase.
-
 4. **Read-only planning for the team-lead.** `team-lead` runs via `run_agent()` with a tool allowlist that restricts it to `Read`, `Glob`, `Grep`, `WebSearch`, and `Skill`. It produces its plan as structured JSON `{"plan", "approach_summary"}` via a JSON schema output constraint — no `Bash`, `Write`, or `Task` calls possible.
-
-5. **Artifact handshake, not free-text routing.** After each role completes it writes `.claude/EXPERIMENT_STATE.json`. The topology reads this structured JSON to determine what to do next — no parsing of conversation text.
-
+5. **Artifact handshake, not free-text routing.** After each role completes it writes the runtime state file configured by `RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH` in `gladius/config.py`. The topology reads this structured JSON to determine what to do next — no parsing of conversation text.
 6. **Orchestrator owns all state mutation.** Roles output structured JSON; the orchestrator acts on it. No role mutates `best_oof_score` directly. Improvement is always re-verified deterministically in Python, regardless of what the validator says.
-
 7. **On-demand skill loading.** Each active role carries pre-categorised skill hints. At startup it calls `mcp__skills-on-demand__search_skills` and loads a single best-match skill with `Skill({skill: "<name>"})`. No bulk injection; no per-turn latency once loaded.
-
 8. **CLAUDE.md as shared live context.** The orchestrator rewrites `CLAUDE.md` once per iteration. Every role reads it at session start via Claude Code project-context loading — no need to inject full state into every prompt.
-
 9. **Resilient resume.** State is saved to SQLite after every iteration. On resume, if `best_oof_score` was never flushed (e.g. validation crashed), it is recalibrated from experiment history. Three consecutive errors halt the run cleanly.
-
 10. **Structured output via `json_schema`.** Every role specifies a JSON schema in its task prompt. The topology verifies the output before acting on it — no bare `json.loads()` + exception handling.

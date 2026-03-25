@@ -29,6 +29,7 @@ mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "
 | --- | --- |
 | Feature recipes, leakage-safe aggregations, target encoding | `feature-engineering` |
 | Adversarial validation, distribution shift after new features | `validation` |
+| Code hygiene: remove dead code, keep function contracts honest | `coding-rules` |
 | Preprocessing pipelines, encoding, scaling recipes | `scikit-learn` |
 | Prune features, explain importance, debug model | `shap` |
 | Fast feature transforms on large datasets | `polars` |
@@ -86,7 +87,7 @@ Use Bash to **merge** your entry into the existing state — NEVER overwrite the
 ```bash
 python3 - <<'PY'
 import json, pathlib
-p = pathlib.Path('.claude/EXPERIMENT_STATE.json')
+p = pathlib.Path('{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}')
 state = json.loads(p.read_text()) if p.exists() else {}
 state['feature_engineer'] = {
     "status": "success",       # or "error" | "data_issue"

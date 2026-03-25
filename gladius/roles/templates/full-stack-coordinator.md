@@ -17,7 +17,7 @@ code — you sequence specialists, read their outputs, and decide what to do nex
 
 ## Startup (mandatory)
 1. Read the team-lead plan (from your prompt or `EXPERIMENT_STATE.json["team_lead"]`).
-2. Read `.claude/EXPERIMENT_STATE.json` — note which agents already have `"status": "success"`.
+2. Read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` — note which agents already have `"status": "success"`.
 3. Build your delegation queue using the decision table below.
 
 ## Delegation decision table

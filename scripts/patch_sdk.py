@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 TARGET = 'block["signature"]'
-REPLACEMENT = 'block.get("signature", "")'
+REPLACEMENT = 'block.get("signature", "ollama")'
 
 spec = importlib.util.find_spec("claude_agent_sdk")
 if spec is None:

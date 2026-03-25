@@ -4,7 +4,7 @@ Agent launcher — iterative competition loop.
 Each iteration:
   1. Renders CLAUDE.md from current CompetitionState.
   2. Runs the top-level coordinator agent (fresh session per iteration).
-  3. Reads .claude/EXPERIMENT_STATE.json to extract scores and update state.
+        3. Reads runtime EXPERIMENT_STATE.json to extract scores and update state.
   4. Stops when max_iterations reached, a stop sentinel is found, or
      3 consecutive agent errors occur.
 
@@ -21,6 +21,12 @@ from pathlib import Path
 from loguru import logger
 
 import gladius.claude_md as claude_md
+from gladius import (
+    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+    runtime_data_briefing_path,
+    runtime_experiment_state_path,
+)
 from gladius._orchestrator_helper import (
     MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS,
 )
@@ -41,6 +47,10 @@ def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
 
 # Files in artifacts/ that are intentionally reusable across iterations.
 _PERSISTENT_ARTIFACTS = {"best_params.json"}
+_MAX_REDISPATCH = int(
+    os.getenv("GLADIUS_MAX_REDISPATCH", 10)
+)  # Number of times to re-dispatch an iteration when pipeline incomplete.
+_MAX_STATE_SNIPPET_CHARS = 12000
 
 
 def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
@@ -88,7 +98,7 @@ def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
 
 def _update_state(state: CompetitionState, project_dir: Path) -> None:
     """Read EXPERIMENT_STATE.json written by agents and update CompetitionState."""
-    exp_path = project_dir / ".claude" / "EXPERIMENT_STATE.json"
+    exp_path = runtime_experiment_state_path(project_dir)
     if not exp_path.exists():
         return
 
@@ -160,7 +170,10 @@ def _update_state(state: CompetitionState, project_dir: Path) -> None:
 
 
 # Agents required to have status=success for an iteration to be considered complete.
-_REQUIRED_AGENTS = ("ml_engineer", "evaluator", "memory_keeper")
+# team_lead is required so coordinators cannot skip planning and jump straight to execution.
+# memory_keeper is excluded — it writes MEMORY.md, not EXPERIMENT_STATE.json, so including it
+# here would cause _incomplete_agents() to always return ["memory_keeper"] and redispatch forever.
+_REQUIRED_AGENTS = ("team_lead", "ml_engineer", "evaluator")
 
 
 def _incomplete_agents(exp_path: Path) -> list[str]:
@@ -176,6 +189,53 @@ def _incomplete_agents(exp_path: Path) -> list[str]:
         for k in _REQUIRED_AGENTS
         if not (isinstance(data.get(k), dict) and data[k].get("status") == "success")
     ]
+
+
+def _missing_scout_artifact(state: CompetitionState, project_dir: Path) -> bool:
+    """Scout is mandatory in iteration 1 unless briefing already exists."""
+    if state.iteration != 1:
+        return False
+    briefing_path = runtime_data_briefing_path(project_dir)
+    return not briefing_path.exists()
+
+
+def _read_experiment_state_snippet(exp_path: Path) -> str:
+    """Return a bounded EXPERIMENT_STATE.json snippet for re-dispatch prompts."""
+    if not exp_path.exists():
+        return "{}"
+    text = exp_path.read_text(encoding="utf-8")
+    if len(text) <= _MAX_STATE_SNIPPET_CHARS:
+        return text
+    return text[:_MAX_STATE_SNIPPET_CHARS] + "\n...<truncated>..."
+
+
+def _build_redispatch_prompt(
+    state: CompetitionState,
+    exp_path: Path,
+    incomplete: list[str],
+) -> str:
+    """Build a strict continuation prompt when coordinator exits early."""
+    state_text = _read_experiment_state_snippet(exp_path)
+    pending = ", ".join(incomplete)
+    return (
+        "You returned before this iteration pipeline was complete. Continue immediately.\n\n"
+        f"Iteration context: {state.iteration}/{state.max_iterations}, topology={state.topology}.\n"
+        f"Pending required agents (non-success): {pending}.\n\n"
+        f"Current `{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}`:\n"
+        f"```json\n{state_text}\n```\n\n"
+        "Required actions:\n"
+        "1. Start with a concise todo task list (3–7 bullets) and keep it updated while working.\n"
+        f"2. Read `{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}` first.\n"
+        "3. Dispatch only pending/failed specialists in correct topology order.\n"
+        "4. Skip any specialist already marked `status: success` unless upstream changes require rerun.\n"
+        f"5. If dispatching `team-lead`, require it to read `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}`, "
+        "latest EXPERIMENT_STATE_iter*.json, and current "
+        f"`{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}` "
+        "before suggesting the next iteration; team-lead is non-coding and must only return planning output.\n"
+        "6. For each downstream specialist, include the exact relevant section under "
+        "`## Your Instructions from the Team-Lead` verbatim.\n"
+        "7. Do not return until all required agents are success and memory-keeper is success."
+    )
 
 
 async def run_competition(
@@ -208,7 +268,7 @@ async def run_competition(
         state.iteration += 1
 
         # Archive EXPERIMENT_STATE from the previous iteration so agents start fresh
-        exp_path = project_dir / ".claude" / "EXPERIMENT_STATE.json"
+        exp_path = runtime_experiment_state_path(project_dir)
         if exp_path.exists():
             archive = exp_path.with_name(
                 f"EXPERIMENT_STATE_iter{state.iteration - 1}.json"
@@ -231,11 +291,17 @@ async def run_competition(
 
         kickoff = _make_kickoff_prompt(state)
 
+        # Reset consecutive error counter at the start of each iteration — the
+        # threshold is meant to stop a genuinely stuck run, not to penalise the
+        # next iteration for a previous one's transient failure.
+        state.consecutive_errors = 0
+
         # Agents that must reach status=success for the iteration to count.
         # If the orchestrator returns early (text response without finishing the
-        # pipeline), re-dispatch it up to 3 times with the current state.
-        _MAX_REDISPATCH = 3
+        # pipeline), re-dispatch it up to _MAX_REDISPATCH times with current state.
         prompt = kickoff
+        incomplete: list[str] = []
+        _iteration_error = False
         for _attempt in range(1 + _MAX_REDISPATCH):
             try:
                 _, _ = await run_agent(
@@ -250,21 +316,55 @@ async def run_competition(
                 state.consecutive_errors = 0
             except Exception as exc:
                 logger.error(f"Iteration {state.iteration} agent error: {exc}")
-                state.consecutive_errors += 1
+                # Check whether the pipeline completed despite the exception
+                # (e.g. a forbidden-tool violation detected post-hoc).
+                exp_path = runtime_experiment_state_path(project_dir)
+                incomplete = _incomplete_agents(exp_path)
+                if _missing_scout_artifact(state, project_dir):
+                    incomplete = ["scout", *incomplete]
+                if not incomplete:
+                    logger.warning(
+                        f"Iteration {state.iteration}: pipeline complete despite agent "
+                        f"error — not counting as failure."
+                    )
+                    state.error_log.append(
+                        {
+                            "iteration": state.iteration,
+                            "error": str(exc),
+                            "pipeline_complete": True,
+                        }
+                    )
+                    break
                 state.error_log.append(
-                    {"iteration": state.iteration, "error": str(exc)}
+                    {
+                        "iteration": state.iteration,
+                        "attempt": _attempt + 1,
+                        "error": str(exc),
+                    }
                 )
+                if _attempt < _MAX_REDISPATCH:
+                    logger.warning(
+                        f"Iteration {state.iteration}: agent error on attempt {_attempt + 1}/{_MAX_REDISPATCH + 1} "
+                        f"— re-dispatching. agents still pending: {incomplete}"
+                    )
+                    prompt = _build_redispatch_prompt(state, exp_path, incomplete)
+                    continue
+                # All redispatch attempts exhausted — count as one iteration failure.
+                state.consecutive_errors += 1
                 if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
                     logger.error(
                         f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
                     )
                     state.last_stop_reason = "consecutive_errors"
                     state.done = True
+                _iteration_error = True
                 break
 
             # Check whether the pipeline actually completed.
-            exp_path = project_dir / ".claude" / "EXPERIMENT_STATE.json"
+            exp_path = runtime_experiment_state_path(project_dir)
             incomplete = _incomplete_agents(exp_path)
+            if _missing_scout_artifact(state, project_dir):
+                incomplete = ["scout", *incomplete]
             if not incomplete:
                 break
             if _attempt < _MAX_REDISPATCH:
@@ -272,16 +372,26 @@ async def run_competition(
                     f"Iteration {state.iteration}: orchestrator returned early — "
                     f"agents still pending: {incomplete}. Re-dispatching (attempt {_attempt + 2}/{_MAX_REDISPATCH + 1})."
                 )
-                state_text = (
-                    exp_path.read_text(encoding="utf-8") if exp_path.exists() else "{}"
+                prompt = _build_redispatch_prompt(state, exp_path, incomplete)
+
+        if incomplete and not _iteration_error:
+            logger.error(
+                f"Iteration {state.iteration}: required agents still incomplete after "
+                f"{_MAX_REDISPATCH + 1} orchestrator attempt(s): {incomplete}"
+            )
+            state.consecutive_errors += 1
+            state.error_log.append(
+                {
+                    "iteration": state.iteration,
+                    "error": f"incomplete_pipeline: {incomplete}",
+                }
+            )
+            if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                logger.error(
+                    f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
                 )
-                prompt = (
-                    f"You returned before the pipeline was complete.\n"
-                    f"Current EXPERIMENT_STATE.json:\n```json\n{state_text}\n```\n\n"
-                    f"Agents still pending (null or non-success): {incomplete}.\n"
-                    "Dispatch them now in the correct topology order. "
-                    "Do NOT return until memory-keeper has status: success."
-                )
+                state.last_stop_reason = "consecutive_errors"
+                state.done = True
 
         _update_state(state, project_dir)
 
