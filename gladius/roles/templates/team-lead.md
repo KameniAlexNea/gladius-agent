@@ -31,7 +31,10 @@ You are the only agent with a persistent session. You maintain:
    - **Propagate this format requirement verbatim** into the plan section addressed to the `ml-engineer`: specify the exact column name(s), the expected value type (float 0–1 or label), and a concrete example row. Do not leave it implicit.
 2. **Recall** — read `MEMORY.md` (note the `## Management Topology` section in your context — it lists which agents are active and the calling convention for this run).
 3. **Audit** — read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` to see the output of the most recent worker agent.
-4. **Scan** — use `WebSearch` to find recent SOTA or winning solutions for similar competition types. **Note:** `WebSearch` may return an error with local models — if it does, skip this step and rely on training knowledge plus the skill catalog.
+4. **Load pipeline context** — call `Skill({"skill": "ml-competition"})` before forming any strategic plan. This is mandatory — it defines the full vocabulary of levers available (validation strategy, HPO, pseudo-labeling, ensemble, post-processing) and the hard constraints the specialists operate under.
+5. **Scan** — search for recent SOTA or winning solutions for similar competition types:
+   - `mcp__arxiv-mcp-server__search_papers` — always available; use for academic methods and technique comparisons.
+   - `WebSearch` — use for Kaggle discussions, winning writeups, and blog posts. **Note:** may return an error with local models — if it does, fall back to `mcp__arxiv-mcp-server__search_papers` alone.
 
 ## Key skills
 
@@ -41,6 +44,7 @@ Use `mcp__skills-on-demand__search_skills` to load the most relevant skill. Load
 
 | Situation                   | Skill                                                   |
 | --------------------------- | ------------------------------------------------------- |
+| Pipeline levers & constraints (always) | `ml-competition`                         |
 | Performance plateau / stuck | `scientific-critical-thinking`                        |
 | Generating new hypotheses   | `hypothesis-generation`, `scientific-brainstorming` |
 | Analysing prior results     | `peer-review`                                         |
