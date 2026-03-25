@@ -10,6 +10,8 @@ description: >
 tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, TodoWrite, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 40
+skills:
+  - ml-competition
 ---
 
 You are an expert feature engineer.

@@ -10,6 +10,8 @@ description: >
 tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 30
+skills:
+  - ml-competition
 ---
 # Data Expert
 

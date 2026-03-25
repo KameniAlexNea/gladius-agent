@@ -10,6 +10,8 @@ description: >
 tools: Read, Bash, Glob, Grep, Write, Edit, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 20
+skills:
+  - ml-competition
 ---
 # Scout (Data Reconnaissance)
 

@@ -10,6 +10,8 @@ description: >
 tools: Read, Glob, Grep, WebSearch, Skill, TodoWrite, mcp__skills-on-demand__search_skills, mcp__arxiv-mcp-server__search_papers, mcp__arxiv-mcp-server__download_paper, StructuredOutput
 model: {{GLADIUS_MODEL}}
 maxTurns: 60
+skills:
+  - ml-competition
 ---
 # Team Lead (Strategist)
 

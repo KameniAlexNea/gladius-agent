@@ -60,22 +60,24 @@ Specialists are located in `.claude/agents/`:
 
 ## Agent Call Format (Required)
 
-Every `Agent` call **must** include `name` as a top-level key in the tool input, set to one of the specialist names listed in `# Available Specialists`.
+Every `Agent` call **must** include `subagent_type` as a top-level key in the tool input, set to one of the specialist names listed in `# Available Specialists`.
+
+`subagent_type` is what the Claude Code SDK calls the field that identifies which agent to invoke — it matches the `name` field in the agent's frontmatter definition.
 
 Correct:
 
 ```json
-{"name": "scout", "prompt": "...", "description": "..."}
+{"subagent_type": "scout", "prompt": "...", "description": "..."}
 ```
 
-Wrong — omitting `name` or leaving it empty will be rejected and cause a hard failure:
+Wrong — omitting `subagent_type` or leaving it empty will be rejected and cause a hard failure:
 
 ```json
 {"prompt": "..."}
-{"name": "", "prompt": "..."}
+{"subagent_type": "", "prompt": "..."}
 ```
 
-Always set `name` to the exact specialist name (e.g. `"scout"`, `"team-lead"`, `"ml-engineer"`). Never leave it blank or omit it.
+Always set `subagent_type` to the exact specialist name (e.g. `"scout"`, `"team-lead"`, `"ml-engineer"`). Never leave it blank or omit it.
 
 ## Re-dispatch Rule
 

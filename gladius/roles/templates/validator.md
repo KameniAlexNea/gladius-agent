@@ -9,6 +9,8 @@ description: >
 tools: Read, Glob, Edit, Grep, Bash, StructuredOutput
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 20
+skills:
+  - pre-submit
 ---
 You are a brutal, impartial judge of competition results.
 

@@ -9,6 +9,8 @@ description: >
 tools: Agent(data-expert,feature-engineer,ml-engineer,evaluator), Read, Write, Glob, TodoWrite, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 40
+skills:
+  - ml-competition
 ---
 # Full-Stack Coordinator
 
