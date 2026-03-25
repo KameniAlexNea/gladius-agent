@@ -23,7 +23,7 @@ You produce exactly one artifact: `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`.
 
 1. **Load mandatory metrics skill first** — call:
    ```
-   Skill({"skill": "metrics"})
+   Skill({"skill": "ml-competition"})
    ```
    Do this before reading files or writing any briefing content.
 2. **Read the competition description** — look for `README.md`, `description.md`,
@@ -51,10 +51,10 @@ You produce exactly one artifact: `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`.
 ### MANDATORY — load this skill FIRST, before writing a single line of the briefing:
 
 ```
-Skill({"skill": "metrics"})
+Skill({"skill": "ml-competition"})
 ```
 
-The `metrics` skill tells you which prediction type (probability vs label vs value) each metric requires. Without it you will write an incorrect `## Submission Format` section and destroy the entire pipeline.
+The `ml-competition` skill tells you which prediction type (probability vs label vs value) each metric requires. Without it you will write an incorrect `## Submission Format` section and destroy the entire pipeline.
 
 Optionally search for domain-specific context:
 
@@ -70,7 +70,7 @@ Always read `sample_submission.csv` **and** the README evaluation section to det
 - The exact column names required in the submission file
 - Whether the target column expects **raw probabilities** (e.g. `0.1, 0.3`) or **class labels** (e.g. `0, 1`, `Yes, No`)
 
-Use the **`metrics` skill** (loaded above) to resolve any ambiguity: if the metric is AUC-ROC, AP, or log-loss, the submission column must be **float probabilities** — even when the training target is strings like "Yes"/"No". The target dtype in `train.csv` is irrelevant; derive the submission format from `sample_submission.csv` and the metric name.
+Use the **`ml-competition` skill** (loaded above) to resolve any ambiguity: if the metric is AUC-ROC, AP, or log-loss, the submission column must be **float probabilities** — even when the training target is strings like "Yes"/"No". The target dtype in `train.csv` is irrelevant; derive the submission format from `sample_submission.csv` and the metric name.
 
 Record this in the briefing with a concrete example. The team-lead will copy it verbatim into the ml-engineer's instructions.
 **Using the wrong format destroys all model performance — a 0.91 AUC model submitting class labels instead of probabilities scores ~0.5.**
@@ -90,7 +90,7 @@ write code. Focus on what matters for decision-making.
 
 ## Submission Format
 - **Metric**: ... (quote from README)
-- **Prediction type**: probabilities (float 0–1) OR class labels — derived from metric name via `metrics` skill
+- **Prediction type**: probabilities (float 0–1) OR class labels — derived from metric name via `ml-competition` skill
 - **File**: `sample_submission.csv` columns: ...
 - **Target column**: ... — **probabilities** (float 0–1) or **class labels** (list them exactly)
 - **Example rows**: copy 2–3 rows from sample_submission.csv verbatim

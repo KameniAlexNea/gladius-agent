@@ -31,7 +31,7 @@ Use `mcp__skills-on-demand__search_skills` to load the most relevant skill for t
 
 | When                                           | Skill                            |
 | ---------------------------------------------- | -------------------------------- |
-| Leakage, CV contamination, fold integrity      | `validation`                   |
+| Leakage, CV contamination, fold integrity      | `pre-submit`                   |
 | Distribution shift, KS tests, class imbalance  | `statistical-analysis`         |
 | Feature importance / leakage signal from model | `shap`                         |
 | Logical review of code structure               | `peer-review`                  |

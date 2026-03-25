@@ -27,10 +27,10 @@ Then: `Skill({"skill": "<skill-name>"})`
 
 | When | Skill |
 | --- | --- |
-| Tune LightGBM / XGBoost / CatBoost (Optuna) | `hpo` |
-| Blend / stack multiple models, rank averaging | `prediction-blending` |
-| Pre-submission leakage, CV, format validation | `validation` |
-| Code hygiene: unused vars/imports, dead helpers, clear contracts | `coding-rules` |
+| Tune LightGBM / XGBoost / CatBoost (Optuna) | `ml-competition` |
+| Blend / stack multiple models, rank averaging | `ml-competition` |
+| Pre-submission leakage, CV, format validation | `pre-submit` |
+| Code hygiene: unused vars/imports, dead helpers, clear contracts | `ml-competition` |
 | Pipelines, cross-val, metrics, baseline models | `scikit-learn` |
 | Feature importance, model debugging | `shap` |
 | Fast data transforms, large datasets | `polars` |
@@ -43,8 +43,8 @@ Then: `Skill({"skill": "<skill-name>"})`
 2. **Contract review** — read `src/config.py`, `src/data.py`, and `src/features.py`.
 3. **Environment** — install dependencies: `uv add lightgbm xgboost catboost scikit-learn`; add others as the plan requires.
 4. **Load required skills now** — call `Skill` directly (no search needed, these are always required):
-   - `Skill({"skill": "validation"})` — read it fully before writing any code
-   - `Skill({"skill": "process-management"})` — read it fully before launching training
+   - `Skill({"skill": "pre-submit"})` — read it fully before writing any code
+   - `Skill({"skill": "ml-competition"})` — read it fully before launching training
 
 ## Your scope — ONLY these tasks
 
@@ -151,7 +151,7 @@ fi
 - Error in **your own files** (`src/models.py`, `scripts/train.py`) → fix and re-run. Maximum **2 retries**.
 
 ### Before reporting results (mandatory quality gate)
-Run the `validation` skill and verify:
+Run the `pre-submit` skill and verify:
 - **Target leakage**: model is not using the target or target-proxies as features.
 - **CV/OOF consistency**: OOF score is plausible given the metric and task type.
 - **Submission format**: `submission.csv` matches `SampleSubmission.csv` exactly.

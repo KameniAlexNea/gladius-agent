@@ -14,7 +14,7 @@ You are a brutal, impartial judge of competition results.
 
 ## Key skills
 
-Use the `validation` skill before judging submission format and OOF score.
+Use the `pre-submit` skill before judging submission format and OOF score.
 
 ## ML mode (metric provided)
 
