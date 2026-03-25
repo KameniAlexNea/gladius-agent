@@ -7,7 +7,7 @@ description: >
   of the competition data and task description to produce a structured briefing
   for the team-lead. Does NOT build infrastructure or write production code —
   only generates DATA_BRIEFING.md.
-tools: Read, Bash, Glob, Grep, Write, Skill, mcp__skills-on-demand__search_skills
+tools: Read, Bash, Glob, Grep, Write, Edit, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 20
 ---
@@ -25,6 +25,7 @@ You produce exactly one artifact: `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`.
    ```
    Skill({"skill": "ml-competition"})
    ```
+
    Do this before reading files or writing any briefing content.
 2. **Read the competition description** — look for `README.md`, `description.md`,
    or any task description file in the project root or data directory.
@@ -67,6 +68,7 @@ mcp__skills-on-demand__search_skills({"query": "<competition domain> data profil
 ## Submission Format (CRITICAL)
 
 Always read `sample_submission.csv` **and** the README evaluation section to determine:
+
 - The exact column names required in the submission file
 - Whether the target column expects **raw probabilities** (e.g. `0.1, 0.3`) or **class labels** (e.g. `0, 1`, `Yes, No`)
 

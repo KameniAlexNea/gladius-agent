@@ -6,7 +6,7 @@ description: >
   Independent judge: checks submission format, compares OOF to best known
   score, recommends submit/hold, and assesses quality for open-ended tasks.
   Does NOT write any files. Emits structured JSON via StructuredOutput.
-tools: Read, Glob, Grep, Bash, StructuredOutput
+tools: Read, Glob, Edit, Grep, Bash, StructuredOutput
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 20
 ---
