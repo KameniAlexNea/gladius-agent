@@ -127,16 +127,14 @@ async def run_agent(
                                     delegated_tool_policies[block.id] = tools
                                     _pending_subagent_tools.append(tools)
                                 else:
-                                    forbidden_tool_error = (
+                                    msg = (
                                         f"[{agent_name}] Agent called without a valid "
                                         f"agent_name (got {subagent_type!r}). "
                                         f"You MUST pass agent_name as one of: {list(ROLES)}. "
                                         f"Example: Agent({{\"agent_name\": \"feature-engineer\", \"prompt\": \"...\"}})"
                                     )
-                                    logger.error(forbidden_tool_error)
-                                    # Lock out ALL tools for this sub-agent so
-                                    # nothing slips through via the fallback path.
-                                    delegated_tool_policies[block.id] = []
+                                    logger.error(msg)
+                                    raise RuntimeError(msg)
 
                             effective_allowed_tools = allowed_tools
                             policy_label = f"allowed_tools={allowed_tools}"
