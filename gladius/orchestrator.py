@@ -32,6 +32,7 @@ from gladius._orchestrator_helper import (
 )
 from gladius._orchestrator_helper import SYSTEM_PROMPT as _SYSTEM_PROMPT
 from gladius._orchestrator_helper import TOP_LEVEL_TOOLS as _TOP_LEVEL_TOOLS
+from gladius._orchestrator_helper import DEFAULT_MAX_TURNS as _DEFAULT_MAX_TURNS
 from gladius._orchestrator_helper import make_kickoff_prompt as _make_kickoff_prompt
 from gladius.project_setup import load_competition_config
 from gladius.roles.agent_runner import run_agent
@@ -311,7 +312,8 @@ async def run_competition(
                     allowed_tools=_TOP_LEVEL_TOOLS,
                     output_schema=None,
                     cwd=str(project_dir),
-                    max_turns=max_turns,
+                    max_turns=max_turns or _DEFAULT_MAX_TURNS,
+                    max_retries=_MAX_CONSECUTIVE_ERRORS
                 )
                 state.consecutive_errors = 0
             except Exception as exc:

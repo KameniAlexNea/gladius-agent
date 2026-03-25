@@ -10,6 +10,12 @@ from gladius.state import CompetitionState
 
 _SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" /  "orchestrator_system_prompt.md"
 
+# Default turn budget for the top-level orchestrator agent.
+# Each Agent dispatch consumes at least 2 turns (call + result), so dispatching
+# scout + team-lead + 3 specialists + validator + memory-keeper needs ~20 turns minimum.
+# Override with GLADIUS_MAX_TURNS env var.
+DEFAULT_MAX_TURNS = int(os.getenv("GLADIUS_MAX_TURNS", "50"))
+
 
 def _load_system_prompt() -> str:
     """Load and validate the coordinator system prompt markdown."""
