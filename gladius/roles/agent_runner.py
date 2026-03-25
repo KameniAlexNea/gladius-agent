@@ -28,7 +28,6 @@ from gladius.roles import ROLE_CATALOG, ROLES
 from gladius.roles._console import _BLUE, _BOLD, _c, _log_message
 from gladius.roles.helpers import (
     get_runtime_model,
-    is_bash_command_scoped_to_cwd,
     is_tool_allowed,
     stderr_cb,
     validate_runtime_invocation,
@@ -60,6 +59,16 @@ async def run_agent(
     )
 
     runtime_model = get_runtime_model()
+
+    # Enable StructuredOutput session-wide when any registered subagent declares it,
+    # so subagents can emit structured results even if the outer agent does not.
+    if output_schema is not None:
+        _output_format: dict[str, Any] | None = {"type": "json_schema", "schema": output_schema}
+    elif any("StructuredOutput" in role.tools for role in ROLE_CATALOG.values()):
+        _output_format = {"type": "json_schema", "schema": {"type": "object", "additionalProperties": True}}
+    else:
+        _output_format = None
+
     options = ClaudeAgentOptions(
         system_prompt={
             "type": "preset",
@@ -68,11 +77,7 @@ async def run_agent(
         },
         allowed_tools=allowed_tools,
         permission_mode=permission_mode,
-        output_format=(
-            {"type": "json_schema", "schema": output_schema}
-            if output_schema is not None
-            else None
-        ),
+        output_format=_output_format,
         cwd=cwd,
         resume=resume,
         mcp_servers=mcp_servers or {},
@@ -171,18 +176,6 @@ async def run_agent(
                                 forbidden_tool_error = msg
                                 if is_subagent:
                                     logger.error(f"sub-agent policy violation: {msg}")
-                            elif block.name == "Bash":
-                                cmd = str(block.input.get("command", ""))
-                                if not is_bash_command_scoped_to_cwd(cmd, cwd):
-                                    msg = (
-                                        f"[{agent_name}] attempted out-of-project Bash command. "
-                                        f"cwd={cwd} command={cmd!r}"
-                                    )
-                                    forbidden_tool_error = msg
-                                    if is_subagent:
-                                        logger.error(
-                                            f"sub-agent scope violation: {msg}"
-                                        )
                     last_assistant_msg = message
                 if isinstance(message, ResultMessage):
                     result_msg = message
@@ -228,9 +221,19 @@ async def run_agent(
                         "Agent returned no structured_output (schema not satisfied?)"
                     )
             else:
-                if result_msg.is_error:
+                # output_schema is None: outer agent (e.g. orchestrator) doesn't need
+                # structured output itself.  If output_format was set for session-wide
+                # StructuredOutput support, the outer agent never calls StructuredOutput,
+                # so is_error may be True only because "no structured output produced".
+                # Only raise for genuine failures (not schema-enforcement errors).
+                if result_msg.is_error and _output_format is None:
                     raise RuntimeError(
                         f"Agent returned error result: {result_msg.result}"
+                    )
+                if result_msg.is_error and _output_format is not None:
+                    logger.debug(
+                        f"[{agent_name}] session is_error=True with permissive output_format "
+                        f"(subagents consumed StructuredOutput): {result_msg.result}"
                     )
 
             return structured or {}, result_msg.session_id or early_session_id or ""

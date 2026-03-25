@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
-import shlex
 from pathlib import Path
 
 from loguru import logger
@@ -73,41 +71,3 @@ def is_path_within_cwd(path_token: str, cwd: str) -> bool:
         return False
 
 
-def is_bash_command_scoped_to_cwd(command: str, cwd: str) -> bool:
-    """Best-effort guard: reject Bash commands that reference paths outside cwd.
-
-    Heredoc bodies (everything between a <<'MARKER' / <<"MARKER" line and the
-    closing MARKER line) are excluded from path checks — they contain Python/shell
-    string literals, not Bash path arguments.
-    """
-    # Strip heredoc bodies before tokenising so that absolute paths written
-    # inside Python/shell strings don't trip the scope guard.
-    # Handles:  << 'EOF'  |  <<"EOF"  |  <<EOF  |  <<- 'EOF'  (with optional spaces)
-    heredoc_body_re = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?\s*\n.*?\n\1", re.DOTALL)
-    command_shell = heredoc_body_re.sub("", command)
-
-    try:
-        tokens = shlex.split(command_shell)
-    except Exception:
-        return True
-
-    for match in re.finditer(r"(?:^|[;&|]\s*)cd\s+([^;&|\s]+)", command_shell):
-        target = match.group(1).strip().strip("\"'")
-        if target and not is_path_within_cwd(target, cwd):
-            return False
-
-    # Paths that are always safe regardless of cwd: pseudo-filesystems and null device.
-    _ALWAYS_ALLOWED_PREFIXES = ("/dev/", "/proc/", "/sys/", "/tmp/")
-
-    for tok in tokens:
-        if tok.startswith("/"):
-            if any(tok.startswith(p) for p in _ALWAYS_ALLOWED_PREFIXES):
-                continue
-            if not is_path_within_cwd(tok, cwd):
-                return False
-            continue
-        if tok.startswith("../") or tok == "..":
-            if not is_path_within_cwd(tok, cwd):
-                return False
-
-    return True

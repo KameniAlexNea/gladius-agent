@@ -11,7 +11,7 @@ import re
 import sys  # noqa: E402
 from dataclasses import dataclass
 from pathlib import Path
-
+from claude_agent_sdk import AgentDefinition
 from gladius import (
     RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
     RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
@@ -37,7 +37,7 @@ ROLES = (
 
 
 @dataclass(frozen=True)
-class RoleDefinition:
+class RoleDefinition(AgentDefinition):
     name: str
     session: str  # "persistent" | "fresh"
     description: str
