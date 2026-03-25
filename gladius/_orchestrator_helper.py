@@ -5,11 +5,11 @@ from gladius import (
     RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
     TEAM_LEAD_MEMORY_RELATIVE_PATH,
 )
-from gladius.config import MAX_TURNS as DEFAULT_MAX_TURNS
-from gladius.config import MAX_CONSECUTIVE_ERRORS
 from gladius.state import CompetitionState
 
-_SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" /  "orchestrator_system_prompt.md"
+_SYSTEM_PROMPT_PATH = (
+    Path(__file__).parent / "prompts" / "orchestrator_system_prompt.md"
+)
 
 
 def _load_system_prompt() -> str:

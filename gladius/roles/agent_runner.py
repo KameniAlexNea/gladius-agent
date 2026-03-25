@@ -63,9 +63,15 @@ async def run_agent(
     # Enable StructuredOutput session-wide when any registered subagent declares it,
     # so subagents can emit structured results even if the outer agent does not.
     if output_schema is not None:
-        _output_format: dict[str, Any] | None = {"type": "json_schema", "schema": output_schema}
+        _output_format: dict[str, Any] | None = {
+            "type": "json_schema",
+            "schema": output_schema,
+        }
     elif any("StructuredOutput" in role.tools for role in ROLE_CATALOG.values()):
-        _output_format = {"type": "json_schema", "schema": {"type": "object", "additionalProperties": True}}
+        _output_format = {
+            "type": "json_schema",
+            "schema": {"type": "object", "additionalProperties": True},
+        }
     else:
         _output_format = None
 
@@ -126,9 +132,7 @@ async def run_agent(
                                     or ""
                                 )
                                 if subagent_type in ROLE_CATALOG:
-                                    tools = list(
-                                        ROLE_CATALOG[subagent_type].tools
-                                    )
+                                    tools = list(ROLE_CATALOG[subagent_type].tools)
                                     delegated_tool_policies[block.id] = tools
                                     _pending_subagent_tools.append(tools)
                                     continue  # delegation validated; skip generic tool-policy check
@@ -137,7 +141,7 @@ async def run_agent(
                                         f"[{agent_name}] Agent called without a valid "
                                         f"subagent_type (got {subagent_type!r}). "
                                         f"You MUST pass subagent_type as one of: {list(ROLES)}. "
-                                        f"Example: Agent({{\"subagent_type\": \"feature-engineer\", \"prompt\": \"...\"}})"
+                                        f'Example: Agent({{"subagent_type": "feature-engineer", "prompt": "..."}})'
                                     )
                                     logger.error(msg)
                                     forbidden_tool_error = msg

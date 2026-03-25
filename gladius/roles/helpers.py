@@ -69,5 +69,3 @@ def is_path_within_cwd(path_token: str, cwd: str) -> bool:
         return True
     except Exception:
         return False
-
-
