@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 from gladius import (
@@ -6,15 +5,11 @@ from gladius import (
     RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
     TEAM_LEAD_MEMORY_RELATIVE_PATH,
 )
+from gladius.config import MAX_TURNS as DEFAULT_MAX_TURNS
+from gladius.config import MAX_CONSECUTIVE_ERRORS
 from gladius.state import CompetitionState
 
 _SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" /  "orchestrator_system_prompt.md"
-
-# Default turn budget for the top-level orchestrator agent.
-# Each Agent dispatch consumes at least 2 turns (call + result), so dispatching
-# scout + team-lead + 3 specialists + validator + memory-keeper needs ~20 turns minimum.
-# Override with GLADIUS_MAX_TURNS env var.
-DEFAULT_MAX_TURNS = int(os.getenv("GLADIUS_MAX_TURNS", "50"))
 
 
 def _load_system_prompt() -> str:
@@ -52,8 +47,6 @@ TOP_LEVEL_TOOLS = [
     "TodoWrite",
     "Agent",
 ]
-
-MAX_CONSECUTIVE_ERRORS = int(os.getenv("GLADIUS_MAX_CONSECUTIVE_ERRORS", 10))
 
 
 _TOPOLOGY_FIRST_STEP: dict[str, str] = {

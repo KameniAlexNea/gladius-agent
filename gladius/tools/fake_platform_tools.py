@@ -18,13 +18,14 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from gladius.config import FAKE_ANSWERS_PATH as _FAKE_ANSWERS_PATH
+from gladius.config import FAKE_PLATFORM_DIR as _FAKE_PLATFORM_DIR
 from gladius.tools._response import err as _err
 from gladius.tools._response import ok as _ok
 
@@ -39,11 +40,11 @@ _FAKE_LEADERBOARD = [
 
 
 def _answers_path() -> Path:
-    return Path(os.getenv("FAKE_ANSWERS_PATH", "data/.answers.csv"))
+    return Path(_FAKE_ANSWERS_PATH)
 
 
 def _platform_dir() -> Path:
-    d = Path(os.getenv("FAKE_PLATFORM_DIR", ".fake_platform"))
+    d = Path(_FAKE_PLATFORM_DIR)
     d.mkdir(parents=True, exist_ok=True)
     return d
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 GLADIUS_DIRNAME = ".gladius"
@@ -51,3 +52,16 @@ def team_lead_memory_path(project_dir: str | Path) -> Path:
 
 def state_db_path(project_dir: str | Path) -> Path:
     return gladius_workspace_path(project_dir) / STATE_DB_FILENAME
+
+
+# ── Runtime tuning (env-configurable) ─────────────────────────────────────────
+
+MAX_TURNS: int = int(os.getenv("GLADIUS_MAX_TURNS", "50"))
+MAX_CONSECUTIVE_ERRORS: int = int(os.getenv("GLADIUS_MAX_CONSECUTIVE_ERRORS", "10"))
+MAX_REDISPATCH: int = int(os.getenv("GLADIUS_MAX_REDISPATCH", "10"))
+SCIENTIFIC_SKILLS_PATH: str = os.getenv("GLADIUS_SCIENTIFIC_SKILLS_PATH", "").strip()
+
+# ── Test / fake-platform (dev only) ───────────────────────────────────────────
+
+FAKE_ANSWERS_PATH: str = os.getenv("FAKE_ANSWERS_PATH", "data/.answers.csv")
+FAKE_PLATFORM_DIR: str = os.getenv("FAKE_PLATFORM_DIR", ".fake_platform")
