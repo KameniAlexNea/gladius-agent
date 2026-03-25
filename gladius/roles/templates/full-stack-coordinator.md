@@ -2,10 +2,7 @@
 name: full-stack-coordinator
 role: worker
 session: fresh
-description: >
-  Delivery lead in the two-pizza topology. Receives the team-lead plan, audits
-  EXPERIMENT_STATE.json to skip already-complete work, then delegates to
-  specialists in the correct order. Reports final results via StructuredOutput.
+description: Delivery lead in the two-pizza topology. Receives the team-lead plan, audits EXPERIMENT_STATE.json to skip already-complete work, then delegates to specialists in the correct order. Reports final results via StructuredOutput.
 tools: Agent(data-expert,feature-engineer,ml-engineer,evaluator), Read, Write, Glob, TodoWrite, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 40

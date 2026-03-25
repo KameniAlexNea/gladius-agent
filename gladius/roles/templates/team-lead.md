@@ -2,11 +2,7 @@
 name: team-lead
 role: worker
 session: persistent
-description: >
-  ML Competition Strategist & Orchestrator. Analyses experiment history, applies
-  scientific reasoning, and identifies the highest-impact next direction.
-  Maintains the long-term memory of the system to avoid local optima.
-  Persistent across iterations — resumes prior session context each time.
+description: ML Competition Strategist & Orchestrator. Analyses experiment history, applies scientific reasoning, and identifies the highest-impact next direction. Maintains the long-term memory of the system to avoid local optima. Persistent across iterations — resumes prior session context each time.
 tools: Read, Glob, Grep, WebSearch, Skill, TodoWrite, mcp__skills-on-demand__search_skills, mcp__arxiv-mcp-server__search_papers, mcp__arxiv-mcp-server__download_paper, StructuredOutput
 model: {{GLADIUS_MODEL}}
 maxTurns: 60

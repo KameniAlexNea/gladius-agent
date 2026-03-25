@@ -2,11 +2,7 @@
 name: scout
 role: worker
 session: fresh
-description: >
-  Data Reconnaissance & Task Intelligence. Performs fast, read-heavy exploration
-  of the competition data and task description to produce a structured briefing
-  for the team-lead. Does NOT build infrastructure or write production code —
-  only generates DATA_BRIEFING.md.
+description: Data Reconnaissance & Task Intelligence. Performs fast, read-heavy exploration of the competition data and task description to produce a structured briefing for the team-lead. Does NOT build infrastructure or write production code — only generates DATA_BRIEFING.md.
 tools: Read, Bash, Glob, Grep, Write, Edit, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 20

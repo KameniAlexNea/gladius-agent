@@ -2,11 +2,7 @@
 name: feature-engineer
 role: worker
 session: fresh
-description: >
-  Feature Engineering Specialist. Implements high-impact, leakage-safe feature
-  transforms (encoding, numerics, temporal, interactions, aggregations) on top of
-  an established baseline. Prunes with SHAP. Owns src/features.py and the numeric
-  output contract for the ml-engineer. Writes status to EXPERIMENT_STATE.json.
+description: Feature Engineering Specialist. Implements high-impact, leakage-safe feature transforms (encoding, numerics, temporal, interactions, aggregations) on top of an established baseline. Prunes with SHAP. Owns src/features.py and the numeric output contract for the ml-engineer. Writes status to EXPERIMENT_STATE.json.
 tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, TodoWrite, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 40

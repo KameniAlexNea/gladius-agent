@@ -2,10 +2,7 @@
 name: ml-engineer
 role: worker
 session: fresh
-description: >
-  ML Pipeline Engineer. Implements model architecture, CV loops, OOF collection,
-  and submission generation. Consumes the numeric feature contract from feature-engineer.
-  Owns src/models.py and scripts/train.py. Writes status + OOF score to EXPERIMENT_STATE.json.
+description: ML Pipeline Engineer. Implements model architecture, CV loops, OOF collection, and submission generation. Consumes the numeric feature contract from feature-engineer. Owns src/models.py and scripts/train.py. Writes status + OOF score to EXPERIMENT_STATE.json.
 tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, TodoWrite, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 80

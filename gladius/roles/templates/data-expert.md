@@ -2,11 +2,7 @@
 name: data-expert
 role: worker
 session: fresh
-description: >
-  ML Data Architecture & Profiling. Sets up the project scaffold, defines the
-  data contract, performs rigorous data profiling (leakage, drift, distributions,
-  class imbalance), and initialises src/ (config, data).
-  Writes status to EXPERIMENT_STATE.json.
+description: ML Data Architecture & Profiling. Sets up the project scaffold, defines the data contract, performs rigorous data profiling (leakage, drift, distributions, class imbalance), and initialises src/ (config, data). Writes status to EXPERIMENT_STATE.json.
 tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 30

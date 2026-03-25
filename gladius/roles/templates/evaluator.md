@@ -2,11 +2,7 @@
 name: evaluator
 role: worker
 session: fresh
-description: >
-  Verifies the training pipeline completed successfully, re-computes the OOF
-  score independently from artifacts, and sanity-checks outputs. Never retrains.
-  Reports missing or invalid artifacts as errors for the coordinator to handle.
-  Writes evaluator status and oof_score to EXPERIMENT_STATE.json.
+description: Verifies the training pipeline completed successfully, re-computes the OOF score independently from artifacts, and sanity-checks outputs. Never retrains. Reports missing or invalid artifacts as errors for the coordinator to handle. Writes evaluator status and oof_score to EXPERIMENT_STATE.json.
 tools: Read, Write, Bash, Glob, Grep, StructuredOutput
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 15
