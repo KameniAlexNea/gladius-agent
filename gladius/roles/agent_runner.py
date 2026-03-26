@@ -18,6 +18,7 @@ from claude_agent_sdk._errors import MessageParseError
 from claude_agent_sdk.types import (
     AssistantMessage,
     SystemMessage,
+    TaskStartedMessage,
     TextBlock,
     ToolUseBlock,
 )
@@ -40,6 +41,43 @@ class ToolPermissionError(RuntimeError):
 
 class AgentDispatchError(RuntimeError):
     """Raised when delegation metadata is invalid or missing."""
+
+
+def _extract_session_id_from_system_message(message: SystemMessage) -> str | None:
+    """Return session id from an init system message when present and valid."""
+    if message.subtype != "init" or not isinstance(message.data, dict):
+        return None
+    session_id = message.data.get("session_id")
+    if isinstance(session_id, str) and session_id:
+        return session_id
+    return None
+
+
+def _register_subagent_policy_from_task_start(
+    *,
+    agent_name: str,
+    message: TaskStartedMessage,
+    delegated_tool_policies: dict[str, list[str]],
+    pending_subagent_tools: collections.deque[list[str]],
+) -> None:
+    """Bind subagent tool policy using TaskStartedMessage emitter metadata."""
+    if message.task_type != "local_agent":
+        return
+
+    tool_use_id = message.tool_use_id
+    if not isinstance(tool_use_id, str) or not tool_use_id:
+        return
+    if tool_use_id in delegated_tool_policies:
+        return
+    if not pending_subagent_tools:
+        return
+
+    delegated = pending_subagent_tools.popleft()
+    delegated_tool_policies[tool_use_id] = delegated
+    logger.debug(
+        f"[{agent_name}] mapped local_agent task tool_use_id "
+        f"{tool_use_id!r} to delegated policy {delegated!r} via TaskStartedMessage."
+    )
 
 
 def _extract_subagent_type(block_input: dict[str, Any]) -> str:
@@ -260,8 +298,19 @@ async def run_agent(
             async for message in query(prompt=prompt, options=options):
                 if verbose:
                     _log_message(agent_name, message)
-                if isinstance(message, SystemMessage) and message.subtype == "init":
-                    early_session_id = message.data.get("session_id")
+                if isinstance(message, SystemMessage):
+                    session_id = _extract_session_id_from_system_message(message)
+                    if session_id:
+                        early_session_id = session_id
+                if isinstance(message, TaskStartedMessage):
+                    if isinstance(message.session_id, str) and message.session_id:
+                        early_session_id = message.session_id
+                    _register_subagent_policy_from_task_start(
+                        agent_name=agent_name,
+                        message=message,
+                        delegated_tool_policies=delegated_tool_policies,
+                        pending_subagent_tools=_pending_subagent_tools,
+                    )
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, ToolUseBlock):

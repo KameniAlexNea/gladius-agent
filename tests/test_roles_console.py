@@ -54,6 +54,28 @@ class _Result:
         self.duration_ms = 100
 
 
+class _TaskStarted:
+    def __init__(self, task_id="t1", description="desc", task_type="local_agent"):
+        self.task_id = task_id
+        self.description = description
+        self.task_type = task_type
+
+
+class _TaskProgress:
+    def __init__(self, task_id="t1", description="working", last_tool_name="Read"):
+        self.task_id = task_id
+        self.description = description
+        self.usage = {"total_tokens": 12}
+        self.last_tool_name = last_tool_name
+
+
+class _TaskNotification:
+    def __init__(self, task_id="t1", status="completed", summary="done"):
+        self.task_id = task_id
+        self.status = status
+        self.summary = summary
+
+
 def test_fmt_helpers():
     assert "a" in c._fmt_input({"a": 1})
     assert c._fmt_result(None) == "(empty)"
@@ -71,6 +93,13 @@ def test_log_message_branches(monkeypatch):
     monkeypatch.setattr(c, "ThinkingBlock", _Thinking)
     monkeypatch.setattr(c, "ToolUseBlock", _ToolUse)
     monkeypatch.setattr(c, "ToolResultBlock", _ToolResult)
+    monkeypatch.setattr(c, "TaskStartedMessage", _TaskStarted)
+    monkeypatch.setattr(c, "TaskProgressMessage", _TaskProgress)
+    monkeypatch.setattr(c, "TaskNotificationMessage", _TaskNotification)
+
+    c._log_message("a", _TaskStarted(task_type="local_agent", description="subtask"))
+    c._log_message("a", _TaskProgress(last_tool_name="Bash"))
+    c._log_message("a", _TaskNotification(status="failed", summary="x"))
 
     c._log_message("a", _System("init", {"session_id": "abc123"}))
     c._log_message(

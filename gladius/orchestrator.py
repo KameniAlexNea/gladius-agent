@@ -399,9 +399,14 @@ async def run_competition(
         incomplete: list[str] = []
         _iteration_error = False
         for _attempt in range(1 + _MAX_REDISPATCH):
+            attempt_no = _attempt + 1
+            total_attempts = _MAX_REDISPATCH + 1
+            logger.info(
+                f"Iteration {state.iteration}: orchestrator attempt {attempt_no}/{total_attempts}"
+            )
             try:
                 with langsmith_tracing_context(langsmith_client, langsmith_project):
-                    _, _ = await run_agent(
+                    _, session_id = await run_agent(
                         agent_name="gladius",
                         prompt=prompt,
                         system_prompt=_SYSTEM_PROMPT,
@@ -410,6 +415,10 @@ async def run_competition(
                         cwd=str(project_dir),
                         max_turns=max_turns or _DEFAULT_MAX_TURNS,
                         max_retries=_MAX_CONSECUTIVE_ERRORS,
+                    )
+                if session_id:
+                    logger.info(
+                        f"Iteration {state.iteration}: orchestrator session={session_id[:12]}…"
                     )
                 state.consecutive_errors = 0
             except Exception as exc:
@@ -442,7 +451,7 @@ async def run_competition(
                 )
                 if _attempt < _MAX_REDISPATCH:
                     logger.warning(
-                        f"Iteration {state.iteration}: agent error on attempt {_attempt + 1}/{_MAX_REDISPATCH + 1} "
+                        f"Iteration {state.iteration}: agent error on attempt {attempt_no}/{total_attempts} "
                         f"— re-dispatching. agents still pending: {incomplete}"
                     )
                     prompt = _build_redispatch_prompt(state, exp_path, incomplete)
@@ -468,7 +477,7 @@ async def run_competition(
             if _attempt < _MAX_REDISPATCH:
                 logger.warning(
                     f"Iteration {state.iteration}: orchestrator returned early — "
-                    f"agents still pending: {incomplete}. Re-dispatching (attempt {_attempt + 2}/{_MAX_REDISPATCH + 1})."
+                    f"agents still pending: {incomplete}. Re-dispatching (attempt {attempt_no + 1}/{total_attempts})."
                 )
                 prompt = _build_redispatch_prompt(state, exp_path, incomplete)
 

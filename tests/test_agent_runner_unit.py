@@ -41,6 +41,13 @@ class _FakeResultMessage:
         self.session_id = session_id
 
 
+class _FakeTaskStartedMessage:
+    def __init__(self, task_type: str, tool_use_id: str | None, session_id: str = ""):
+        self.task_type = task_type
+        self.tool_use_id = tool_use_id
+        self.session_id = session_id
+
+
 class _FakeProcessError(Exception):
     def __init__(self, stderr: str = ""):
         super().__init__(stderr)
@@ -53,6 +60,7 @@ def _patch_runtime(monkeypatch):
     monkeypatch.setattr(ar, "ClaudeAgentOptions", lambda **kwargs: kwargs)
     monkeypatch.setattr(ar, "SystemMessage", _FakeSystemMessage)
     monkeypatch.setattr(ar, "AssistantMessage", _FakeAssistantMessage)
+    monkeypatch.setattr(ar, "TaskStartedMessage", _FakeTaskStartedMessage)
     monkeypatch.setattr(ar, "ResultMessage", _FakeResultMessage)
     monkeypatch.setattr(ar, "ToolUseBlock", _FakeToolUseBlock)
     monkeypatch.setattr(ar, "TextBlock", _FakeTextBlock)
@@ -64,6 +72,46 @@ def test_extract_subagent_type_aliases():
     assert ar._extract_subagent_type({"agent": "x"}) == "x"
     assert ar._extract_subagent_type({"name": "x"}) == "x"
     assert ar._extract_subagent_type({}) == ""
+
+
+def test_extract_session_id_from_system_message_guarded_type():
+    assert ar._extract_session_id_from_system_message(_FakeSystemMessage("init", {})) is None
+    assert (
+        ar._extract_session_id_from_system_message(
+            _FakeSystemMessage("init", {"session_id": "abc"})
+        )
+        == "abc"
+    )
+
+
+def test_register_subagent_policy_from_task_start_local_agent():
+    delegated: dict[str, list[str]] = {}
+    pending = ar.collections.deque([["Read", "Write"]])
+    ar._register_subagent_policy_from_task_start(
+        agent_name="a",
+        message=_FakeTaskStartedMessage(
+            task_type="local_agent", tool_use_id="tu_123", session_id="sid"
+        ),
+        delegated_tool_policies=delegated,
+        pending_subagent_tools=pending,
+    )
+    assert delegated["tu_123"] == ["Read", "Write"]
+    assert not pending
+
+
+def test_register_subagent_policy_from_task_start_ignores_non_agent():
+    delegated: dict[str, list[str]] = {}
+    pending = ar.collections.deque([["Read", "Write"]])
+    ar._register_subagent_policy_from_task_start(
+        agent_name="a",
+        message=_FakeTaskStartedMessage(
+            task_type="local_bash", tool_use_id="tu_123", session_id="sid"
+        ),
+        delegated_tool_policies=delegated,
+        pending_subagent_tools=pending,
+    )
+    assert delegated == {}
+    assert pending
 
 
 def test_parse_structured_from_assistant_text_returns_dict(monkeypatch):

@@ -13,6 +13,9 @@ from claude_agent_sdk import ResultMessage
 from claude_agent_sdk.types import (
     AssistantMessage,
     SystemMessage,
+    TaskNotificationMessage,
+    TaskProgressMessage,
+    TaskStartedMessage,
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -84,9 +87,48 @@ _TODO_ICON = {"completed": "✅", "in_progress": "🔧", "pending": "⬜"}
 def _log_message(agent_name: str, message: Any) -> None:
     """Pretty-print a single SDK message to stdout."""
 
+    if isinstance(message, TaskStartedMessage):
+        task_type = (message.task_type or "unknown").strip() or "unknown"
+        label = {
+            "local_agent": "subagent",
+            "local_bash": "bash",
+            "remote_agent": "remote-agent",
+        }.get(task_type, task_type)
+        desc = (message.description or "").strip()
+        if len(desc) > 90:
+            desc = desc[:90] + "…"
+        logger.debug(
+            _c(_GREY, f"  🚀 [{agent_name}] task:{label} id={message.task_id[:10]}…")
+            + (_c(_DIM, f"  {desc}") if desc else "")
+        )
+        return
+
+    if isinstance(message, TaskProgressMessage):
+        usage = message.usage or {}
+        total_tokens = usage.get("total_tokens")
+        token_str = f"  tokens={total_tokens}" if isinstance(total_tokens, int) else ""
+        tool = (message.last_tool_name or "").strip()
+        tool_str = f"  last_tool={tool}" if tool else ""
+        logger.debug(
+            _c(_GREY, f"  ⏳ [{agent_name}] task id={message.task_id[:10]}…")
+            + _c(_DIM, f"  {message.description}")
+            + _c(_DIM, token_str + tool_str)
+        )
+        return
+
+    if isinstance(message, TaskNotificationMessage):
+        status_icon = "✅" if message.status == "completed" else "⚠"
+        status_color = _GREEN if message.status == "completed" else _RED
+        logger.debug(
+            _c(status_color, f"  {status_icon} [{agent_name}] task {message.status}")
+            + _c(_DIM, f"  id={message.task_id[:10]}…")
+            + (_c(_DIM, f"  {message.summary}") if message.summary else "")
+        )
+        return
+
     if isinstance(message, SystemMessage):
-        if message.subtype == "init":
-            sid = message.data.get("session_id", "?")
+        if message.subtype == "init" and isinstance(message.data, dict):
+            sid = str(message.data.get("session_id", "?"))
             logger.debug(_c(_GREY, f"  🔑 [{agent_name}] session={sid[:16]}…"))
 
     elif isinstance(message, AssistantMessage):
