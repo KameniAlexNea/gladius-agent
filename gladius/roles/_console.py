@@ -6,6 +6,7 @@ Imported by agent_runner; nothing outside src.roles should need this.
 """
 
 import json
+import os
 import re
 import textwrap
 from typing import Any
@@ -43,6 +44,11 @@ _SENSITIVE_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 _SENSITIVE_VALUE_RE = re.compile(r"(sk-[A-Za-z0-9_-]{10,}|Bearer\s+[A-Za-z0-9._-]{10,})")
+
+
+def _stream_event_logging_enabled() -> bool:
+    raw = os.getenv("GLADIUS_LOG_STREAM_EVENTS", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def _c(color: str, text: str) -> str:
@@ -117,6 +123,8 @@ def _log_message(agent_name: str, message: Any) -> None:
     """Pretty-print a single SDK message to stdout."""
 
     if isinstance(message, StreamEvent):
+        if not _stream_event_logging_enabled():
+            return
         event_type = str(message.event.get("type", "partial")).strip() or "partial"
         logger.debug(
             _c(_GREY, f"  📡 [{agent_name}] stream={event_type}")

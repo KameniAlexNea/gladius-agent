@@ -92,6 +92,9 @@ def langsmith_tracing_context_with_metadata(
 ):
     """Return tracing context with optional metadata/tags when supported by SDK."""
     if client is None or not project_name:
+        logger.debug(
+            "LangSmith client or project name not available; returning nullcontext for tracing."
+        )
         return contextlib.nullcontext()
 
     try:

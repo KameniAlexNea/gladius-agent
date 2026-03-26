@@ -111,6 +111,7 @@ def test_fmt_helpers():
 
 def test_log_message_branches(monkeypatch):
     logs = []
+    monkeypatch.delenv("GLADIUS_LOG_STREAM_EVENTS", raising=False)
     monkeypatch.setattr(c.logger, "debug", lambda msg: logs.append(str(msg)))
     monkeypatch.setattr(c, "SystemMessage", _System)
     monkeypatch.setattr(c, "AssistantMessage", _Assistant)
@@ -152,5 +153,17 @@ def test_log_message_branches(monkeypatch):
     assert "task:subagent" in joined
     assert "task failed" in joined
     assert "subtype=success" in joined
-    assert "stream=content_block_delta" in joined
+    assert "stream=content_block_delta" not in joined
     assert "REDACTED" in joined
+
+
+def test_stream_event_logging_opt_in(monkeypatch):
+    logs = []
+    monkeypatch.setenv("GLADIUS_LOG_STREAM_EVENTS", "1")
+    monkeypatch.setattr(c.logger, "debug", lambda msg: logs.append(str(msg)))
+    monkeypatch.setattr(c, "StreamEvent", _Stream)
+
+    c._log_message("a", _Stream())
+
+    assert logs
+    assert any("stream=content_block_delta" in line for line in logs)

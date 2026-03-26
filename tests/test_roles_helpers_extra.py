@@ -32,6 +32,29 @@ def test_stderr_cb_logs_info_for_non_error(monkeypatch):
     assert seen and "CLI stderr" in seen[0]
 
 
+def test_stderr_cb_summarizes_hook_callback_noise(monkeypatch):
+    seen = []
+    monkeypatch.setattr(helpers.logger, "warning", lambda msg: seen.append(msg))
+    helpers.stderr_cb("Error in hook callback hook_2: giant minified blob")
+    assert seen and "hook callback failure" in seen[0]
+
+
+def test_stderr_cb_suppresses_stack_source_lines(monkeypatch):
+    seen = []
+    monkeypatch.setattr(helpers.logger, "debug", lambda msg: seen.append(msg))
+    helpers.stderr_cb("7548 | minified source line")
+    helpers.stderr_cb("at sendRequest (/$bunfs/root/src/entrypoints/cli.js:7552:133)")
+    assert len(seen) == 2
+    assert all("suppressed" in s for s in seen)
+
+
+def test_stderr_cb_stream_closed_is_warning(monkeypatch):
+    seen = []
+    monkeypatch.setattr(helpers.logger, "warning", lambda msg: seen.append(msg))
+    helpers.stderr_cb("error: Stream closed")
+    assert seen and "stream closed during hook/control processing" in seen[0]
+
+
 def test_is_tool_allowed_structured_output_and_task_delegation():
     assert helpers.is_tool_allowed("StructuredOutput", ["Read"]) is True
     assert helpers.is_tool_allowed("Task", ["Agent"]) is True
