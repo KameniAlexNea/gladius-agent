@@ -30,11 +30,19 @@ if echo "$COMMAND" | grep -qE 'rm[[:space:]]+-[a-zA-Z]*r[a-zA-Z]*f[[:space:]]+/'
     exit 2
 fi
 
-# Block pkill -f / killall — pattern-based kills can accidentally SIGTERM the agent itself.
-# Use 'kill PID' with an explicit PID instead.
-if echo "$COMMAND" | grep -qE '\bpkill[[:space:]]+(-[a-zA-Z]*f[a-zA-Z]*|.*-f)\b|\bkillall\b'; then
-    echo "Blocked: 'pkill -f' and 'killall' are not allowed — they can match and kill the agent process itself. Use 'kill PID' with an explicit PID captured from nohup/launch output." >&2
+# Keep killall blocked — broad process-name kills are too risky.
+if echo "$COMMAND" | grep -qE '\bkillall\b'; then
+    echo "Blocked: 'killall' is not allowed — it can match and kill unintended processes. Use 'kill PID' with an explicit PID captured from nohup/launch output." >&2
     exit 2
+fi
+
+# Allow pkill -f only when pattern contains a concrete script filename (e.g. train.py).
+# Broad patterns remain blocked because they can accidentally match this agent.
+if echo "$COMMAND" | grep -qE '\bpkill\b' && echo "$COMMAND" | grep -qE '(^|[[:space:]])-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|$)|\b--full\b'; then
+    if ! echo "$COMMAND" | grep -qE '([a-zA-Z0-9_./-]+\.(py|sh))'; then
+        echo "Blocked: 'pkill -f' is allowed only when targeting a specific script filename (e.g. train.py or scripts/hpo.py). Broad patterns are not allowed; use 'kill PID' for safety." >&2
+        exit 2
+    fi
 fi
 
 # Block recursive delete of home directory
