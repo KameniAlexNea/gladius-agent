@@ -34,6 +34,8 @@ from gladius.config import MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS
 from gladius.config import MAX_REDISPATCH as _MAX_REDISPATCH
 from gladius.config import MAX_TURNS as _DEFAULT_MAX_TURNS
 from gladius.config import START_ITERATION_ENV_VAR as _START_ITERATION_ENV_VAR
+from gladius.langsmith_tracing import init_langsmith_client
+from gladius.langsmith_tracing import langsmith_tracing_context
 from gladius.project_setup import load_competition_config
 from gladius.roles.agent_runner import run_agent
 from gladius.state import CompetitionState
@@ -284,6 +286,8 @@ async def run_competition(
     if max_iterations is not None:
         state.max_iterations = max_iterations
 
+    langsmith_client, langsmith_project = init_langsmith_client()
+
     start_iteration = _resolve_start_iteration(state.max_iterations)
     if start_iteration > 1:
         # The loop increments state.iteration at the top of each cycle.
@@ -337,16 +341,17 @@ async def run_competition(
         _iteration_error = False
         for _attempt in range(1 + _MAX_REDISPATCH):
             try:
-                _, _ = await run_agent(
-                    agent_name="gladius",
-                    prompt=prompt,
-                    system_prompt=_SYSTEM_PROMPT,
-                    allowed_tools=_TOP_LEVEL_TOOLS,
-                    output_schema=None,
-                    cwd=str(project_dir),
-                    max_turns=max_turns or _DEFAULT_MAX_TURNS,
-                    max_retries=_MAX_CONSECUTIVE_ERRORS,
-                )
+                with langsmith_tracing_context(langsmith_client, langsmith_project):
+                    _, _ = await run_agent(
+                        agent_name="gladius",
+                        prompt=prompt,
+                        system_prompt=_SYSTEM_PROMPT,
+                        allowed_tools=_TOP_LEVEL_TOOLS,
+                        output_schema=None,
+                        cwd=str(project_dir),
+                        max_turns=max_turns or _DEFAULT_MAX_TURNS,
+                        max_retries=_MAX_CONSECUTIVE_ERRORS,
+                    )
                 state.consecutive_errors = 0
             except Exception as exc:
                 logger.error(f"Iteration {state.iteration} agent error: {exc}")

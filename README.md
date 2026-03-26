@@ -196,6 +196,13 @@ ZINDI_CHALLENGE_INDEX=0
 # Optional — start loop at this iteration number (resume helper):
 # Example: 6 means the next iteration executed will be iteration 6.
 # GLADIUS_START_ITERATION=6
+
+# Optional — LangSmith tracing (recommended when ANTHROPIC_BASE_URL is set
+# and ANTHROPIC_API_KEY=OLLAMA):
+# LANGSMITH_TRACING=true
+# LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+# LANGSMITH_API_KEY=xxx
+# LANGSMITH_PROJECT=gladius-agent
 ```
 
 ---
