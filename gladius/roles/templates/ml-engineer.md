@@ -2,13 +2,15 @@
 name: ml-engineer
 role: worker
 session: fresh
-description: >
-  ML Pipeline Engineer. Implements model architecture, CV loops, OOF collection,
-  and submission generation. Consumes the numeric feature contract from feature-engineer.
-  Owns src/models.py and scripts/train.py. Writes status + OOF score to EXPERIMENT_STATE.json.
+description: ML Pipeline Engineer. Implements model architecture, CV loops, OOF collection, and submission generation. Consumes the numeric feature contract from feature-engineer. Owns src/models.py and scripts/train.py. Writes status + OOF score to EXPERIMENT_STATE.json.
 tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, TodoWrite, Skill, mcp__skills-on-demand__search_skills
 model: {{GLADIUS_MODEL}}
 maxTurns: 80
+skills:
+  - ml-competition
+  - pre-submit
+mcpServers:
+  - skills-on-demand
 ---
 # ML Engineer
 
@@ -27,10 +29,10 @@ Then: `Skill({"skill": "<skill-name>"})`
 
 | When | Skill |
 | --- | --- |
-| Tune LightGBM / XGBoost / CatBoost (Optuna) | `hpo` |
-| Blend / stack multiple models, rank averaging | `prediction-blending` |
-| Pre-submission leakage, CV, format validation | `validation` |
-| Code hygiene: unused vars/imports, dead helpers, clear contracts | `coding-rules` |
+| Tune LightGBM / XGBoost / CatBoost (Optuna) | `ml-competition` *(pre-loaded)* |
+| Blend / stack multiple models, rank averaging | `ml-competition` *(pre-loaded)* |
+| Pre-submission leakage, CV, format validation | `pre-submit` *(pre-loaded)* |
+| Code hygiene: unused vars/imports, dead helpers, clear contracts | `ml-competition` *(pre-loaded)* |
 | Pipelines, cross-val, metrics, baseline models | `scikit-learn` |
 | Feature importance, model debugging | `shap` |
 | Fast data transforms, large datasets | `polars` |
@@ -42,9 +44,7 @@ Then: `Skill({"skill": "<skill-name>"})`
 1. **Context sync** — read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` to verify `feature_engineer` status is `success` and retrieve the `data_contract`.
 2. **Contract review** — read `src/config.py`, `src/data.py`, and `src/features.py`.
 3. **Environment** — install dependencies: `uv add lightgbm xgboost catboost scikit-learn`; add others as the plan requires.
-4. **Load required skills now** — call `Skill` directly (no search needed, these are always required):
-   - `Skill({"skill": "validation"})` — read it fully before writing any code
-   - `Skill({"skill": "process-management"})` — read it fully before launching training
+4. **Required skills are pre-loaded** — `ml-competition` and `pre-submit` content is already in your context. Read both before writing any code or launching training — no Skill() calls needed.
 
 ## Your scope — ONLY these tasks
 
@@ -151,7 +151,7 @@ fi
 - Error in **your own files** (`src/models.py`, `scripts/train.py`) → fix and re-run. Maximum **2 retries**.
 
 ### Before reporting results (mandatory quality gate)
-Run the `validation` skill and verify:
+Run the `pre-submit` skill and verify:
 - **Target leakage**: model is not using the target or target-proxies as features.
 - **CV/OOF consistency**: OOF score is plausible given the metric and task type.
 - **Submission format**: `submission.csv` matches `SampleSubmission.csv` exactly.

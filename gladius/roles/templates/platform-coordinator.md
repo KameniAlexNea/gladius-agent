@@ -2,12 +2,7 @@
 name: platform-coordinator
 role: worker
 session: fresh
-description: >
-  Delivery lead for the Platform Layer in the platform topology. Receives the
-  team-lead plan, runs data-expert to build the src/ scaffold and src/data.py,
-  verifies the OOF print contract in scripts/train.py, then hands off the
-  stable data contract to the product layer. Does NOT run feature-engineer,
-  ml-engineer, or evaluator — those belong to the product layer.
+description: Delivery lead for the Platform Layer in the platform topology. Receives the team-lead plan, runs data-expert to build the src/ scaffold and src/data.py, verifies the OOF print contract in scripts/train.py, then hands off the stable data contract to the product layer. Does NOT run feature-engineer, ml-engineer, or evaluator — those belong to the product layer.
 tools: Agent(data-expert), Read, Write, Glob, TodoWrite
 model: {{GLADIUS_MODEL}}
 maxTurns: 20

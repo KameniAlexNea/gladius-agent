@@ -8,7 +8,7 @@ and all agents.  Persistence is handled by StateStore (src.db.store).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Literal, Optional
 
 __all__ = [
     "CompetitionState",
@@ -26,7 +26,7 @@ class CompetitionState:
     metric_direction: str | None = None  # "maximize" | "minimize" | None
 
     # Topology: which management hierarchy is used for this competition
-    topology: str = (
+    topology: Literal["functional", "two-pizza", "platform", "autonomous", "matrix"] = (
         "functional"  # functional | two-pizza | platform | autonomous | matrix
     )
 

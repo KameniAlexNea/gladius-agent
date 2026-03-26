@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 from gladius import (
@@ -8,7 +7,9 @@ from gladius import (
 )
 from gladius.state import CompetitionState
 
-_SYSTEM_PROMPT_PATH = Path(__file__).with_name("orchestrator_system_prompt.md")
+_SYSTEM_PROMPT_PATH = (
+    Path(__file__).parent / "prompts" / "orchestrator_system_prompt.md"
+)
 
 
 def _load_system_prompt() -> str:
@@ -46,8 +47,6 @@ TOP_LEVEL_TOOLS = [
     "TodoWrite",
     "Agent",
 ]
-
-MAX_CONSECUTIVE_ERRORS = int(os.getenv("GLADIUS_MAX_CONSECUTIVE_ERRORS", 10))
 
 
 _TOPOLOGY_FIRST_STEP: dict[str, str] = {

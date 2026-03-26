@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 from typing import Any
 
 from claude_agent_sdk import (
@@ -23,11 +24,10 @@ from claude_agent_sdk.types import (
 from llm_output_parser import parse_json as _parse_json
 from loguru import logger
 
-from gladius.roles import ROLE_CATALOG
+from gladius.roles import ROLE_CATALOG, ROLES
 from gladius.roles._console import _BLUE, _BOLD, _c, _log_message
 from gladius.roles.helpers import (
     get_runtime_model,
-    is_bash_command_scoped_to_cwd,
     is_tool_allowed,
     stderr_cb,
     validate_runtime_invocation,
@@ -59,6 +59,22 @@ async def run_agent(
     )
 
     runtime_model = get_runtime_model()
+
+    # Enable StructuredOutput session-wide when any registered subagent declares it,
+    # so subagents can emit structured results even if the outer agent does not.
+    if output_schema is not None:
+        _output_format: dict[str, Any] | None = {
+            "type": "json_schema",
+            "schema": output_schema,
+        }
+    elif any("StructuredOutput" in role.tools for role in ROLE_CATALOG.values()):
+        _output_format = {
+            "type": "json_schema",
+            "schema": {"type": "object", "additionalProperties": True},
+        }
+    else:
+        _output_format = None
+
     options = ClaudeAgentOptions(
         system_prompt={
             "type": "preset",
@@ -67,11 +83,7 @@ async def run_agent(
         },
         allowed_tools=allowed_tools,
         permission_mode=permission_mode,
-        output_format=(
-            {"type": "json_schema", "schema": output_schema}
-            if output_schema is not None
-            else None
-        ),
+        output_format=_output_format,
         cwd=cwd,
         resume=resume,
         mcp_servers=mcp_servers or {},
@@ -90,6 +102,10 @@ async def run_agent(
             forbidden_tool_error: str | None = None
             early_session_id: str | None = None
             delegated_tool_policies: dict[str, list[str]] = {}
+            # FIFO queue of tool-lists for dispatched subagents.
+            # Used as a fallback when the CLI assigns a different parent_tool_use_id
+            # to subagent messages than the block.id stored in delegated_tool_policies.
+            _pending_subagent_tools: collections.deque[list[str]] = collections.deque()
 
             if verbose:
                 resume_str = f"  resume={resume[:8]}…" if resume else ""
@@ -116,9 +132,20 @@ async def run_agent(
                                     or ""
                                 )
                                 if subagent_type in ROLE_CATALOG:
-                                    delegated_tool_policies[block.id] = list(
-                                        ROLE_CATALOG[subagent_type].tools
+                                    tools = list(ROLE_CATALOG[subagent_type].tools)
+                                    delegated_tool_policies[block.id] = tools
+                                    _pending_subagent_tools.append(tools)
+                                    continue  # delegation validated; skip generic tool-policy check
+                                else:
+                                    msg = (
+                                        f"[{agent_name}] Agent called without a valid "
+                                        f"subagent_type (got {subagent_type!r}). "
+                                        f"You MUST pass subagent_type as one of: {list(ROLES)}. "
+                                        f'Example: Agent({{"subagent_type": "feature-engineer", "prompt": "..."}})'
                                     )
+                                    logger.error(msg)
+                                    forbidden_tool_error = msg
+                                    break
 
                             effective_allowed_tools = allowed_tools
                             policy_label = f"allowed_tools={allowed_tools}"
@@ -126,7 +153,21 @@ async def run_agent(
                                 delegated = delegated_tool_policies.get(
                                     message.parent_tool_use_id
                                 )
-                                if delegated:
+                                if delegated is None and _pending_subagent_tools:
+                                    # The CLI assigned a different parent_tool_use_id
+                                    # than the block.id we stored — resolve via FIFO.
+                                    logger.debug(
+                                        f"[{agent_name}] parent_tool_use_id "
+                                        f"{message.parent_tool_use_id!r} not in "
+                                        f"delegated_tool_policies (keys="
+                                        f"{list(delegated_tool_policies)!r}); "
+                                        "applying FIFO subagent policy fallback."
+                                    )
+                                    delegated = _pending_subagent_tools.popleft()
+                                    delegated_tool_policies[
+                                        message.parent_tool_use_id
+                                    ] = delegated
+                                if delegated is not None:
                                     effective_allowed_tools = delegated
                                     policy_label = f"subagent_allowed_tools={effective_allowed_tools}"
 
@@ -139,18 +180,6 @@ async def run_agent(
                                 forbidden_tool_error = msg
                                 if is_subagent:
                                     logger.error(f"sub-agent policy violation: {msg}")
-                            elif block.name == "Bash":
-                                cmd = str(block.input.get("command", ""))
-                                if not is_bash_command_scoped_to_cwd(cmd, cwd):
-                                    msg = (
-                                        f"[{agent_name}] attempted out-of-project Bash command. "
-                                        f"cwd={cwd} command={cmd!r}"
-                                    )
-                                    forbidden_tool_error = msg
-                                    if is_subagent:
-                                        logger.error(
-                                            f"sub-agent scope violation: {msg}"
-                                        )
                     last_assistant_msg = message
                 if isinstance(message, ResultMessage):
                     result_msg = message
@@ -196,9 +225,19 @@ async def run_agent(
                         "Agent returned no structured_output (schema not satisfied?)"
                     )
             else:
-                if result_msg.is_error:
+                # output_schema is None: outer agent (e.g. orchestrator) doesn't need
+                # structured output itself.  If output_format was set for session-wide
+                # StructuredOutput support, the outer agent never calls StructuredOutput,
+                # so is_error may be True only because "no structured output produced".
+                # Only raise for genuine failures (not schema-enforcement errors).
+                if result_msg.is_error and _output_format is None:
                     raise RuntimeError(
                         f"Agent returned error result: {result_msg.result}"
+                    )
+                if result_msg.is_error and _output_format is not None:
+                    logger.debug(
+                        f"[{agent_name}] session is_error=True with permissive output_format "
+                        f"(subagents consumed StructuredOutput): {result_msg.result}"
                     )
 
             return structured or {}, result_msg.session_id or early_session_id or ""

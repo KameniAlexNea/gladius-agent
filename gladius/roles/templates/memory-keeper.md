@@ -2,10 +2,7 @@
 name: memory-keeper
 role: worker
 session: fresh
-description: >
-  Updates {{TEAM_LEAD_MEMORY_RELATIVE_PATH}} with structured learnings
-  from the latest iteration. The team-lead reads this at startup; humans use it
-  to monitor progress and understand what each agent did.
+description: Updates {{TEAM_LEAD_MEMORY_RELATIVE_PATH}} with structured learnings from the latest iteration. The team-lead reads this at startup; humans use it to monitor progress and understand what each agent did.
 tools: Read, Write
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 15

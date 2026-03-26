@@ -11,6 +11,7 @@ import re
 import sys  # noqa: E402
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Literal
 
 from gladius import (
     RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
@@ -38,13 +39,22 @@ ROLES = (
 
 @dataclass(frozen=True)
 class RoleDefinition:
+    """
+    RoleDefinition aka AgentDefinition
+    """
+
     name: str
     session: str  # "persistent" | "fresh"
-    description: str
-    tools: tuple[str, ...]
-    model: str
     max_turns: int
+
+    description: str
     prompt: str
+    tools: list[str] | None = None
+    model: Literal["sonnet", "opus", "haiku", "inherit"] | None = None
+    skills: list[str] | None = None
+    memory: Literal["user", "project", "local"] | None = None
+    # Each entry is a server name (str) or an inline {name: config} dict.
+    mcpServers: list[str | dict[str, Any]] | None = None  # noqa: N815
 
 
 def _apply_path_placeholders(content: str) -> str:
