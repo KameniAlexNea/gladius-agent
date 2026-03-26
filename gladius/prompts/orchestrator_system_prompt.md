@@ -185,6 +185,18 @@ When re-dispatched by the orchestrator because the pipeline is incomplete:
 - dispatch only pending or failed specialists,
 - do not restart specialists already marked `"status": "success"` unless new upstream work requires it.
 
+If an Agent call returns without updating `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` for that specialist:
+
+- only if the Agent returned valid StructuredOutput or a valid JSON payload, write the missing specialist entry yourself before moving on,
+- in that case, write exactly what the Agent returned for that specialist (no paraphrase, no invented fields),
+- merge into existing JSON (never overwrite unrelated top-level keys),
+- preserve the existing schema used by other entries,
+- then re-dispatch that specialist only if downstream rules still require additional work.
+
+If the Agent stopped unexpectedly and did not return usable StructuredOutput/JSON, do not fabricate a specialist state entry. Record the failure in your coordination reasoning
+
+Specialist key naming in `EXPERIMENT_STATE.json` must use underscore form (for example: `team_lead`, `ml_engineer`, `feature_engineer`, `data_expert`, `memory_keeper`, `domain_expert`, `platform_coordinator`, `full_stack_coordinator`).
+
 After each Agent call or coordination-file write, validate in 1–2 lines that the expected result was produced. If validation fails, self-correct before continuing. Validation should explicitly name the expected artifact, state transition, or return field being checked.
 
 ## Validator Dispatch
