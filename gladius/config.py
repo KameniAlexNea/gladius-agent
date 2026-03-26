@@ -59,6 +59,7 @@ def state_db_path(project_dir: str | Path) -> Path:
 MAX_TURNS: int = int(os.getenv("GLADIUS_MAX_TURNS", "50"))
 MAX_CONSECUTIVE_ERRORS: int = int(os.getenv("GLADIUS_MAX_CONSECUTIVE_ERRORS", "10"))
 MAX_REDISPATCH: int = int(os.getenv("GLADIUS_MAX_REDISPATCH", "10"))
+START_ITERATION_ENV_VAR: str = "GLADIUS_START_ITERATION"
 SCIENTIFIC_SKILLS_PATH: str = os.getenv("GLADIUS_SCIENTIFIC_SKILLS_PATH", "").strip()
 
 # ── Test / fake-platform (dev only) ───────────────────────────────────────────

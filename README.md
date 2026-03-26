@@ -192,6 +192,10 @@ ZINDI_CHALLENGE_INDEX=0
 
 # Optional — path to the claude-scientific-skills/scientific-skills/ directory:
 # GLADIUS_SCIENTIFIC_SKILLS_PATH=/path/to/claude-scientific-skills/scientific-skills
+
+# Optional — start loop at this iteration number (resume helper):
+# Example: 6 means the next iteration executed will be iteration 6.
+# GLADIUS_START_ITERATION=6
 ```
 
 ---

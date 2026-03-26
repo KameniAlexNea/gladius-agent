@@ -33,6 +33,7 @@ from gladius._orchestrator_helper import make_kickoff_prompt as _make_kickoff_pr
 from gladius.config import MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS
 from gladius.config import MAX_REDISPATCH as _MAX_REDISPATCH
 from gladius.config import MAX_TURNS as _DEFAULT_MAX_TURNS
+from gladius.config import START_ITERATION_ENV_VAR as _START_ITERATION_ENV_VAR
 from gladius.project_setup import load_competition_config
 from gladius.roles.agent_runner import run_agent
 from gladius.state import CompetitionState
@@ -48,6 +49,33 @@ def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
 # Files in artifacts/ that are intentionally reusable across iterations.
 _PERSISTENT_ARTIFACTS = {"best_params.json"}
 _MAX_STATE_SNIPPET_CHARS = 12000
+
+
+def _resolve_start_iteration(max_iterations: int) -> int:
+    """Return the first iteration to execute, derived from env var if set."""
+    raw = os.getenv(_START_ITERATION_ENV_VAR, "").strip()
+    if not raw:
+        return 1
+    try:
+        start_iteration = int(raw)
+    except ValueError:
+        logger.warning(
+            f"Ignoring ${_START_ITERATION_ENV_VAR}={raw!r}: expected integer >= 1."
+        )
+        return 1
+
+    if start_iteration < 1:
+        logger.warning(
+            f"Ignoring ${_START_ITERATION_ENV_VAR}={start_iteration}: value must be >= 1."
+        )
+        return 1
+    if start_iteration > max_iterations:
+        logger.warning(
+            f"${_START_ITERATION_ENV_VAR}={start_iteration} exceeds max_iterations={max_iterations}; "
+            f"clamping to {max_iterations}."
+        )
+        return max_iterations
+    return start_iteration
 
 
 def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
@@ -255,6 +283,14 @@ async def run_competition(
     state = _build_state(project_dir, cfg)
     if max_iterations is not None:
         state.max_iterations = max_iterations
+
+    start_iteration = _resolve_start_iteration(state.max_iterations)
+    if start_iteration > 1:
+        # The loop increments state.iteration at the top of each cycle.
+        state.iteration = start_iteration - 1
+        logger.info(
+            f"Resuming run from iteration {start_iteration} via ${_START_ITERATION_ENV_VAR}."
+        )
 
     logger.info(
         f"Starting competition run: {cfg['competition_id']} "
