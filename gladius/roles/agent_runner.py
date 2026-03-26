@@ -34,6 +34,153 @@ from gladius.roles.helpers import (
 )
 
 
+class ToolPermissionError(RuntimeError):
+    """Raised when an agent or subagent uses a forbidden tool."""
+
+
+class AgentDispatchError(RuntimeError):
+    """Raised when delegation metadata is invalid or missing."""
+
+
+def _extract_subagent_type(block_input: dict[str, Any]) -> str:
+    """Extract subagent selector from any supported key alias."""
+    for key in ("subagent_type", "agent_name", "agent", "name"):
+        value = block_input.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def _parse_structured_from_assistant_text(
+    *, agent_name: str, last_assistant_msg: AssistantMessage | None
+) -> dict[str, Any] | None:
+    """Attempt to recover structured JSON from assistant text blocks."""
+    if last_assistant_msg is None:
+        return None
+
+    full_text = "\n".join(
+        block.text.strip()
+        for block in last_assistant_msg.content
+        if isinstance(block, TextBlock) and block.text.strip()
+    )
+    if not full_text:
+        return None
+
+    try:
+        parsed = _parse_json(full_text)
+    except Exception as exc:
+        logger.warning(
+            f"[{agent_name}] structured_output fallback parse failed: {exc}"
+        )
+        return None
+
+    if isinstance(parsed, dict):
+        return parsed
+
+    logger.warning(
+        f"[{agent_name}] structured_output fallback produced {type(parsed).__name__}, "
+        "ignoring non-dict parsed output."
+    )
+    return None
+
+
+def _register_delegated_subagent_tools(
+    *,
+    agent_name: str,
+    block: ToolUseBlock,
+    delegated_tool_policies: dict[str, list[str]],
+    pending_subagent_tools: collections.deque[list[str]],
+) -> str | None:
+    """Validate delegation call and register subagent tool policy."""
+    subagent_type = _extract_subagent_type(block.input)
+    if subagent_type in ROLE_CATALOG:
+        tools = list(ROLE_CATALOG[subagent_type].tools)
+        delegated_tool_policies[block.id] = tools
+        pending_subagent_tools.append(tools)
+        return None
+
+    msg = (
+        f"[{agent_name}] Agent called without a valid "
+        f"subagent_type (got {subagent_type!r}). "
+        f"You MUST pass subagent_type as one of: {list(ROLES)}. "
+        f'Example: Agent({{"subagent_type": "feature-engineer", "prompt": "..."}})'
+    )
+    logger.error(msg)
+    return msg
+
+
+def _resolve_effective_allowed_tools(
+    *,
+    agent_name: str,
+    message_parent_tool_use_id: str | None,
+    default_allowed_tools: list[str],
+    delegated_tool_policies: dict[str, list[str]],
+    pending_subagent_tools: collections.deque[list[str]],
+) -> tuple[list[str], str]:
+    """Resolve tool policy for a block, including subagent FIFO fallback."""
+    effective_allowed_tools = default_allowed_tools
+    policy_label = f"allowed_tools={default_allowed_tools}"
+
+    if message_parent_tool_use_id:
+        delegated = delegated_tool_policies.get(message_parent_tool_use_id)
+        if delegated is None and pending_subagent_tools:
+            # The CLI assigned a different parent_tool_use_id than the block.id
+            # stored at delegation time; resolve policy via FIFO fallback.
+            logger.debug(
+                f"[{agent_name}] parent_tool_use_id "
+                f"{message_parent_tool_use_id!r} not in delegated_tool_policies "
+                f"(keys={list(delegated_tool_policies)!r}); "
+                "applying FIFO subagent policy fallback."
+            )
+            delegated = pending_subagent_tools.popleft()
+            delegated_tool_policies[message_parent_tool_use_id] = delegated
+        if delegated is not None:
+            effective_allowed_tools = delegated
+            policy_label = f"subagent_allowed_tools={effective_allowed_tools}"
+
+    return effective_allowed_tools, policy_label
+
+
+def _handle_tool_use_block(
+    *,
+    agent_name: str,
+    block: ToolUseBlock,
+    message_parent_tool_use_id: str | None,
+    allowed_tools: list[str],
+    delegated_tool_policies: dict[str, list[str]],
+    pending_subagent_tools: collections.deque[list[str]],
+) -> str | None:
+    """Validate delegation metadata and tool permissions for one tool-use block."""
+    if block.name in {"Task", "Agent"}:
+        err = _register_delegated_subagent_tools(
+            agent_name=agent_name,
+            block=block,
+            delegated_tool_policies=delegated_tool_policies,
+            pending_subagent_tools=pending_subagent_tools,
+        )
+        if err is not None:
+            return err
+        return None
+
+    effective_allowed_tools, policy_label = _resolve_effective_allowed_tools(
+        agent_name=agent_name,
+        message_parent_tool_use_id=message_parent_tool_use_id,
+        default_allowed_tools=allowed_tools,
+        delegated_tool_policies=delegated_tool_policies,
+        pending_subagent_tools=pending_subagent_tools,
+    )
+    is_subagent = bool(message_parent_tool_use_id)
+    if not is_tool_allowed(block.name, effective_allowed_tools):
+        msg = (
+            f"[{agent_name}] attempted forbidden tool '{block.name}'. "
+            f"{policy_label}"
+        )
+        if is_subagent:
+            logger.error(f"sub-agent policy violation: {msg}")
+        return msg
+    return None
+
+
 async def run_agent(
     *,
     agent_name: str = "agent",
@@ -123,69 +270,28 @@ async def run_agent(
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, ToolUseBlock):
-                            if block.name in {"Task", "Agent"}:
-                                subagent_type = str(
-                                    block.input.get("subagent_type")
-                                    or block.input.get("agent_name")
-                                    or block.input.get("agent")
-                                    or block.input.get("name")
-                                    or ""
-                                )
-                                if subagent_type in ROLE_CATALOG:
-                                    tools = list(ROLE_CATALOG[subagent_type].tools)
-                                    delegated_tool_policies[block.id] = tools
-                                    _pending_subagent_tools.append(tools)
-                                    continue  # delegation validated; skip generic tool-policy check
-                                else:
-                                    msg = (
-                                        f"[{agent_name}] Agent called without a valid "
-                                        f"subagent_type (got {subagent_type!r}). "
-                                        f"You MUST pass subagent_type as one of: {list(ROLES)}. "
-                                        f'Example: Agent({{"subagent_type": "feature-engineer", "prompt": "..."}})'
-                                    )
-                                    logger.error(msg)
-                                    forbidden_tool_error = msg
-                                    break
-
-                            effective_allowed_tools = allowed_tools
-                            policy_label = f"allowed_tools={allowed_tools}"
-                            if message.parent_tool_use_id:
-                                delegated = delegated_tool_policies.get(
-                                    message.parent_tool_use_id
-                                )
-                                if delegated is None and _pending_subagent_tools:
-                                    # The CLI assigned a different parent_tool_use_id
-                                    # than the block.id we stored — resolve via FIFO.
-                                    logger.debug(
-                                        f"[{agent_name}] parent_tool_use_id "
-                                        f"{message.parent_tool_use_id!r} not in "
-                                        f"delegated_tool_policies (keys="
-                                        f"{list(delegated_tool_policies)!r}); "
-                                        "applying FIFO subagent policy fallback."
-                                    )
-                                    delegated = _pending_subagent_tools.popleft()
-                                    delegated_tool_policies[
-                                        message.parent_tool_use_id
-                                    ] = delegated
-                                if delegated is not None:
-                                    effective_allowed_tools = delegated
-                                    policy_label = f"subagent_allowed_tools={effective_allowed_tools}"
-
-                            is_subagent = bool(message.parent_tool_use_id)
-                            if not is_tool_allowed(block.name, effective_allowed_tools):
-                                msg = (
-                                    f"[{agent_name}] attempted forbidden tool '{block.name}'. "
-                                    f"{policy_label}"
-                                )
-                                forbidden_tool_error = msg
-                                if is_subagent:
-                                    logger.error(f"sub-agent policy violation: {msg}")
+                            forbidden_tool_error = _handle_tool_use_block(
+                                agent_name=agent_name,
+                                block=block,
+                                message_parent_tool_use_id=message.parent_tool_use_id,
+                                allowed_tools=allowed_tools,
+                                delegated_tool_policies=delegated_tool_policies,
+                                pending_subagent_tools=_pending_subagent_tools,
+                            )
+                            if forbidden_tool_error:
+                                break
                     last_assistant_msg = message
+                    if forbidden_tool_error:
+                        break
                 if isinstance(message, ResultMessage):
                     result_msg = message
+                if forbidden_tool_error:
+                    break
 
             if forbidden_tool_error:
-                raise RuntimeError(forbidden_tool_error)
+                if "without a valid subagent_type" in forbidden_tool_error:
+                    raise AgentDispatchError(forbidden_tool_error)
+                raise ToolPermissionError(forbidden_tool_error)
             if result_msg is None:
                 raise RuntimeError("No ResultMessage received from agent")
 
@@ -193,22 +299,14 @@ async def run_agent(
 
             if output_schema is not None:
                 if structured is None and last_assistant_msg is not None:
-                    full_text = "\n".join(
-                        block.text.strip()
-                        for block in last_assistant_msg.content
-                        if isinstance(block, TextBlock) and block.text.strip()
+                    structured = _parse_structured_from_assistant_text(
+                        agent_name=agent_name, last_assistant_msg=last_assistant_msg
                     )
-                    if full_text:
-                        try:
-                            structured = _parse_json(full_text)
-                            logger.warning(
-                                f"[{agent_name}] structured_output was None — "
-                                "extracted JSON from assistant text (llm_output_parser fallback)"
-                            )
-                        except Exception as exc:
-                            logger.warning(
-                                f"[{agent_name}] structured_output fallback parse failed: {exc}"
-                            )
+                    if structured is not None:
+                        logger.warning(
+                            f"[{agent_name}] structured_output was None — "
+                            "extracted JSON from assistant text (llm_output_parser fallback)"
+                        )
 
                 if result_msg.is_error and structured is None:
                     raise RuntimeError(
@@ -246,14 +344,32 @@ async def run_agent(
             raise
 
         except ProcessError as e:
-            if result_msg is not None and result_msg.structured_output is not None:
-                logger.warning(
-                    f"[{agent_name}] ProcessError after StructuredOutput captured"
-                    " — returning result (CLI exited abnormally during cleanup)."
+            structured_fallback = result_msg.structured_output if result_msg else None
+            source = "structured_output"
+            if structured_fallback is None:
+                recovered = _parse_structured_from_assistant_text(
+                    agent_name=agent_name, last_assistant_msg=last_assistant_msg
                 )
+                if recovered is not None:
+                    structured_fallback = recovered
+                    source = "assistant_text_fallback"
+
+            if structured_fallback is not None:
+                logger.warning(
+                    f"[{agent_name}] ProcessError with recoverable output from {source} "
+                    "— returning partial result (CLI exited abnormally during cleanup)."
+                )
+                if not isinstance(structured_fallback, dict):
+                    logger.warning(
+                        f"[{agent_name}] recovered output is {type(structured_fallback).__name__}, "
+                        "coercing to empty dict for stable return type."
+                    )
+                    structured_fallback = {}
                 return (
-                    result_msg.structured_output,
-                    result_msg.session_id or early_session_id or "",
+                    structured_fallback,
+                    (result_msg.session_id if result_msg else None)
+                    or early_session_id
+                    or "",
                 )
             stderr = e.stderr or ""
             if "rate limit" in stderr.lower() and attempt < max_retries - 1:
@@ -275,9 +391,10 @@ async def run_agent(
                 raise
             logger.warning(f"MessageParseError on attempt {attempt + 1}: {e}, retrying")
 
+        except (ToolPermissionError, AgentDispatchError):
+            raise
+
         except RuntimeError as e:
-            if "attempted forbidden tool" in str(e):
-                raise
             if attempt == max_retries - 1:
                 raise
             logger.warning(f"RuntimeError on attempt {attempt + 1}: {e}, retrying")

@@ -34,8 +34,7 @@ from gladius.config import MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS
 from gladius.config import MAX_REDISPATCH as _MAX_REDISPATCH
 from gladius.config import MAX_TURNS as _DEFAULT_MAX_TURNS
 from gladius.config import START_ITERATION_ENV_VAR as _START_ITERATION_ENV_VAR
-from gladius.langsmith_tracing import init_langsmith_client
-from gladius.langsmith_tracing import langsmith_tracing_context
+from gladius.langsmith_tracing import init_langsmith_client, langsmith_tracing_context
 from gladius.project_setup import load_competition_config
 from gladius.roles.agent_runner import run_agent
 from gladius.state import CompetitionState
