@@ -69,9 +69,7 @@ def _parse_structured_from_assistant_text(
     try:
         parsed = _parse_json(full_text)
     except Exception as exc:
-        logger.warning(
-            f"[{agent_name}] structured_output fallback parse failed: {exc}"
-        )
+        logger.warning(f"[{agent_name}] structured_output fallback parse failed: {exc}")
         return None
 
     if isinstance(parsed, dict):
@@ -171,10 +169,7 @@ def _handle_tool_use_block(
     )
     is_subagent = bool(message_parent_tool_use_id)
     if not is_tool_allowed(block.name, effective_allowed_tools):
-        msg = (
-            f"[{agent_name}] attempted forbidden tool '{block.name}'. "
-            f"{policy_label}"
-        )
+        msg = f"[{agent_name}] attempted forbidden tool '{block.name}'. {policy_label}"
         if is_subagent:
             logger.error(f"sub-agent policy violation: {msg}")
         return msg

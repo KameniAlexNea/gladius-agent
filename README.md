@@ -203,6 +203,10 @@ ZINDI_CHALLENGE_INDEX=0
 # LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 # LANGSMITH_API_KEY=xxx
 # LANGSMITH_PROJECT=gladius-agent
+
+# Optional — kill orphaned background processes under project_dir before each iteration:
+# Disabled by default for safety.
+# GLADIUS_KILL_ORPHAN_PROCESSES=true
 ```
 
 ---

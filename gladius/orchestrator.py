@@ -32,9 +32,15 @@ from gladius._orchestrator_helper import TOP_LEVEL_TOOLS as _TOP_LEVEL_TOOLS
 from gladius._orchestrator_helper import make_kickoff_prompt as _make_kickoff_prompt
 from gladius.config import MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS
 from gladius.config import MAX_REDISPATCH as _MAX_REDISPATCH
+from gladius.config import MAX_STATE_SNIPPET_CHARS as _MAX_STATE_SNIPPET_CHARS
 from gladius.config import MAX_TURNS as _DEFAULT_MAX_TURNS
+from gladius.config import PERSISTENT_ARTIFACTS as _PERSISTENT_ARTIFACTS
 from gladius.config import START_ITERATION_ENV_VAR as _START_ITERATION_ENV_VAR
 from gladius.langsmith_tracing import init_langsmith_client, langsmith_tracing_context
+from gladius.process_cleanup import (
+    cleanup_orphan_processes,
+    should_cleanup_orphan_processes,
+)
 from gladius.project_setup import load_competition_config
 from gladius.roles.agent_runner import run_agent
 from gladius.state import CompetitionState
@@ -45,11 +51,6 @@ def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
     state = claude_md.write_from_project(project_dir, cfg)
     state.max_iterations = int(cfg.get("max_iterations", state.max_iterations))
     return state
-
-
-# Files in artifacts/ that are intentionally reusable across iterations.
-_PERSISTENT_ARTIFACTS = {"best_params.json"}
-_MAX_STATE_SNIPPET_CHARS = 12000
 
 
 def _resolve_start_iteration(max_iterations: int) -> int:
@@ -95,16 +96,22 @@ def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
     art_dir = project_dir / "artifacts"
     if art_dir.is_dir() and any(art_dir.iterdir()):
         archive_dir = project_dir / f"artifacts_iter{prev}"
-        shutil.move(str(art_dir), str(archive_dir))
-        art_dir.mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Archived artifacts/ → {archive_dir.name}/")
+        try:
+            shutil.move(str(art_dir), str(archive_dir))
+            art_dir.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"Archived artifacts/ → {archive_dir.name}/")
 
-        # Copy forward persistent artifacts
-        for keep in _PERSISTENT_ARTIFACTS:
-            archived = archive_dir / keep
-            if archived.is_file():
-                shutil.copy2(str(archived), str(art_dir / keep))
-                logger.debug(f"Carried forward {keep} from iter {prev}")
+            # Copy forward persistent artifacts
+            for keep in _PERSISTENT_ARTIFACTS:
+                archived = archive_dir / keep
+                if archived.is_file():
+                    shutil.copy2(str(archived), str(art_dir / keep))
+                    logger.debug(f"Carried forward {keep} from iter {prev}")
+        except Exception as exc:
+            logger.warning(
+                f"Could not archive artifacts for iter {prev}: {exc}. "
+                "Continuing with existing directory state."
+            )
 
     # --- logs/: move only agent-produced files, leave gladius.log in place ---
     logs_dir = project_dir / "logs"
@@ -116,7 +123,10 @@ def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
             archive_dir = project_dir / f"logs_iter{prev}"
             archive_dir.mkdir(parents=True, exist_ok=True)
             for f in agent_logs:
-                shutil.move(str(f), str(archive_dir / f.name))
+                try:
+                    shutil.move(str(f), str(archive_dir / f.name))
+                except Exception as exc:
+                    logger.warning(f"Could not archive log {f.name!r}: {exc}")
             logger.debug(
                 f"Archived {len(agent_logs)} log file(s) → {archive_dir.name}/"
             )
@@ -177,12 +187,16 @@ def _update_state(state: CompetitionState, project_dir: Path) -> None:
     if oof_score is not None:
         if state.best_oof_score is None:
             state.best_oof_score = oof_score
-        elif state.metric_direction == "maximize" and oof_score > state.best_oof_score:
+            if submission_file:
+                state.best_submission_path = submission_file
+        elif state.metric_direction == "maximize" and oof_score >= state.best_oof_score:
             state.best_oof_score = oof_score
-            state.best_submission_path = submission_file
-        elif state.metric_direction == "minimize" and oof_score < state.best_oof_score:
+            if submission_file:
+                state.best_submission_path = submission_file
+        elif state.metric_direction == "minimize" and oof_score <= state.best_oof_score:
             state.best_oof_score = oof_score
-            state.best_submission_path = submission_file
+            if submission_file:
+                state.best_submission_path = submission_file
 
     if quality_score is not None and (
         state.best_quality_score is None or quality_score > state.best_quality_score
@@ -232,7 +246,50 @@ def _read_experiment_state_snippet(exp_path: Path) -> str:
     text = exp_path.read_text(encoding="utf-8")
     if len(text) <= _MAX_STATE_SNIPPET_CHARS:
         return text
-    return text[:_MAX_STATE_SNIPPET_CHARS] + "\n...<truncated>..."
+
+    # Prefer a compact status-focused summary to limit prompt/token overhead.
+    try:
+        data = json.loads(text)
+    except Exception:
+        return text[:_MAX_STATE_SNIPPET_CHARS] + "\n...<truncated>..."
+
+    if not isinstance(data, dict):
+        return text[:_MAX_STATE_SNIPPET_CHARS] + "\n...<truncated>..."
+
+    summary: dict[str, object] = {
+        "done": bool(data.get("done", False)),
+        "pending_agents": {
+            k: (
+                {
+                    kk: vv
+                    for kk, vv in data[k].items()
+                    if kk
+                    in {
+                        "status",
+                        "error",
+                        "reason",
+                        "oof_score",
+                        "quality_score",
+                        "metric",
+                        "submission_file",
+                    }
+                }
+                if isinstance(data.get(k), dict)
+                else data.get(k)
+            )
+            for k in _REQUIRED_AGENTS
+            if not (
+                isinstance(data.get(k), dict) and data[k].get("status") == "success"
+            )
+        },
+    }
+    if "submission_error" in data:
+        summary["submission_error"] = data.get("submission_error")
+
+    compact = json.dumps(summary, ensure_ascii=True, indent=2)
+    if len(compact) <= _MAX_STATE_SNIPPET_CHARS:
+        return compact
+    return compact[:_MAX_STATE_SNIPPET_CHARS] + "\n...<truncated>..."
 
 
 def _build_redispatch_prompt(
@@ -302,6 +359,9 @@ async def run_competition(
 
     while not state.done and state.iteration < state.max_iterations:
         state.iteration += 1
+
+        if should_cleanup_orphan_processes():
+            cleanup_orphan_processes(project_dir)
 
         # Archive EXPERIMENT_STATE from the previous iteration so agents start fresh
         exp_path = runtime_experiment_state_path(project_dir)

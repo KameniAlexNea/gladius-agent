@@ -66,3 +66,7 @@ SCIENTIFIC_SKILLS_PATH: str = os.getenv("GLADIUS_SCIENTIFIC_SKILLS_PATH", "").st
 
 FAKE_ANSWERS_PATH: str = os.getenv("FAKE_ANSWERS_PATH", "data/.answers.csv")
 FAKE_PLATFORM_DIR: str = os.getenv("FAKE_PLATFORM_DIR", ".fake_platform")
+
+# Files in artifacts/ that are intentionally reusable across iterations.
+PERSISTENT_ARTIFACTS = {"best_params.json"}
+MAX_STATE_SNIPPET_CHARS = int(os.getenv("GLADIUS_MAX_STATE_SNIPPET_CHARS", "6000"))

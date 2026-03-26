@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 
 from gladius.langsmith_tracing import configure_langsmith_env
-from gladius.orchestrator import _resolve_start_iteration
+from gladius.orchestrator import (
+    _read_experiment_state_snippet,
+    _resolve_start_iteration,
+    _update_state,
+)
+from gladius.state import CompetitionState
 
 
 def test_resolve_start_iteration_default_when_env_missing(monkeypatch):
@@ -65,3 +72,52 @@ def test_langsmith_env_requires_langsmith_api_key(monkeypatch):
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
 
     assert configure_langsmith_env() is False
+
+
+def test_update_state_updates_submission_path_on_tie_maximize(tmp_path: Path):
+    state = CompetitionState(
+        competition_id="c",
+        data_dir=str(tmp_path / "data"),
+        output_dir=str(tmp_path),
+        target_metric="auc",
+        metric_direction="maximize",
+    )
+    state.iteration = 1
+    state.best_oof_score = 0.91
+    state.best_submission_path = "submissions/old.csv"
+
+    runtime_dir = tmp_path / ".gladius" / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    exp = runtime_dir / "EXPERIMENT_STATE.json"
+    exp.write_text(
+        json.dumps(
+            {
+                "evaluator": {"oof_score": 0.91, "status": "success"},
+                "ml_engineer": {
+                    "status": "success",
+                    "submission_file": "submissions/new.csv",
+                },
+                "team_lead": {"status": "success"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _update_state(state, tmp_path)
+    assert state.best_submission_path == "submissions/new.csv"
+
+
+def test_read_experiment_state_snippet_prefers_compact_summary(tmp_path: Path):
+    exp = tmp_path / "EXPERIMENT_STATE.json"
+    payload = {
+        "team_lead": {"status": "success", "plan": "x" * 5000},
+        "ml_engineer": {"status": "error", "reason": "failed", "notes": "y" * 3000},
+        "evaluator": {"status": "pending", "notes": "z" * 3000},
+        "done": False,
+    }
+    exp.write_text(json.dumps(payload), encoding="utf-8")
+
+    snippet = _read_experiment_state_snippet(exp)
+    summary = json.loads(snippet)
+    assert "pending_agents" in summary
+    assert "ml_engineer" in summary["pending_agents"]
