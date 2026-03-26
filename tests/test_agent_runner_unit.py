@@ -34,11 +34,31 @@ class _FakeSystemMessage:
 
 
 class _FakeResultMessage:
-    def __init__(self, structured_output=None, is_error=False, result="", session_id="s"):
+    def __init__(
+        self,
+        structured_output=None,
+        is_error=False,
+        result="",
+        session_id="s",
+        subtype="success",
+        stop_reason="end_turn",
+    ):
         self.structured_output = structured_output
         self.is_error = is_error
         self.result = result
         self.session_id = session_id
+        self.subtype = subtype
+        self.stop_reason = stop_reason
+        self.duration_ms = 100
+        self.duration_api_ms = 80
+        self.num_turns = 1
+        self.total_cost_usd = 0.0
+        self.usage = {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+        }
 
 
 class _FakeTaskStartedMessage:

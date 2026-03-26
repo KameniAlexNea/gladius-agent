@@ -18,10 +18,17 @@ def test_get_runtime_model_raises_when_missing(monkeypatch):
         helpers.get_runtime_model()
 
 
-def test_stderr_cb_logs_line(monkeypatch):
+def test_stderr_cb_logs_error_line(monkeypatch):
     seen = []
     monkeypatch.setattr(helpers.logger, "error", lambda msg: seen.append(msg))
-    helpers.stderr_cb("oops")
+    helpers.stderr_cb("fatal error: boom")
+    assert seen and "CLI stderr" in seen[0]
+
+
+def test_stderr_cb_logs_info_for_non_error(monkeypatch):
+    seen = []
+    monkeypatch.setattr(helpers.logger, "info", lambda msg: seen.append(msg))
+    helpers.stderr_cb("normal status line")
     assert seen and "CLI stderr" in seen[0]
 
 

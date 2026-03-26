@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import os
 from typing import Any
 
@@ -19,9 +20,14 @@ def should_enable_langsmith_for_ollama_bridge() -> bool:
     )
 
 
+def _explicit_tracing_enabled() -> bool:
+    raw = os.getenv("GLADIUS_ENABLE_LANGSMITH", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def configure_langsmith_env() -> bool:
     """Populate LangSmith env defaults and validate tracing prerequisites."""
-    if not should_enable_langsmith_for_ollama_bridge():
+    if not (_explicit_tracing_enabled() or should_enable_langsmith_for_ollama_bridge()):
         return False
 
     os.environ.setdefault("LANGSMITH_TRACING", "true")
@@ -71,6 +77,39 @@ def langsmith_tracing_context(client: Any | None, project_name: str | None):
         from langsmith.run_helpers import tracing_context
 
         return tracing_context(client=client, project_name=project_name, enabled=True)
+    except Exception as exc:
+        logger.warning(f"Failed to create LangSmith tracing context: {exc}")
+        return contextlib.nullcontext()
+
+
+def langsmith_tracing_context_with_metadata(
+    client: Any | None,
+    project_name: str | None,
+    *,
+    run_name: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    tags: list[str] | None = None,
+):
+    """Return tracing context with optional metadata/tags when supported by SDK."""
+    if client is None or not project_name:
+        return contextlib.nullcontext()
+
+    try:
+        from langsmith.run_helpers import tracing_context
+
+        kwargs: dict[str, Any] = {
+            "client": client,
+            "project_name": project_name,
+            "enabled": True,
+        }
+        sig = inspect.signature(tracing_context)
+        if run_name is not None and "run_name" in sig.parameters:
+            kwargs["run_name"] = run_name
+        if metadata is not None and "metadata" in sig.parameters:
+            kwargs["metadata"] = metadata
+        if tags is not None and "tags" in sig.parameters:
+            kwargs["tags"] = tags
+        return tracing_context(**kwargs)
     except Exception as exc:
         logger.warning(f"Failed to create LangSmith tracing context: {exc}")
         return contextlib.nullcontext()

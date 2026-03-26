@@ -6,12 +6,14 @@ Imported by agent_runner; nothing outside src.roles should need this.
 """
 
 import json
+import re
 import textwrap
 from typing import Any
 
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk.types import (
     AssistantMessage,
+    StreamEvent,
     SystemMessage,
     TaskNotificationMessage,
     TaskProgressMessage,
@@ -36,10 +38,36 @@ _RED = "\033[31m"
 _BLUE = "\033[34m"
 _GREY = "\033[90m"
 
+_SENSITIVE_KEY_RE = re.compile(
+    r"(?:pass|password|secret|token|api[_-]?key|auth|authorization|cookie)",
+    re.IGNORECASE,
+)
+_SENSITIVE_VALUE_RE = re.compile(r"(sk-[A-Za-z0-9_-]{10,}|Bearer\s+[A-Za-z0-9._-]{10,})")
+
 
 def _c(color: str, text: str) -> str:
     """Wrap text in ANSI color codes."""
     return f"{color}{text}{_RESET}"
+
+
+def _redact_obj(value: Any) -> Any:
+    """Best-effort redaction for sensitive keys and token-like string values."""
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for k, v in value.items():
+            key = str(k)
+            if _SENSITIVE_KEY_RE.search(key):
+                redacted[key] = "***REDACTED***"
+            else:
+                redacted[key] = _redact_obj(v)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_obj(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_obj(v) for v in value)
+    if isinstance(value, str):
+        return _SENSITIVE_VALUE_RE.sub("***REDACTED***", value)
+    return value
 
 
 # ── Input / result formatters ─────────────────────────────────────────────────
@@ -48,9 +76,9 @@ def _c(color: str, text: str) -> str:
 def _fmt_input(tool_input: dict, max_len: int = 300) -> str:
     """Compact single-line representation of tool input, capped at max_len chars."""
     try:
-        s = json.dumps(tool_input, ensure_ascii=False)
+        s = json.dumps(_redact_obj(tool_input), ensure_ascii=False)
     except Exception:
-        s = str(tool_input)
+        s = str(_redact_obj(tool_input))
     if len(s) > max_len:
         s = s[:max_len] + " …"
     return s
@@ -58,6 +86,7 @@ def _fmt_input(tool_input: dict, max_len: int = 300) -> str:
 
 def _fmt_result(content: Any, max_len: int = 400) -> str:
     """Extract readable text from a tool result content value."""
+    content = _redact_obj(content)
     if content is None:
         return "(empty)"
     if isinstance(content, str):
@@ -87,6 +116,19 @@ _TODO_ICON = {"completed": "✅", "in_progress": "🔧", "pending": "⬜"}
 def _log_message(agent_name: str, message: Any) -> None:
     """Pretty-print a single SDK message to stdout."""
 
+    if isinstance(message, StreamEvent):
+        event_type = str(message.event.get("type", "partial")).strip() or "partial"
+        logger.debug(
+            _c(_GREY, f"  📡 [{agent_name}] stream={event_type}")
+            + _c(_DIM, f"  sid={message.session_id[:10]}…")
+            + (
+                _c(_DIM, f"  parent={message.parent_tool_use_id[:10]}…")
+                if message.parent_tool_use_id
+                else ""
+            )
+        )
+        return
+
     if isinstance(message, TaskStartedMessage):
         task_type = (message.task_type or "unknown").strip() or "unknown"
         label = {
@@ -99,6 +141,12 @@ def _log_message(agent_name: str, message: Any) -> None:
             desc = desc[:90] + "…"
         logger.debug(
             _c(_GREY, f"  🚀 [{agent_name}] task:{label} id={message.task_id[:10]}…")
+            + _c(_DIM, f"  sid={message.session_id[:10]}…")
+            + (
+                _c(_DIM, f"  tool_use={message.tool_use_id[:10]}…")
+                if message.tool_use_id
+                else ""
+            )
             + (_c(_DIM, f"  {desc}") if desc else "")
         )
         return
@@ -106,22 +154,46 @@ def _log_message(agent_name: str, message: Any) -> None:
     if isinstance(message, TaskProgressMessage):
         usage = message.usage or {}
         total_tokens = usage.get("total_tokens")
+        tool_uses = usage.get("tool_uses")
+        duration_ms = usage.get("duration_ms")
         token_str = f"  tokens={total_tokens}" if isinstance(total_tokens, int) else ""
+        tool_uses_str = f"  tool_uses={tool_uses}" if isinstance(tool_uses, int) else ""
+        dur_str = f"  {duration_ms}ms" if isinstance(duration_ms, int) else ""
         tool = (message.last_tool_name or "").strip()
         tool_str = f"  last_tool={tool}" if tool else ""
         logger.debug(
             _c(_GREY, f"  ⏳ [{agent_name}] task id={message.task_id[:10]}…")
+            + _c(_DIM, f"  sid={message.session_id[:10]}…")
             + _c(_DIM, f"  {message.description}")
-            + _c(_DIM, token_str + tool_str)
+            + _c(_DIM, token_str + tool_uses_str + dur_str + tool_str)
         )
         return
 
     if isinstance(message, TaskNotificationMessage):
-        status_icon = "✅" if message.status == "completed" else "⚠"
-        status_color = _GREEN if message.status == "completed" else _RED
+        if message.status == "completed":
+            status_icon = "✅"
+            status_color = _GREEN
+        elif message.status == "failed":
+            status_icon = "❌"
+            status_color = _RED
+        else:
+            status_icon = "⏹"
+            status_color = _YELLOW
+        usage = message.usage or {}
+        total_tokens = usage.get("total_tokens")
+        token_str = f"  tokens={total_tokens}" if isinstance(total_tokens, int) else ""
+        output_file = (message.output_file or "").strip()
         logger.debug(
             _c(status_color, f"  {status_icon} [{agent_name}] task {message.status}")
             + _c(_DIM, f"  id={message.task_id[:10]}…")
+            + _c(_DIM, f"  sid={message.session_id[:10]}…")
+            + (
+                _c(_DIM, f"  tool_use={message.tool_use_id[:10]}…")
+                if message.tool_use_id
+                else ""
+            )
+            + (_c(_DIM, f"  out={output_file}") if output_file else "")
+            + _c(_DIM, token_str)
             + (_c(_DIM, f"  {message.summary}") if message.summary else "")
         )
         return
@@ -161,12 +233,34 @@ def _log_message(agent_name: str, message: Any) -> None:
     elif isinstance(message, ResultMessage):
         cost = f"  cost=${message.total_cost_usd:.4f}" if message.total_cost_usd else ""
         status = _c(_RED, "ERROR") if message.is_error else _c(_GREEN, "OK")
+        usage = message.usage or {}
+        in_tok = usage.get("input_tokens")
+        out_tok = usage.get("output_tokens")
+        cache_write = usage.get("cache_creation_input_tokens")
+        cache_read = usage.get("cache_read_input_tokens")
+        usage_str = ""
+        if isinstance(in_tok, int) and isinstance(out_tok, int):
+            usage_str += f"  tok(in/out)={in_tok}/{out_tok}"
+        if isinstance(cache_write, int) or isinstance(cache_read, int):
+            usage_str += f"  cache(w/r)={cache_write or 0}/{cache_read or 0}"
+        subtype = f"  subtype={message.subtype}" if message.subtype else ""
+        stop_reason = f"  stop={message.stop_reason}" if message.stop_reason else ""
+        result_preview = ""
+        if message.result:
+            preview = str(message.result).strip().replace("\n", " ")
+            if preview:
+                result_preview = f"  result={preview[:120]}"
         logger.debug(
             _c(_BOLD, f"  ━━ [{agent_name}] done")
             + f"  status={status}"
             + f"  turns={message.num_turns}"
             + f"  {message.duration_ms / 1000:.1f}s"
+            + f"  api={message.duration_api_ms}ms"
+            + subtype
+            + stop_reason
+            + usage_str
             + _c(_DIM, cost)
+            + _c(_DIM, result_preview)
         )
 
 

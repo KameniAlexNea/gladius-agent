@@ -40,7 +40,14 @@ def get_runtime_model() -> str:
 
 
 def stderr_cb(line: str) -> None:
-    logger.error(f"  [CLI stderr] {line}")
+    text = (line or "").strip()
+    lowered = text.lower()
+    if any(k in lowered for k in ("error", "traceback", "exception", "fatal")):
+        logger.error(f"  [CLI stderr] {text}")
+    elif any(k in lowered for k in ("warn", "deprecated", "retry", "limit")):
+        logger.warning(f"  [CLI stderr] {text}")
+    else:
+        logger.info(f"  [CLI stderr] {text}")
 
 
 def is_tool_allowed(tool_name: str, allowed_tools: list[str]) -> bool:

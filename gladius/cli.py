@@ -11,8 +11,13 @@ import asyncio
 import sys
 from pathlib import Path
 
+from loguru import logger
+
+from gladius.logging_setup import configure_logging
+
 
 def main(argv: list[str] | None = None) -> None:
+    configure_logging()
     parser = argparse.ArgumentParser(
         prog="gladius",
         description="Self-directed ML competition agent.",
@@ -31,21 +36,22 @@ def main(argv: list[str] | None = None) -> None:
 
     config_path = Path(args.config)
     if not config_path.is_file():
-        print(f"error: config file not found: {args.config}", file=sys.stderr)
+        logger.error(f"config file not found: {args.config}")
         sys.exit(1)
 
     try:
         from gladius.project_setup import load_config, setup
 
         cfg = load_config(config_path)
+        configure_logging(cfg["project_dir"])
     except Exception as exc:
-        print(f"error loading config: {exc}", file=sys.stderr)
+        logger.exception(f"error loading config: {exc}")
         sys.exit(1)
 
     try:
         setup(config_path)
     except Exception as exc:
-        print(f"error during setup: {exc}", file=sys.stderr)
+        logger.exception(f"error during setup: {exc}")
         sys.exit(1)
 
     try:
@@ -60,8 +66,8 @@ def main(argv: list[str] | None = None) -> None:
             )
         )
     except KeyboardInterrupt:
-        print("\nInterrupted.", file=sys.stderr)
+        logger.warning("Interrupted.")
         sys.exit(130)
     except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        logger.exception(f"error: {exc}")
         sys.exit(1)

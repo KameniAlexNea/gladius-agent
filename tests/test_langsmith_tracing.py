@@ -21,9 +21,27 @@ def test_should_enable_langsmith_for_ollama_bridge_true(monkeypatch):
 
 
 def test_init_langsmith_client_returns_none_when_not_configured(monkeypatch):
+    monkeypatch.delenv("GLADIUS_ENABLE_LANGSMITH", raising=False)
     monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert lst.init_langsmith_client() == (None, None)
+
+
+def test_init_langsmith_client_supports_explicit_enable(monkeypatch):
+    monkeypatch.setenv("GLADIUS_ENABLE_LANGSMITH", "true")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "k")
+
+    class _FakeClient:
+        def __init__(self, api_key: str, api_url: str):
+            self.api_key = api_key
+            self.api_url = api_url
+
+    fake_mod = types.SimpleNamespace(Client=_FakeClient)
+    monkeypatch.setitem(__import__("sys").modules, "langsmith", fake_mod)
+
+    client, project = lst.init_langsmith_client()
+    assert isinstance(client, _FakeClient)
+    assert project == "gladius-agent"
 
 
 def test_init_langsmith_client_success(monkeypatch):
@@ -62,3 +80,25 @@ def test_langsmith_tracing_context_uses_tracing_context(monkeypatch):
     ctx = lst.langsmith_tracing_context(object(), "p")
     with ctx:
         pass
+
+
+def test_langsmith_tracing_context_with_metadata(monkeypatch):
+    seen = {}
+
+    def _tracing_context(**kwargs):
+        seen.update(kwargs)
+        return _DummyCtx()
+
+    fake_helpers = types.SimpleNamespace(tracing_context=_tracing_context)
+    monkeypatch.setitem(__import__("sys").modules, "langsmith.run_helpers", fake_helpers)
+
+    ctx = lst.langsmith_tracing_context_with_metadata(
+        object(),
+        "p",
+        run_name="r",
+        metadata={"k": "v"},
+        tags=["a"],
+    )
+    with ctx:
+        pass
+    assert seen["project_name"] == "p"
