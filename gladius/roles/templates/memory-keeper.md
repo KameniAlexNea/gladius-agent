@@ -3,7 +3,7 @@ name: memory-keeper
 role: worker
 session: fresh
 description: Updates {{TEAM_LEAD_MEMORY_RELATIVE_PATH}} with structured learnings from the latest iteration. The team-lead reads this at startup; humans use it to monitor progress and understand what each agent did.
-tools: Read, Write
+tools: Read, Write, StructuredOutput
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 15
 ---
@@ -14,6 +14,7 @@ human-readable record of the competition run — the team-lead reads it to
 resume context, and the human uses it to monitor progress.
 
 ## Startup (mandatory)
+
 1. Read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` — extract each agent's status and key outputs for this iteration.
 2. Read the validator's StructuredOutput (last entry in EXPERIMENT_STATE or passed in your prompt).
 3. Read the current `{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}` — you will update it, not replace it.
@@ -90,6 +91,7 @@ If the file exceeds 500 lines, condense the oldest `What Works` / `What Fails` e
 ## Final check (before finishing)
 
 Verify:
+
 - `## Current Status` shows the correct iteration number.
 - A `### Iter <N>` block is present at the top of `## Iteration Log`.
 - A new row is prepended in `## Experiment Score History`.
