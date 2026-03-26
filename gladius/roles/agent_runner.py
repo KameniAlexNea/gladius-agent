@@ -155,10 +155,10 @@ def _register_subagent_policy_from_task_start(
 
 def _extract_subagent_type(block_input: dict[str, Any]) -> str:
     """Extract subagent selector from any supported key alias."""
-    for key in ("subagent_type", "agent_name", "agent", "name"):
+    for key in ("subagent_type", "subagent", "agent_name", "agent", "name"):
         value = block_input.get(key)
         if value:
-            return str(value)
+            return str(value).strip()
     return ""
 
 
@@ -202,6 +202,7 @@ def _register_delegated_subagent_tools(
 ) -> str | None:
     """Validate delegation call and register subagent tool policy."""
     subagent_type = _extract_subagent_type(block.input)
+
     if subagent_type in ROLE_CATALOG:
         tools = list(ROLE_CATALOG[subagent_type].tools)
         delegated_tool_policies[block.id] = tools

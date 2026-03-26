@@ -3,6 +3,19 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from dotenv import load_dotenv
+
+
+def load_project_env(project_dir: str | Path, *, override: bool = True) -> Path | None:
+    """Load .env from the given project directory.
+
+    Returns the resolved .env path when loaded, otherwise None.
+    """
+    env_path = Path(project_dir).expanduser().resolve() / ".env"
+    if not env_path.is_file():
+        return None
+    load_dotenv(dotenv_path=env_path, override=override)
+    return env_path
 
 @dataclass(frozen=True)
 class WorkspaceLayout:

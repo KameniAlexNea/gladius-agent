@@ -39,6 +39,7 @@ from gladius.config import MAX_STATE_SNIPPET_CHARS as _MAX_STATE_SNIPPET_CHARS
 from gladius.config import MAX_TURNS as _DEFAULT_MAX_TURNS
 from gladius.config import PERSISTENT_ARTIFACTS as _PERSISTENT_ARTIFACTS
 from gladius.config import START_ITERATION_ENV_VAR as _START_ITERATION_ENV_VAR
+from gladius.config import load_project_env
 from gladius.db.store import StateStore
 from gladius.langsmith_tracing import (
     init_langsmith_client,
@@ -339,7 +340,10 @@ async def run_competition(
 ) -> None:
     cfg = load_competition_config(competition_dir, config_path=config_path)
     project_dir = Path(competition_dir)
+    loaded_env = load_project_env(project_dir)
     configure_logging(project_dir)
+    if loaded_env is not None:
+        logger.info(f"Loaded project env: {loaded_env}")
     run_id = f"{cfg.get('competition_id', 'run')}-{uuid.uuid4().hex[:8]}"
     store = StateStore(str(state_db_path(project_dir)))
 

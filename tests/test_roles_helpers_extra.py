@@ -55,6 +55,38 @@ def test_stderr_cb_stream_closed_is_warning(monkeypatch):
     assert seen and "stream closed during hook/control processing" in seen[0]
 
 
+def test_stderr_cb_dedupes_repeated_hook_callback_warning(monkeypatch):
+    warnings = []
+    debugs = []
+    t = [1000.0]
+
+    helpers._LAST_HOOK_WARNING = ("", 0.0)
+    monkeypatch.setattr(helpers.time, "monotonic", lambda: t[0])
+    monkeypatch.setattr(helpers.logger, "warning", lambda msg: warnings.append(msg))
+    monkeypatch.setattr(helpers.logger, "debug", lambda msg: debugs.append(msg))
+
+    helpers.stderr_cb("Error in hook callback hook_0: blob")
+    helpers.stderr_cb("Error in hook callback hook_4: blob")
+
+    assert len(warnings) == 1
+    assert any("repeated hook callback failure suppressed" in d for d in debugs)
+
+
+def test_stderr_cb_allows_hook_warning_after_dedupe_window(monkeypatch):
+    warnings = []
+    t = [1000.0]
+
+    helpers._LAST_HOOK_WARNING = ("", 0.0)
+    monkeypatch.setattr(helpers.time, "monotonic", lambda: t[0])
+    monkeypatch.setattr(helpers.logger, "warning", lambda msg: warnings.append(msg))
+
+    helpers.stderr_cb("Error in hook callback hook_0: blob")
+    t[0] += helpers._HOOK_WARN_DEDUPE_WINDOW_S + 0.1
+    helpers.stderr_cb("Error in hook callback hook_9: blob")
+
+    assert len(warnings) == 2
+
+
 def test_is_tool_allowed_structured_output_and_task_delegation():
     assert helpers.is_tool_allowed("StructuredOutput", ["Read"]) is True
     assert helpers.is_tool_allowed("Task", ["Agent"]) is True

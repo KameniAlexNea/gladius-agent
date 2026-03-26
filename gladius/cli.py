@@ -41,8 +41,12 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         from gladius.project_setup import load_config, setup
+        from gladius.config import load_project_env
 
         cfg = load_config(config_path)
+        loaded_env = load_project_env(cfg["project_dir"])
+        if loaded_env is not None:
+            logger.info(f"loaded project env: {loaded_env}")
         configure_logging(cfg["project_dir"])
     except Exception as exc:
         logger.exception(f"error loading config: {exc}")
