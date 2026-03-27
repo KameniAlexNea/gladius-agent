@@ -458,7 +458,11 @@ async def run_competition(
                     incomplete: list[str] = []
                     _iteration_error = False
 
+                    _SKIP_TRACE_EVENTS = {"stream_event"}
+
                     def _trace_sink(payload: dict[str, object]) -> None:
+                        if payload.get("event") in _SKIP_TRACE_EVENTS:
+                            return
                         store.record_agent_run(
                             run_id=run_id,
                             iteration=state.iteration,

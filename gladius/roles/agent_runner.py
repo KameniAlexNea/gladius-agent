@@ -21,6 +21,8 @@ from claude_agent_sdk.types import (
     AssistantMessage,
     StreamEvent,
     SystemMessage,
+    TaskNotificationMessage,
+    TaskProgressMessage,
     TaskStartedMessage,
     TextBlock,
     ToolUseBlock,
@@ -461,6 +463,30 @@ async def run_agent(
                                 task_type=message.task_type,
                                 session_id=message.session_id,
                                 tool_use_id=message.tool_use_id,
+                            )
+                        if isinstance(message, TaskProgressMessage):
+                            _sub = _trace_subagent_by_task_id.get(message.task_id or "", "")
+                            _emit_trace(
+                                trace_sink,
+                                event="task_progress",
+                                agent_name=agent_name,
+                                subagent_name=_sub or None,
+                                task_id=message.task_id,
+                                description=message.description,
+                                last_tool_name=message.last_tool_name,
+                                usage=message.usage,
+                            )
+                        if isinstance(message, TaskNotificationMessage):
+                            _sub = _trace_subagent_by_task_id.get(message.task_id or "", "")
+                            _emit_trace(
+                                trace_sink,
+                                event="task_notification",
+                                agent_name=agent_name,
+                                subagent_name=_sub or None,
+                                task_id=message.task_id,
+                                status=message.status,
+                                summary=message.summary,
+                                usage=message.usage,
                             )
                         if isinstance(message, AssistantMessage):
                             if forbidden_tool_error is None:
