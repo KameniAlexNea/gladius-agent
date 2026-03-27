@@ -118,6 +118,9 @@ class RuntimeSettings:
         )
 
 
+PROMPTS_DIR: Path = Path(__file__).parent / "prompts"
+SYSTEM_PROMPT_PATH: Path = PROMPTS_DIR / "orchestrator_system_prompt.md"
+
 LAYOUT = WorkspaceLayout()
 SETTINGS = RuntimeSettings.from_env()
 

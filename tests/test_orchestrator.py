@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 
-from gladius.langsmith_tracing import configure_langsmith_env
+from gladius.utilities.langsmith_tracing import configure_langsmith_env
 from gladius.orchestrator import (
     _archive_stale_outputs,
     _incomplete_agents,

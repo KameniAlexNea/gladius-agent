@@ -45,3 +45,8 @@ __all__ = [
     "state_db_path",
     "team_lead_memory_path",
 ]
+
+if __name__ == "__main__":
+    from gladius.cli import main
+
+    main()

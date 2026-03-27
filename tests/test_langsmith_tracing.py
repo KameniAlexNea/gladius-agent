@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import types
 
-from gladius import langsmith_tracing as lst
+from gladius.utilities import langsmith_tracing as lst
 
 
 def test_should_enable_langsmith_for_ollama_bridge_true(monkeypatch):

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from gladius.logging_setup import configure_logging
+from gladius.utilities.logging_setup import configure_logging
 
 
 def main(argv: list[str] | None = None) -> None:

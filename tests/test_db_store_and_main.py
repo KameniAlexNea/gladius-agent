@@ -19,14 +19,19 @@ def test_state_store_roundtrip_and_noops():
     s.record_agent_run(x=1)
 
 
-def test_main_invokes_cli_main(monkeypatch):
+def test_init_main_guard_invokes_cli_main(monkeypatch):
+    """gladius/__init__.py has an `if __name__ == '__main__'` guard that calls cli.main."""
     called = {"ok": False}
 
     def _main():
         called["ok"] = True
 
     monkeypatch.setitem(sys.modules, "gladius.cli", SimpleNamespace(main=_main))
-    if "gladius.__main__" in sys.modules:
-        del sys.modules["gladius.__main__"]
-    importlib.import_module("gladius.__main__")
+    import gladius as _pkg
+    import importlib.util, types
+
+    src = importlib.util.find_spec("gladius").origin
+    code = compile(open(src, encoding="utf-8").read(), src, "exec")
+    ns: dict = {"__name__": "__main__", "__file__": src, "__spec__": None}
+    exec(code, ns)  # noqa: S102
     assert called["ok"] is True

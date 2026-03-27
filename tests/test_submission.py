@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from gladius.state import CompetitionState
-from gladius.submission import (
+from gladius.utilities.submission import (
     score_submission_artifact,
     submit,
     update_best_submission_score,

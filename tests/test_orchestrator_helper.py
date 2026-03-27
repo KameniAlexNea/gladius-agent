@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from gladius._orchestrator_helper import _load_system_prompt, make_kickoff_prompt
+from gladius.utilities._orchestrator_helper import _load_system_prompt, make_kickoff_prompt
 from gladius.state import CompetitionState
 
 
@@ -33,7 +33,8 @@ def test_load_system_prompt_replaces_placeholders():
 def test_load_system_prompt_raises_for_too_short(monkeypatch, tmp_path: Path):
     p = tmp_path / "prompt.md"
     p.write_text("short", encoding="utf-8")
-    monkeypatch.setattr("gladius._orchestrator_helper._SYSTEM_PROMPT_PATH", p)
+    monkeypatch.setattr("gladius.config.SYSTEM_PROMPT_PATH", p)
+    monkeypatch.setattr("gladius.utilities._orchestrator_helper._SYSTEM_PROMPT_PATH", p)
     with pytest.raises(RuntimeError, match="unexpectedly short"):
         _load_system_prompt()
 

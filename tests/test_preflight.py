@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from gladius.preflight import _build_preflight_errors, run_preflight_or_raise
+from gladius.utilities.preflight import _build_preflight_errors, run_preflight_or_raise
 
 
 def _call(tmp_path: Path, **overrides) -> list[str]:
