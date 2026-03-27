@@ -179,10 +179,11 @@ def _log_message(agent_name: str, message: Any) -> None:
         tool_str = f"  last_tool={tool}" if tool else ""
         subagent_name = _task_names.get(message.task_id or "", "")
         name_tag = _c(_DIM + _GREY, f" ➣{subagent_name}") if subagent_name else ""
-        logger.debug(
-            _c(_GREY, f"  ⏳ [{agent_name}]{name_tag} {message.description}")
-            + _c(_DIM, token_str + tool_uses_str + dur_str + tool_str)
-        )
+        with logger.contextualize(agent=subagent_name or agent_name):
+            logger.debug(
+                _c(_GREY, f"  ⏳ [{agent_name}]{name_tag} {message.description}")
+                + _c(_DIM, token_str + tool_uses_str + dur_str + tool_str)
+            )
         return
 
     if isinstance(message, TaskNotificationMessage):
@@ -224,34 +225,31 @@ def _log_message(agent_name: str, message: Any) -> None:
             logger.debug(
                 _c(_RED, f"  ⚠ [{agent_name}] AssistantMessage error: {message.error}")
             )
-        sub_tag = (
-            _c(
-                _DIM + _GREY,
-                f" ➣{_subagent_names.get(message.parent_tool_use_id, '?')}",
-            )
-            if message.parent_tool_use_id
-            else ""
-        )
+        sub_name = _subagent_names.get(message.parent_tool_use_id, "") if message.parent_tool_use_id else ""
+        sub_tag = _c(_DIM + _GREY, f" ➣{sub_name}") if sub_name else ""
 
-        for block in message.content:
-            if isinstance(block, TextBlock) and block.text.strip():
-                for line in textwrap.wrap(block.text.strip(), width=120):
-                    logger.debug(_c(_CYAN, f"  💬 [{agent_name}]{sub_tag} {line}"))
+        with logger.contextualize(agent=sub_name or agent_name):
+            for block in message.content:
+                if isinstance(block, TextBlock) and block.text.strip():
+                    for line in textwrap.wrap(block.text.strip(), width=120):
+                        logger.debug(_c(_CYAN, f"  💬 [{agent_name}]{sub_tag} {line}"))
 
-            elif isinstance(block, ThinkingBlock) and block.thinking.strip():
-                snippet = block.thinking.strip()[:200].replace("\n", " ")
-                logger.debug(
-                    _c(_GREY, f"  🧠 [{agent_name}]{sub_tag} (thinking) {snippet} …")
-                )
+                elif isinstance(block, ThinkingBlock) and block.thinking.strip():
+                    snippet = block.thinking.strip()[:200].replace("\n", " ")
+                    logger.debug(
+                        _c(_GREY, f"  🧠 [{agent_name}]{sub_tag} (thinking) {snippet} …")
+                    )
 
-            elif isinstance(block, ToolUseBlock):
-                _log_tool_use(agent_name, sub_tag, block)
+                elif isinstance(block, ToolUseBlock):
+                    _log_tool_use(agent_name, sub_tag, block)
 
     elif isinstance(message, UserMessage):
         if isinstance(message.content, list):
-            for block in message.content:
-                if isinstance(block, ToolResultBlock):
-                    _log_tool_result(agent_name, block)
+            sub_name = _subagent_names.get(getattr(message, "parent_tool_use_id", None) or "", "")
+            with logger.contextualize(agent=sub_name or agent_name):
+                for block in message.content:
+                    if isinstance(block, ToolResultBlock):
+                        _log_tool_result(agent_name, block)
 
     elif isinstance(message, ResultMessage):
         cost = f"  cost=${message.total_cost_usd:.4f}" if message.total_cost_usd else ""
