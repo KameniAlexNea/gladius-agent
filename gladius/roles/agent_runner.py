@@ -387,6 +387,9 @@ async def run_agent(
                 _pending_subagent_tools: collections.deque[list[str]] = (
                     collections.deque()
                 )
+                # tool_use_id → subagent name, task_id → subagent name
+                _trace_subagent_by_tool_id: dict[str, str] = {}
+                _trace_subagent_by_task_id: dict[str, str] = {}
 
                 with logger.contextualize(attempt=str(attempt_no)):
                     if verbose:
@@ -418,10 +421,12 @@ async def run_agent(
                                 and message.session_id
                             ):
                                 early_session_id = message.session_id
+                            _sub = _trace_subagent_by_tool_id.get(message.parent_tool_use_id or "", "")
                             _emit_trace(
                                 trace_sink,
                                 event="stream_event",
                                 agent_name=agent_name,
+                                subagent_name=_sub or None,
                                 session_id=message.session_id,
                                 parent_tool_use_id=message.parent_tool_use_id,
                                 stream_type=message.event.get("type"),
@@ -444,10 +449,14 @@ async def run_agent(
                                 delegated_tool_policies=delegated_tool_policies,
                                 pending_subagent_tools=_pending_subagent_tools,
                             )
+                            _sub = _trace_subagent_by_tool_id.get(message.tool_use_id or "", "")
+                            if _sub and message.task_id:
+                                _trace_subagent_by_task_id[message.task_id] = _sub
                             _emit_trace(
                                 trace_sink,
                                 event="task_started",
                                 agent_name=agent_name,
+                                subagent_name=_sub or None,
                                 task_id=message.task_id,
                                 task_type=message.task_type,
                                 session_id=message.session_id,
@@ -457,6 +466,11 @@ async def run_agent(
                             if forbidden_tool_error is None:
                                 for block in message.content:
                                     if isinstance(block, ToolUseBlock):
+                                        # Record subagent name before policy check
+                                        if block.name in {"Task", "Agent"}:
+                                            _stype = _extract_subagent_type(block.input)
+                                            if _stype:
+                                                _trace_subagent_by_tool_id[block.id] = _stype
                                         forbidden_tool_error = _handle_tool_use_block(
                                             agent_name=agent_name,
                                             block=block,
