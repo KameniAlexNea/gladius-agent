@@ -487,6 +487,7 @@ async def run_competition(
                                 trace_context={
                                     "run_id": run_id,
                                     "iteration": state.iteration,
+                                    "attempt": attempt_no,
                                 },
                                 enable_trace_hooks=True,
                             )

@@ -88,10 +88,6 @@ def _patch_runtime(monkeypatch):
 
 def test_extract_subagent_type_aliases():
     assert ar._extract_subagent_type({"subagent_type": "x"}) == "x"
-    assert ar._extract_subagent_type({"subagent": "x"}) == "x"
-    assert ar._extract_subagent_type({"agent_name": "x"}) == "x"
-    assert ar._extract_subagent_type({"agent": "x"}) == "x"
-    assert ar._extract_subagent_type({"name": "x"}) == "x"
     assert ar._extract_subagent_type({}) == ""
 
 

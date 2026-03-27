@@ -155,7 +155,7 @@ def _register_subagent_policy_from_task_start(
 
 def _extract_subagent_type(block_input: dict[str, Any]) -> str:
     """Extract subagent selector from any supported key alias."""
-    for key in ("subagent_type", "subagent", "agent_name", "agent", "name"):
+    for key in ("subagent_type",):
         value = block_input.get(key)
         if value:
             return str(value).strip()
@@ -367,7 +367,7 @@ async def run_agent(
     with logger.contextualize(
         run_id=str(trace_context.get("run_id", "-")),
         iteration=str(trace_context.get("iteration", "-")),
-        attempt="-",
+        attempt=str(trace_context.get("attempt", "-")),
         agent=agent_name,
     ):
         for attempt in range(max_retries):
@@ -461,11 +461,12 @@ async def run_agent(
                                                 message=forbidden_tool_error,
                                             )
                                             logger.warning(
-                                                f"[{agent_name}] detected policy violation; "
-                                                "draining stream to completion before raising."
+                                                f"[{agent_name}] policy violation — aborting stream."
                                             )
                                             break
                             last_assistant_msg = message
+                            if forbidden_tool_error is not None:
+                                break
                         if isinstance(message, ResultMessage):
                             result_msg = message
                             _emit_trace(

@@ -311,10 +311,6 @@ def _log_tool_use(agent_name: str, sub_tag: str, block: ToolUseBlock) -> None:
             or "?"
         )
         description = str(block.input.get("description", "")).strip()
-        if target == "?" and description:
-            maybe_name = description.split(":", 1)[0].strip().lower()
-            if maybe_name:
-                target = maybe_name
         _subagent_names[block.id] = target
         snippet = block.input.get("prompt", "")[:80].replace("\n", " ")
         logger.debug(
