@@ -34,7 +34,7 @@ mcp__skills-on-demand__search_skills({"query": "scientific data loading <domain>
 | Statistical validation, drift, outliers | `statistical-analysis`            |
 | High performance data (>2 GB)           | `polars`                          |
 | Out-of-core processing                  | `dask`                            |
-| Code hygiene for loaders/contracts      | `ml-competition-quality` *(pre-loaded via ml-competition-features)* |
+| Code hygiene for loaders/contracts      | `ml-competition-setup` *(pre-loaded)* |
 
 ## Startup sequence
 

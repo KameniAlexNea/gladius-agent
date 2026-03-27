@@ -10,6 +10,7 @@ skills:
   - ml-competition
   - ml-competition-features
   - ml-competition-quality
+  - ml-competition-pre-submit
 mcpServers:
   - skills-on-demand
 ---
@@ -31,7 +32,7 @@ mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "
 | When                                                           | Skill                               |
 | -------------------------------------------------------------- | ----------------------------------- |
 | Feature recipes, leakage-safe aggregations, target encoding    | `ml-competition-features` *(pre-loaded)* |
-| Adversarial validation, distribution shift after new features  | `ml-competition-pre-submit` *(pre-loaded via ml-competition-features)*  |
+| Adversarial validation, distribution shift after new features  | `ml-competition-pre-submit` *(pre-loaded)*                              |
 | Code hygiene: remove dead code, keep function contracts honest | `ml-competition-quality` *(pre-loaded)* |
 | Preprocessing pipelines, encoding, scaling recipes             | `scikit-learn`                    |
 | Prune features, explain importance, debug model                | `shap`                            |
@@ -42,7 +43,7 @@ mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "
 ## Startup sequence
 
 1. Read the plan in your task prompt — understand what hypothesis to test.
-2. **Required skills are pre-loaded** — `ml-competition`, `ml-competition-features`, and `ml-competition-quality` content is already in your context. Read them before writing any code — no Skill() calls needed.
+2. **Required skills are pre-loaded** — `ml-competition`, `ml-competition-features`, `ml-competition-quality`, and `ml-competition-pre-submit` are already in your context. Read them before writing any code — no Skill() calls needed.
 3. Read `src/config.py` and `src/data.py` to understand the data contract.
 4. Read `src/features.py` before editing (may already have code from prior iterations).
 
