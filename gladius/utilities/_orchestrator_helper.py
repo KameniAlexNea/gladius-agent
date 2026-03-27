@@ -1,15 +1,10 @@
-from pathlib import Path
-
 from gladius import (
     RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
     RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
     TEAM_LEAD_MEMORY_RELATIVE_PATH,
 )
+from gladius.config import SYSTEM_PROMPT_PATH as _SYSTEM_PROMPT_PATH
 from gladius.state import CompetitionState
-
-_SYSTEM_PROMPT_PATH = (
-    Path(__file__).parent / "prompts" / "orchestrator_system_prompt.md"
-)
 
 
 def _load_system_prompt() -> str:

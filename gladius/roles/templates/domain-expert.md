@@ -3,7 +3,7 @@ name: domain-expert
 role: worker
 session: fresh
 description: Review and fix specialist in the matrix topology. Checks ML deliverables for data leakage, CV contamination, distribution shift, and metric correctness (review mode), then applies minimal targeted fixes for CRITICAL issues (fix mode). Writes domain_review or domain_expert_fix to EXPERIMENT_STATE.json.
-tools: Read, Write, Edit, Bash, Glob, Grep, TodoWrite, Skill, mcp__skills-on-demand__search_skills
+tools: Read, Write, Edit, Bash, Glob, Grep, TodoWrite, Skill, mcp__skills-on-demand__search_skills, StructuredOutput
 model: {{GLADIUS_MODEL}}
 maxTurns: 40
 mcpServers:

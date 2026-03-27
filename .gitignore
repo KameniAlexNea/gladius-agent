@@ -212,3 +212,6 @@ state/experiments
 examples/app_competition
 examples/data_dog
 examples/fake_competition
+
+# Gladius local runtime state
+.gladius/

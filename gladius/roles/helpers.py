@@ -3,9 +3,20 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from loguru import logger
+
+_MAX_STDERR_LINE_CHARS = 320
+_SOURCE_SNIPPET_RE = re.compile(r"^\d+\s+\|\s")
+_STACK_FRAME_RE = re.compile(r"^at\s+")
+
+
+def _clip(text: str, *, limit: int = _MAX_STDERR_LINE_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "..."
 
 
 def validate_runtime_invocation(
@@ -40,7 +51,28 @@ def get_runtime_model() -> str:
 
 
 def stderr_cb(line: str) -> None:
-    logger.error(f"  [CLI stderr] {line}")
+    text = (line or "").strip()
+    if not text:
+        return
+
+    lowered = text.lower()
+
+    # Silently drop Claude CLI hook callback errors — internal CLI noise.
+    if "error in hook callback" in lowered:
+        return
+    if _SOURCE_SNIPPET_RE.match(text) or _STACK_FRAME_RE.match(text):
+        return
+    if "stream closed" in lowered:
+        logger.warning("  [CLI stderr] stream closed during hook/control processing")
+        return
+
+    text = _clip(text)
+    if any(k in lowered for k in ("error", "traceback", "exception", "fatal")):
+        logger.error(f"  [CLI stderr] {text}")
+    elif any(k in lowered for k in ("warn", "deprecated", "retry", "limit")):
+        logger.warning(f"  [CLI stderr] {text}")
+    else:
+        logger.info(f"  [CLI stderr] {text}")
 
 
 def is_tool_allowed(tool_name: str, allowed_tools: list[str]) -> bool:

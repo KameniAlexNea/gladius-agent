@@ -20,7 +20,7 @@ graph TD
     Approval -- Approved --> EV[evaluator]
     Approval -- Rejected/Critical --> ME
     
-    EV --> V[ealidator]
+    EV --> V[validator]
     V --> MK[memory-keeper]
 ```
 

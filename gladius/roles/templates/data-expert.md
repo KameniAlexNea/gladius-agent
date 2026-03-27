@@ -3,7 +3,7 @@ name: data-expert
 role: worker
 session: fresh
 description: ML Data Architecture & Profiling. Sets up the project scaffold, defines the data contract, performs rigorous data profiling (leakage, drift, distributions, class imbalance), and initialises src/ (config, data). Writes status to EXPERIMENT_STATE.json.
-tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Skill, mcp__skills-on-demand__search_skills
+tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Skill, mcp__skills-on-demand__search_skills, StructuredOutput
 model: {{GLADIUS_MODEL}}
 maxTurns: 30
 skills:
@@ -26,12 +26,12 @@ mcp__skills-on-demand__search_skills({"query": "scientific data loading <domain>
 > **Note:** Call `mcp__skills-on-demand__search_skills` as a **direct MCP tool call** — do NOT pass it as the `skill` argument to the `Skill` tool.
 > Searching for skills is **optional context only** — if no relevant skill is found, continue with your own implementation.
 
-| Context                                 | Skill                         |
-| --------------------------------------- | ----------------------------- |
-| Deep profiling, distributions, quality  | `exploratory-data-analysis` |
-| Statistical validation, drift, outliers | `statistical-analysis`      |
-| High performance data (>2 GB)           | `polars`                    |
-| Out-of-core processing                  | `dask`                      |
+| Context                                 | Skill                               |
+| --------------------------------------- | ----------------------------------- |
+| Deep profiling, distributions, quality  | `exploratory-data-analysis`       |
+| Statistical validation, drift, outliers | `statistical-analysis`            |
+| High performance data (>2 GB)           | `polars`                          |
+| Out-of-core processing                  | `dask`                            |
 | Code hygiene for loaders/contracts      | `ml-competition` *(pre-loaded)* |
 
 ## Startup sequence
