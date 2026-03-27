@@ -8,6 +8,7 @@ model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 20
 skills:
   - ml-competition
+  - ml-competition-setup
 mcpServers:
   - skills-on-demand
 ---

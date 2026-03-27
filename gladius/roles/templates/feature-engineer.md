@@ -8,6 +8,8 @@ model: {{GLADIUS_MODEL}}
 maxTurns: 40
 skills:
   - ml-competition
+  - ml-competition-features
+  - ml-competition-quality
 mcpServers:
   - skills-on-demand
 ---
@@ -24,13 +26,13 @@ mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "
 ```
 
 > ⚠️ **Common mistake:** `Skill({"skill": "search_skills"})` is WRONG — `search_skills` is not a skill name. Call `mcp__skills-on-demand__search_skills` as a tool directly.
-> Then load the chosen skill with `Skill({"skill": "<skill-name>"})`. Note: `ml-competition` is pre-loaded — no Skill() call needed for it.
+> Then load the chosen skill with `Skill({"skill": "<skill-name>"})`. Note: `ml-competition`, `ml-competition-features`, and `ml-competition-quality` are pre-loaded — no Skill() calls needed for them.
 
 | When                                                           | Skill                               |
 | -------------------------------------------------------------- | ----------------------------------- |
-| Feature recipes, leakage-safe aggregations, target encoding    | `ml-competition` *(pre-loaded)* |
-| Adversarial validation, distribution shift after new features  | `pre-submit`                      |
-| Code hygiene: remove dead code, keep function contracts honest | `ml-competition` *(pre-loaded)* |
+| Feature recipes, leakage-safe aggregations, target encoding    | `ml-competition-features` *(pre-loaded)* |
+| Adversarial validation, distribution shift after new features  | `ml-competition-pre-submit` *(pre-loaded via ml-competition-features)*  |
+| Code hygiene: remove dead code, keep function contracts honest | `ml-competition-quality` *(pre-loaded)* |
 | Preprocessing pipelines, encoding, scaling recipes             | `scikit-learn`                    |
 | Prune features, explain importance, debug model                | `shap`                            |
 | Fast feature transforms on large datasets                      | `polars`                          |
@@ -40,7 +42,7 @@ mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "
 ## Startup sequence
 
 1. Read the plan in your task prompt — understand what hypothesis to test.
-2. **`ml-competition` skill is pre-loaded** — its content is already in your context. Read its safety rules before writing any code — no Skill() call needed.
+2. **Required skills are pre-loaded** — `ml-competition`, `ml-competition-features`, and `ml-competition-quality` content is already in your context. Read them before writing any code — no Skill() calls needed.
 3. Read `src/config.py` and `src/data.py` to understand the data contract.
 4. Read `src/features.py` before editing (may already have code from prior iterations).
 
@@ -55,7 +57,7 @@ mcp__skills-on-demand__search_skills({"query": "feature engineering <domain>", "
 ### How to test
 
 - **Quick sanity check first**: run `n_splits=2` fold before committing to full CV — catches leaks early.
-- **After each batch**: run adversarial validation (`pre-submit` skill) to detect distribution shift.
+- **After each batch**: run adversarial validation (`ml-competition-pre-submit` skill) to detect distribution shift.
 - **Prune ruthlessly**: use SHAP (`shap` skill) to drop features with near-zero importance.
 
 ### Output contract

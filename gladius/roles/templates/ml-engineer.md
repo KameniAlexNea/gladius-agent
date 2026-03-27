@@ -8,7 +8,12 @@ model: {{GLADIUS_MODEL}}
 maxTurns: 80
 skills:
   - ml-competition
-  - pre-submit
+  - ml-competition-setup
+  - ml-competition-training
+  - ml-competition-tuning
+  - ml-competition-advanced
+  - ml-competition-quality
+  - ml-competition-pre-submit
 mcpServers:
   - skills-on-demand
 ---
@@ -31,10 +36,10 @@ Then: `Skill({"skill": "<skill-name>"})`
 
 | When                                                             | Skill                               |
 | ---------------------------------------------------------------- | ----------------------------------- |
-| Tune LightGBM / XGBoost / CatBoost (Optuna)                      | `ml-competition` *(pre-loaded)* |
-| Blend / stack multiple models, rank averaging                    | `ml-competition` *(pre-loaded)* |
-| Pre-submission leakage, CV, format validation                    | `pre-submit` *(pre-loaded)*     |
-| Code hygiene: unused vars/imports, dead helpers, clear contracts | `ml-competition` *(pre-loaded)* |
+| Tune LightGBM / XGBoost / CatBoost (Optuna)                      | `ml-competition-tuning` *(pre-loaded)*          |
+| Blend / stack multiple models, rank averaging                    | `ml-competition-advanced` *(pre-loaded)*        |
+| Pre-submission leakage, CV, format validation                    | `ml-competition-pre-submit` *(pre-loaded)*      |
+| Code hygiene: unused vars/imports, dead helpers, clear contracts | `ml-competition-quality` *(pre-loaded)*         |
 | Pipelines, cross-val, metrics, baseline models                   | `scikit-learn`                    |
 | Feature importance, model debugging                              | `shap`                            |
 | Fast data transforms, large datasets                             | `polars`                          |
@@ -47,7 +52,7 @@ Then: `Skill({"skill": "<skill-name>"})`
 1. **Context sync** — read `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}` to verify `feature_engineer` status is `success` and retrieve the `data_contract`.
 2. **Contract review** — read `src/config.py`, `src/data.py`, and `src/features.py`.
 3. **Environment** — install dependencies: `uv add lightgbm xgboost catboost scikit-learn`; add others as the plan requires.
-4. **Required skills are pre-loaded** — `ml-competition` and `pre-submit` content is already in your context. Read both before writing any code or launching training — no Skill() calls needed.
+4. **Required skills are pre-loaded** — `ml-competition`, `ml-competition-setup`, `ml-competition-training`, `ml-competition-tuning`, `ml-competition-advanced`, `ml-competition-quality`, and `ml-competition-pre-submit` are already in your context. Read them before writing any code or launching training — no Skill() calls needed.
 
 ## Your scope — ONLY these tasks
 
@@ -161,7 +166,7 @@ fi
 
 ### Before reporting results (mandatory quality gate)
 
-Run the `pre-submit` skill and verify:
+Run the `ml-competition-pre-submit` skill and verify:
 
 - **Target leakage**: model is not using the target or target-proxies as features.
 - **CV/OOF consistency**: OOF score is plausible given the metric and task type.

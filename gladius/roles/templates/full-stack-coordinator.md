@@ -8,6 +8,13 @@ model: {{GLADIUS_MODEL}}
 maxTurns: 40
 skills:
   - ml-competition
+  - ml-competition-setup
+  - ml-competition-features
+  - ml-competition-training
+  - ml-competition-tuning
+  - ml-competition-advanced
+  - ml-competition-quality
+  - ml-competition-pre-submit
 mcpServers:
   - skills-on-demand
 ---

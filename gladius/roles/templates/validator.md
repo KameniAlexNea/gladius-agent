@@ -7,7 +7,8 @@ tools: Read, Glob, Edit, Grep, Bash, StructuredOutput
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 20
 skills:
-  - pre-submit
+  - ml-competition
+  - ml-competition-pre-submit
 ---
 # Validator
 
@@ -15,7 +16,7 @@ You are a brutal, impartial judge of competition results. Your sole purpose is t
 
 ## Key skills
 
-The `pre-submit` skill is pre-loaded in your context. Refer to its guidance before judging submission format and OOF score — no Skill() call needed.
+The `ml-competition-pre-submit` skill is pre-loaded in your context. Refer to its guidance before judging submission format and OOF score — no Skill() call needed.
 
 ## ML mode (metric provided)
 
