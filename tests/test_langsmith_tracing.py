@@ -1,17 +1,8 @@
 from __future__ import annotations
 
-import contextlib
 import types
 
 from gladius import langsmith_tracing as lst
-
-
-class _DummyCtx:
-    def __enter__(self):
-        return None
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
 
 
 def test_should_enable_langsmith_for_ollama_bridge_true(monkeypatch):
@@ -20,85 +11,46 @@ def test_should_enable_langsmith_for_ollama_bridge_true(monkeypatch):
     assert lst.should_enable_langsmith_for_ollama_bridge() is True
 
 
-def test_init_langsmith_client_returns_none_when_not_configured(monkeypatch):
+def test_init_langsmith_tracing_returns_false_when_not_configured(monkeypatch):
     monkeypatch.delenv("GLADIUS_ENABLE_LANGSMITH", raising=False)
     monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    assert lst.init_langsmith_client() == (None, None)
+    assert lst.init_langsmith_tracing() is False
 
 
-def test_init_langsmith_client_supports_explicit_enable(monkeypatch):
+def test_init_langsmith_tracing_returns_false_without_api_key(monkeypatch):
+    monkeypatch.setenv("GLADIUS_ENABLE_LANGSMITH", "true")
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    assert lst.init_langsmith_tracing() is False
+
+
+def test_init_langsmith_tracing_calls_configure(monkeypatch):
     monkeypatch.setenv("GLADIUS_ENABLE_LANGSMITH", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "k")
 
-    class _FakeClient:
-        def __init__(self, api_key: str, api_url: str):
-            self.api_key = api_key
-            self.api_url = api_url
+    called = []
 
-    fake_mod = types.SimpleNamespace(Client=_FakeClient)
-    monkeypatch.setitem(__import__("sys").modules, "langsmith", fake_mod)
+    def _configure():
+        called.append(True)
 
-    client, project = lst.init_langsmith_client()
-    assert isinstance(client, _FakeClient)
-    assert project == "gladius-agent"
-
-
-def test_init_langsmith_client_success(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://localhost:11434/v1")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "OLLAMA")
-    monkeypatch.setenv("LANGSMITH_API_KEY", "k")
-
-    class _FakeClient:
-        def __init__(self, api_key: str, api_url: str):
-            self.api_key = api_key
-            self.api_url = api_url
-
-    fake_mod = types.SimpleNamespace(Client=_FakeClient)
-    monkeypatch.setitem(__import__("sys").modules, "langsmith", fake_mod)
-
-    client, project = lst.init_langsmith_client()
-    assert isinstance(client, _FakeClient)
-    assert project == "gladius-agent"
-
-
-def test_langsmith_tracing_context_falls_back_to_nullcontext(monkeypatch):
-    # Simulate missing run_helpers import
-    monkeypatch.setitem(__import__("sys").modules, "langsmith.run_helpers", None)
-    ctx = lst.langsmith_tracing_context(object(), "p")
-    assert isinstance(ctx, contextlib.AbstractContextManager)
-
-
-def test_langsmith_tracing_context_uses_tracing_context(monkeypatch):
-    def _tracing_context(**kwargs):
-        assert kwargs["project_name"] == "p"
-        return _DummyCtx()
-
-    fake_helpers = types.SimpleNamespace(tracing_context=_tracing_context)
-    monkeypatch.setitem(__import__("sys").modules, "langsmith.run_helpers", fake_helpers)
-
-    ctx = lst.langsmith_tracing_context(object(), "p")
-    with ctx:
-        pass
-
-
-def test_langsmith_tracing_context_with_metadata(monkeypatch):
-    seen = {}
-
-    def _tracing_context(**kwargs):
-        seen.update(kwargs)
-        return _DummyCtx()
-
-    fake_helpers = types.SimpleNamespace(tracing_context=_tracing_context)
-    monkeypatch.setitem(__import__("sys").modules, "langsmith.run_helpers", fake_helpers)
-
-    ctx = lst.langsmith_tracing_context_with_metadata(
-        object(),
-        "p",
-        run_name="r",
-        metadata={"k": "v"},
-        tags=["a"],
+    fake_integration = types.SimpleNamespace(configure_claude_agent_sdk=_configure)
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "langsmith.integrations.claude_agent_sdk",
+        fake_integration,
     )
-    with ctx:
-        pass
-    assert seen["project_name"] == "p"
+
+    result = lst.init_langsmith_tracing()
+    assert result is True
+    assert called == [True]
+
+
+def test_init_langsmith_tracing_returns_false_on_import_error(monkeypatch):
+    monkeypatch.setenv("GLADIUS_ENABLE_LANGSMITH", "true")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "k")
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "langsmith.integrations.claude_agent_sdk",
+        None,
+    )
+    assert lst.init_langsmith_tracing() is False

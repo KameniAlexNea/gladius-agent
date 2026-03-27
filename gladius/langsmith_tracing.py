@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
-import inspect
 import os
 from typing import Any
 
@@ -37,8 +35,7 @@ def configure_langsmith_env() -> bool:
     api_key = os.getenv("LANGSMITH_API_KEY", "").strip()
     if not api_key:
         logger.warning(
-            "LANGSMITH_API_KEY is not set; LangSmith tracing was requested for "
-            "ANTHROPIC_BASE_URL+OLLAMA mode but will remain disabled."
+            "LANGSMITH_API_KEY is not set; LangSmith tracing was requested but will remain disabled."
         )
         return False
 
@@ -46,73 +43,25 @@ def configure_langsmith_env() -> bool:
     return tracing_flag in {"1", "true", "yes", "on"}
 
 
-def init_langsmith_client() -> tuple[Any | None, str | None]:
-    """Create LangSmith client from env for tracing, if enabled."""
+def init_langsmith_tracing() -> bool:
+    """Configure LangSmith env and install the claude-agent-sdk integration.
+
+    Call once at startup.  Returns True when tracing is active.
+    """
     if not configure_langsmith_env():
-        return None, None
+        return False
 
     endpoint = os.getenv("LANGSMITH_ENDPOINT", _LANGSMITH_DEFAULT_ENDPOINT).strip()
     project_name = os.getenv("LANGSMITH_PROJECT", _LANGSMITH_DEFAULT_PROJECT).strip()
-    api_key = os.getenv("LANGSMITH_API_KEY", "").strip()
 
     try:
-        import langsmith
+        from langsmith.integrations.claude_agent_sdk import configure_claude_agent_sdk
 
-        client = langsmith.Client(api_key=api_key, api_url=endpoint)
+        configure_claude_agent_sdk()
         logger.info(
             f"LangSmith tracing enabled (project={project_name!r}, endpoint={endpoint!r})."
         )
-        return client, project_name
+        return True
     except Exception as exc:
-        logger.warning(f"Failed to initialize LangSmith client: {exc}")
-        return None, None
-
-
-def langsmith_tracing_context(client: Any | None, project_name: str | None):
-    """Return LangSmith tracing_context, or a no-op when unavailable."""
-    if client is None or not project_name:
-        return contextlib.nullcontext()
-
-    try:
-        from langsmith.run_helpers import tracing_context
-
-        return tracing_context(client=client, project_name=project_name, enabled=True)
-    except Exception as exc:
-        logger.warning(f"Failed to create LangSmith tracing context: {exc}")
-        return contextlib.nullcontext()
-
-
-def langsmith_tracing_context_with_metadata(
-    client: Any | None,
-    project_name: str | None,
-    *,
-    run_name: str | None = None,
-    metadata: dict[str, Any] | None = None,
-    tags: list[str] | None = None,
-):
-    """Return tracing context with optional metadata/tags when supported by SDK."""
-    if client is None or not project_name:
-        logger.debug(
-            "LangSmith client or project name not available; returning nullcontext for tracing."
-        )
-        return contextlib.nullcontext()
-
-    try:
-        from langsmith.run_helpers import tracing_context
-
-        kwargs: dict[str, Any] = {
-            "client": client,
-            "project_name": project_name,
-            "enabled": True,
-        }
-        sig = inspect.signature(tracing_context)
-        if run_name is not None and "run_name" in sig.parameters:
-            kwargs["run_name"] = run_name
-        if metadata is not None and "metadata" in sig.parameters:
-            kwargs["metadata"] = metadata
-        if tags is not None and "tags" in sig.parameters:
-            kwargs["tags"] = tags
-        return tracing_context(**kwargs)
-    except Exception as exc:
-        logger.warning(f"Failed to create LangSmith tracing context: {exc}")
-        return contextlib.nullcontext()
+        logger.warning(f"Failed to initialize LangSmith tracing: {exc}")
+        return False

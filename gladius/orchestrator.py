@@ -41,11 +41,7 @@ from gladius.config import PERSISTENT_ARTIFACTS as _PERSISTENT_ARTIFACTS
 from gladius.config import START_ITERATION_ENV_VAR as _START_ITERATION_ENV_VAR
 from gladius.config import load_project_env
 from gladius.db.store import StateStore
-from gladius.langsmith_tracing import (
-    init_langsmith_client,
-    langsmith_tracing_context,
-    langsmith_tracing_context_with_metadata,
-)
+from gladius.langsmith_tracing import init_langsmith_tracing
 from gladius.logging_setup import configure_logging
 from gladius.process_cleanup import (
     cleanup_orphan_processes,
@@ -379,7 +375,7 @@ async def run_competition(
                     f"Loaded {len(state.team_session_ids)} persisted session id(s) from state DB."
                 )
 
-        langsmith_client, langsmith_project = init_langsmith_client()
+        init_langsmith_tracing()
 
         start_iteration = _resolve_start_iteration(state.max_iterations)
         if start_iteration > 1:
@@ -477,41 +473,23 @@ async def run_competition(
                         )
                         try:
                             resume_session = state.team_session_ids.get("gladius")
-                            trace_meta = {
-                                "run_id": run_id,
-                                "competition_id": state.competition_id,
-                                "iteration": state.iteration,
-                                "attempt": attempt_no,
-                                "topology": state.topology,
-                            }
-                            with langsmith_tracing_context_with_metadata(
-                                langsmith_client,
-                                langsmith_project,
-                                run_name=f"gladius-iter-{state.iteration}-attempt-{attempt_no}",
-                                metadata=trace_meta,
-                                tags=[
-                                    "gladius",
-                                    f"topology:{state.topology}",
-                                    f"iteration:{state.iteration}",
-                                ],
-                            ):
-                                _, session_id = await run_agent(
-                                    agent_name="gladius",
-                                    prompt=prompt,
-                                    system_prompt=_SYSTEM_PROMPT,
-                                    allowed_tools=_TOP_LEVEL_TOOLS,
-                                    output_schema=None,
-                                    cwd=str(project_dir),
-                                    resume=resume_session,
-                                    max_turns=max_turns or _DEFAULT_MAX_TURNS,
-                                    max_retries=_MAX_CONSECUTIVE_ERRORS,
-                                    trace_sink=_trace_sink,
-                                    trace_context={
-                                        "run_id": run_id,
-                                        "iteration": state.iteration,
-                                    },
-                                    enable_trace_hooks=True,
-                                )
+                            _, session_id = await run_agent(
+                                agent_name="gladius",
+                                prompt=prompt,
+                                system_prompt=_SYSTEM_PROMPT,
+                                allowed_tools=_TOP_LEVEL_TOOLS,
+                                output_schema=None,
+                                cwd=str(project_dir),
+                                resume=resume_session,
+                                max_turns=max_turns or _DEFAULT_MAX_TURNS,
+                                max_retries=_MAX_CONSECUTIVE_ERRORS,
+                                trace_sink=_trace_sink,
+                                trace_context={
+                                    "run_id": run_id,
+                                    "iteration": state.iteration,
+                                },
+                                enable_trace_hooks=True,
+                            )
 
                             if isinstance(session_id, str) and session_id:
                                 state.team_session_ids["gladius"] = session_id

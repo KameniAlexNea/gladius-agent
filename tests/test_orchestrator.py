@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import os
 from pathlib import Path
@@ -247,11 +246,7 @@ def test_run_competition_single_iteration_success(monkeypatch, tmp_path: Path):
     )
     monkeypatch.setattr("gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None)
     monkeypatch.setattr("gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff")
-    monkeypatch.setattr("gladius.orchestrator.init_langsmith_client", lambda: (None, None))
-    monkeypatch.setattr(
-        "gladius.orchestrator.langsmith_tracing_context",
-        lambda _c, _p: contextlib.nullcontext(),
-    )
+    monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
     monkeypatch.setattr("gladius.orchestrator.should_cleanup_orphan_processes", lambda: True)
     monkeypatch.setattr(
         "gladius.orchestrator.cleanup_orphan_processes",
@@ -315,11 +310,7 @@ def test_run_competition_redispatches_then_succeeds(monkeypatch, tmp_path: Path)
     )
     monkeypatch.setattr("gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None)
     monkeypatch.setattr("gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff")
-    monkeypatch.setattr("gladius.orchestrator.init_langsmith_client", lambda: (None, None))
-    monkeypatch.setattr(
-        "gladius.orchestrator.langsmith_tracing_context",
-        lambda _c, _p: contextlib.nullcontext(),
-    )
+    monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
     monkeypatch.setattr("gladius.orchestrator.should_cleanup_orphan_processes", lambda: False)
 
     async def _fake_run_agent(**kwargs):
@@ -372,11 +363,7 @@ def test_run_competition_stops_on_consecutive_errors(monkeypatch, tmp_path: Path
     )
     monkeypatch.setattr("gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None)
     monkeypatch.setattr("gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff")
-    monkeypatch.setattr("gladius.orchestrator.init_langsmith_client", lambda: (None, None))
-    monkeypatch.setattr(
-        "gladius.orchestrator.langsmith_tracing_context",
-        lambda _c, _p: contextlib.nullcontext(),
-    )
+    monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
     monkeypatch.setattr("gladius.orchestrator.should_cleanup_orphan_processes", lambda: False)
     monkeypatch.setattr("gladius.orchestrator._MAX_REDISPATCH", 1)
     monkeypatch.setattr("gladius.orchestrator._MAX_CONSECUTIVE_ERRORS", 1)
