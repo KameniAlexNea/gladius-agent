@@ -225,7 +225,11 @@ def _log_message(agent_name: str, message: Any) -> None:
             logger.debug(
                 _c(_RED, f"  ⚠ [{agent_name}] AssistantMessage error: {message.error}")
             )
-        sub_name = _subagent_names.get(message.parent_tool_use_id, "") if message.parent_tool_use_id else ""
+        sub_name = (
+            _subagent_names.get(message.parent_tool_use_id, "")
+            if message.parent_tool_use_id
+            else ""
+        )
         sub_tag = _c(_DIM + _GREY, f" ➣{sub_name}") if sub_name else ""
 
         with logger.contextualize(agent=sub_name or agent_name):
@@ -237,7 +241,10 @@ def _log_message(agent_name: str, message: Any) -> None:
                 elif isinstance(block, ThinkingBlock) and block.thinking.strip():
                     snippet = block.thinking.strip()[:200].replace("\n", " ")
                     logger.debug(
-                        _c(_GREY, f"  🧠 [{agent_name}]{sub_tag} (thinking) {snippet} …")
+                        _c(
+                            _GREY,
+                            f"  🧠 [{agent_name}]{sub_tag} (thinking) {snippet} …",
+                        )
                     )
 
                 elif isinstance(block, ToolUseBlock):
@@ -245,7 +252,9 @@ def _log_message(agent_name: str, message: Any) -> None:
 
     elif isinstance(message, UserMessage):
         if isinstance(message.content, list):
-            sub_name = _subagent_names.get(getattr(message, "parent_tool_use_id", None) or "", "")
+            sub_name = _subagent_names.get(
+                getattr(message, "parent_tool_use_id", None) or "", ""
+            )
             with logger.contextualize(agent=sub_name or agent_name):
                 for block in message.content:
                     if isinstance(block, ToolResultBlock):

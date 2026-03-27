@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 import sys
 from types import SimpleNamespace
 
@@ -27,8 +26,7 @@ def test_init_main_guard_invokes_cli_main(monkeypatch):
         called["ok"] = True
 
     monkeypatch.setitem(sys.modules, "gladius.cli", SimpleNamespace(main=_main))
-    import gladius as _pkg
-    import importlib.util, types
+    import importlib.util
 
     src = importlib.util.find_spec("gladius").origin
     code = compile(open(src, encoding="utf-8").read(), src, "exec")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import gladius.roles._console as c
 
 

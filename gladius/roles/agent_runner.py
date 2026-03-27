@@ -423,7 +423,9 @@ async def run_agent(
                                 and message.session_id
                             ):
                                 early_session_id = message.session_id
-                            _sub = _trace_subagent_by_tool_id.get(message.parent_tool_use_id or "", "")
+                            _sub = _trace_subagent_by_tool_id.get(
+                                message.parent_tool_use_id or "", ""
+                            )
                             _emit_trace(
                                 trace_sink,
                                 event="stream_event",
@@ -451,7 +453,9 @@ async def run_agent(
                                 delegated_tool_policies=delegated_tool_policies,
                                 pending_subagent_tools=_pending_subagent_tools,
                             )
-                            _sub = _trace_subagent_by_tool_id.get(message.tool_use_id or "", "")
+                            _sub = _trace_subagent_by_tool_id.get(
+                                message.tool_use_id or "", ""
+                            )
                             if _sub and message.task_id:
                                 _trace_subagent_by_task_id[message.task_id] = _sub
                             _emit_trace(
@@ -465,7 +469,9 @@ async def run_agent(
                                 tool_use_id=message.tool_use_id,
                             )
                         if isinstance(message, TaskProgressMessage):
-                            _sub = _trace_subagent_by_task_id.get(message.task_id or "", "")
+                            _sub = _trace_subagent_by_task_id.get(
+                                message.task_id or "", ""
+                            )
                             _emit_trace(
                                 trace_sink,
                                 event="task_progress",
@@ -477,7 +483,9 @@ async def run_agent(
                                 usage=message.usage,
                             )
                         if isinstance(message, TaskNotificationMessage):
-                            _sub = _trace_subagent_by_task_id.get(message.task_id or "", "")
+                            _sub = _trace_subagent_by_task_id.get(
+                                message.task_id or "", ""
+                            )
                             _emit_trace(
                                 trace_sink,
                                 event="task_notification",
@@ -496,7 +504,9 @@ async def run_agent(
                                         if block.name in {"Task", "Agent"}:
                                             _stype = _extract_subagent_type(block.input)
                                             if _stype:
-                                                _trace_subagent_by_tool_id[block.id] = _stype
+                                                _trace_subagent_by_tool_id[block.id] = (
+                                                    _stype
+                                                )
                                         forbidden_tool_error = _handle_tool_use_block(
                                             agent_name=agent_name,
                                             block=block,

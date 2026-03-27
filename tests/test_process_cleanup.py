@@ -54,7 +54,9 @@ def test_cleanup_orphan_processes_returns_empty_when_no_candidates(
     monkeypatch, tmp_path: Path
 ):
     monkeypatch.setattr("gladius.utilities.process_cleanup.os.getpid", lambda: 999)
-    monkeypatch.setattr("gladius.utilities.process_cleanup.psutil.process_iter", lambda attrs: [])
+    monkeypatch.setattr(
+        "gladius.utilities.process_cleanup.psutil.process_iter", lambda attrs: []
+    )
     assert cleanup_orphan_processes(tmp_path) == []
 
 
@@ -68,9 +70,12 @@ def test_cleanup_orphan_processes_terminates_and_kills(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(
         "gladius.utilities.process_cleanup.psutil.process_iter", lambda attrs: [p1, p2]
     )
-    monkeypatch.setattr("gladius.utilities.process_cleanup.psutil.pid_exists", lambda pid: False)
     monkeypatch.setattr(
-        "gladius.utilities.process_cleanup.psutil.wait_procs", lambda procs, timeout: ([p1], [p2])
+        "gladius.utilities.process_cleanup.psutil.pid_exists", lambda pid: False
+    )
+    monkeypatch.setattr(
+        "gladius.utilities.process_cleanup.psutil.wait_procs",
+        lambda procs, timeout: ([p1], [p2]),
     )
 
     killed = cleanup_orphan_processes(project)
@@ -90,7 +95,8 @@ def test_cleanup_orphan_processes_skips_access_denied(monkeypatch, tmp_path: Pat
     project.mkdir()
     monkeypatch.setattr("gladius.utilities.process_cleanup.os.getpid", lambda: 999)
     monkeypatch.setattr(
-        "gladius.utilities.process_cleanup.psutil.process_iter", lambda attrs: [_DeniedProc()]
+        "gladius.utilities.process_cleanup.psutil.process_iter",
+        lambda attrs: [_DeniedProc()],
     )
 
     assert cleanup_orphan_processes(project) == []

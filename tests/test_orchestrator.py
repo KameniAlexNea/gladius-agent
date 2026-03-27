@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 
-from gladius.utilities.langsmith_tracing import configure_langsmith_env
 from gladius.orchestrator import (
     _archive_stale_outputs,
     _incomplete_agents,
@@ -18,6 +17,7 @@ from gladius.orchestrator import (
     run_competition,
 )
 from gladius.state import CompetitionState
+from gladius.utilities.langsmith_tracing import configure_langsmith_env
 
 
 def test_resolve_start_iteration_default_when_env_missing(monkeypatch):

@@ -4,8 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from gladius.utilities._orchestrator_helper import _load_system_prompt, make_kickoff_prompt
 from gladius.state import CompetitionState
+from gladius.utilities._orchestrator_helper import (
+    _load_system_prompt,
+    make_kickoff_prompt,
+)
 
 
 def _state(iteration: int, topology: str = "functional") -> CompetitionState:

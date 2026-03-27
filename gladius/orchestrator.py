@@ -30,9 +30,6 @@ from gladius import (
     runtime_experiment_state_path,
     state_db_path,
 )
-from gladius.utilities._orchestrator_helper import SYSTEM_PROMPT as _SYSTEM_PROMPT
-from gladius.utilities._orchestrator_helper import TOP_LEVEL_TOOLS as _TOP_LEVEL_TOOLS
-from gladius.utilities._orchestrator_helper import make_kickoff_prompt as _make_kickoff_prompt
 from gladius.config import MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS
 from gladius.config import MAX_REDISPATCH as _MAX_REDISPATCH
 from gladius.config import MAX_STATE_SNIPPET_CHARS as _MAX_STATE_SNIPPET_CHARS
@@ -41,16 +38,21 @@ from gladius.config import PERSISTENT_ARTIFACTS as _PERSISTENT_ARTIFACTS
 from gladius.config import START_ITERATION_ENV_VAR as _START_ITERATION_ENV_VAR
 from gladius.config import load_project_env
 from gladius.db.store import StateStore
+from gladius.project_setup import load_competition_config
+from gladius.roles.agent_runner import run_agent
+from gladius.state import CompetitionState
+from gladius.utilities._orchestrator_helper import SYSTEM_PROMPT as _SYSTEM_PROMPT
+from gladius.utilities._orchestrator_helper import TOP_LEVEL_TOOLS as _TOP_LEVEL_TOOLS
+from gladius.utilities._orchestrator_helper import (
+    make_kickoff_prompt as _make_kickoff_prompt,
+)
 from gladius.utilities.langsmith_tracing import init_langsmith_tracing
 from gladius.utilities.logging_setup import configure_logging
 from gladius.utilities.process_cleanup import (
     cleanup_orphan_processes,
     should_cleanup_orphan_processes,
 )
-from gladius.project_setup import load_competition_config
-from gladius.roles.agent_runner import run_agent
 from gladius.utilities.session_replay import export_recent_session_diagnostics
-from gladius.state import CompetitionState
 
 
 def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
