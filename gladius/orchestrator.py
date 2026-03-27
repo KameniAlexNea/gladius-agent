@@ -307,13 +307,22 @@ def _build_redispatch_prompt(
     state: CompetitionState,
     exp_path: Path,
     incomplete: list[str],
+    *,
+    error_hint: str | None = None,
 ) -> str:
     """Build a strict continuation prompt when coordinator exits early."""
     state_text = _read_experiment_state_snippet(exp_path)
     pending = ", ".join(incomplete)
+    error_section = (
+        f"\n**Previous attempt failed with this error — fix it before retrying:**\n"
+        f"```\n{error_hint}\n```\n"
+        if error_hint
+        else ""
+    )
     return (
         "You returned before this iteration pipeline was complete. Continue immediately.\n\n"
-        f"Iteration context: {state.iteration}/{state.max_iterations}, topology={state.topology}.\n"
+        + error_section
+        + f"Iteration context: {state.iteration}/{state.max_iterations}, topology={state.topology}.\n"
         f"Pending required agents (non-success): {pending}.\n\n"
         f"Current `{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}`:\n"
         f"```json\n{state_text}\n```\n\n"
@@ -545,7 +554,8 @@ async def run_competition(
                                 )
                                 redispatches += 1
                                 prompt = _build_redispatch_prompt(
-                                    state, exp_path, incomplete
+                                    state, exp_path, incomplete,
+                                    error_hint=str(exc) if exc else None,
                                 )
                                 continue
                             # All redispatch attempts exhausted — count as one iteration failure.
