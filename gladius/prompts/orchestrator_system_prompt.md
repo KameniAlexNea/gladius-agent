@@ -189,6 +189,7 @@ If an Agent call returns without updating `{{RUNTIME_EXPERIMENT_STATE_RELATIVE_P
 
 - only if the Agent returned valid StructuredOutput or a valid JSON payload, write the missing specialist entry yourself before moving on,
 - in that case, write exactly what the Agent returned for that specialist (no paraphrase, no invented fields),
+- **every string field must contain the actual text value** — never write a reference, pointer, or description such as "See StructuredOutput", "See team-lead output", "as above", or any other placeholder,
 - merge into existing JSON (never overwrite unrelated top-level keys),
 - preserve the existing schema used by other entries,
 - then re-dispatch that specialist only if downstream rules still require additional work.

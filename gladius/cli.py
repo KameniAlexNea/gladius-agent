@@ -75,3 +75,7 @@ def main(argv: list[str] | None = None) -> None:
     except Exception as exc:
         logger.exception(f"error: {exc}")
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
