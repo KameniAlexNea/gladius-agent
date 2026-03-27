@@ -120,6 +120,8 @@ _TODO_ICON = {"completed": "✅", "in_progress": "🔧", "pending": "⬜"}
 
 # Maps Agent/Task tool_use_id → subagent name so sub-messages can show it.
 _subagent_names: dict[str, str] = {}
+# Maps task_id → subagent name for progress/notification messages.
+_task_names: dict[str, str] = {}
 
 
 def _log_message(agent_name: str, message: Any) -> None:
@@ -150,14 +152,12 @@ def _log_message(agent_name: str, message: Any) -> None:
         desc = (message.description or "").strip()
         if len(desc) > 90:
             desc = desc[:90] + "…"
+        subagent_name = _subagent_names.get(message.tool_use_id or "", "")
+        if subagent_name and message.task_id:
+            _task_names[message.task_id] = subagent_name
+        name_tag = _c(_DIM + _GREY, f" ➣{subagent_name}") if subagent_name else ""
         logger.debug(
-            _c(_GREY, f"  🚀 [{agent_name}] task:{label} id={message.task_id[:10]}…")
-            + _c(_DIM, f"  sid={message.session_id[:10]}…")
-            + (
-                _c(_DIM, f"  tool_use={message.tool_use_id[:10]}…")
-                if message.tool_use_id
-                else ""
-            )
+            _c(_GREY, f"  🚀 [{agent_name}]{name_tag} task:{label} id={message.task_id[:10]}…")
             + (_c(_DIM, f"  {desc}") if desc else "")
         )
         return
@@ -172,10 +172,10 @@ def _log_message(agent_name: str, message: Any) -> None:
         dur_str = f"  {duration_ms}ms" if isinstance(duration_ms, int) else ""
         tool = (message.last_tool_name or "").strip()
         tool_str = f"  last_tool={tool}" if tool else ""
+        subagent_name = _task_names.get(message.task_id or "", "")
+        name_tag = _c(_DIM + _GREY, f" ➣{subagent_name}") if subagent_name else ""
         logger.debug(
-            _c(_GREY, f"  ⏳ [{agent_name}] task id={message.task_id[:10]}…")
-            + _c(_DIM, f"  sid={message.session_id[:10]}…")
-            + _c(_DIM, f"  {message.description}")
+            _c(_GREY, f"  ⏳ [{agent_name}]{name_tag} {message.description}")
             + _c(_DIM, token_str + tool_uses_str + dur_str + tool_str)
         )
         return
