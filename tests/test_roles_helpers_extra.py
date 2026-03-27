@@ -33,19 +33,23 @@ def test_stderr_cb_logs_info_for_non_error(monkeypatch):
 
 
 def test_stderr_cb_summarizes_hook_callback_noise(monkeypatch):
-    seen = []
-    monkeypatch.setattr(helpers.logger, "warning", lambda msg: seen.append(msg))
+    # Hook callback errors are now silently dropped — no warning emitted.
+    warnings = []
+    debugs = []
+    monkeypatch.setattr(helpers.logger, "warning", lambda msg: warnings.append(msg))
+    monkeypatch.setattr(helpers.logger, "debug", lambda msg: debugs.append(msg))
     helpers.stderr_cb("Error in hook callback hook_2: giant minified blob")
-    assert seen and "hook callback failure" in seen[0]
+    assert not warnings
+    assert not debugs
 
 
 def test_stderr_cb_suppresses_stack_source_lines(monkeypatch):
+    # Stack/source continuation lines are silently dropped.
     seen = []
     monkeypatch.setattr(helpers.logger, "debug", lambda msg: seen.append(msg))
     helpers.stderr_cb("7548 | minified source line")
     helpers.stderr_cb("at sendRequest (/$bunfs/root/src/entrypoints/cli.js:7552:133)")
-    assert len(seen) == 2
-    assert all("suppressed" in s for s in seen)
+    assert len(seen) == 0
 
 
 def test_stderr_cb_stream_closed_is_warning(monkeypatch):
@@ -55,36 +59,19 @@ def test_stderr_cb_stream_closed_is_warning(monkeypatch):
     assert seen and "stream closed during hook/control processing" in seen[0]
 
 
-def test_stderr_cb_dedupes_repeated_hook_callback_warning(monkeypatch):
+def test_stderr_cb_silences_all_hook_callback_lines(monkeypatch):
+    # All hook callback lines (including repeated ones) are fully suppressed.
     warnings = []
     debugs = []
-    t = [1000.0]
-
-    helpers._LAST_HOOK_WARNING = ("", 0.0)
-    monkeypatch.setattr(helpers.time, "monotonic", lambda: t[0])
     monkeypatch.setattr(helpers.logger, "warning", lambda msg: warnings.append(msg))
     monkeypatch.setattr(helpers.logger, "debug", lambda msg: debugs.append(msg))
 
     helpers.stderr_cb("Error in hook callback hook_0: blob")
     helpers.stderr_cb("Error in hook callback hook_4: blob")
-
-    assert len(warnings) == 1
-    assert any("repeated hook callback failure suppressed" in d for d in debugs)
-
-
-def test_stderr_cb_allows_hook_warning_after_dedupe_window(monkeypatch):
-    warnings = []
-    t = [1000.0]
-
-    helpers._LAST_HOOK_WARNING = ("", 0.0)
-    monkeypatch.setattr(helpers.time, "monotonic", lambda: t[0])
-    monkeypatch.setattr(helpers.logger, "warning", lambda msg: warnings.append(msg))
-
     helpers.stderr_cb("Error in hook callback hook_0: blob")
-    t[0] += helpers._HOOK_WARN_DEDUPE_WINDOW_S + 0.1
-    helpers.stderr_cb("Error in hook callback hook_9: blob")
 
-    assert len(warnings) == 2
+    assert not warnings
+    assert not debugs
 
 
 def test_is_tool_allowed_structured_output_and_task_delegation():

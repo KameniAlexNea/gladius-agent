@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import re
-import time
 from pathlib import Path
 
 from loguru import logger
@@ -12,9 +11,6 @@ from loguru import logger
 _MAX_STDERR_LINE_CHARS = 320
 _SOURCE_SNIPPET_RE = re.compile(r"^\d+\s+\|\s")
 _STACK_FRAME_RE = re.compile(r"^at\s+")
-_HOOK_ID_RE = re.compile(r"hook_\d+")
-_HOOK_WARN_DEDUPE_WINDOW_S = 5.0
-_LAST_HOOK_WARNING: tuple[str, float] = ("", 0.0)
 
 
 def _clip(text: str, *, limit: int = _MAX_STDERR_LINE_CHARS) -> str:
@@ -55,32 +51,16 @@ def get_runtime_model() -> str:
 
 
 def stderr_cb(line: str) -> None:
-    global _LAST_HOOK_WARNING
-
     text = (line or "").strip()
     if not text:
         return
 
     lowered = text.lower()
 
-    # Claude CLI hook failures can emit very long minified source snippets and
-    # stack frames; summarize once and suppress noisy continuation lines.
+    # Silently drop Claude CLI hook callback errors — internal CLI noise.
     if "error in hook callback" in lowered:
-        fingerprint = _HOOK_ID_RE.sub("hook_*", lowered)
-        last_fp, last_ts = _LAST_HOOK_WARNING
-        now = time.monotonic()
-        if fingerprint == last_fp and (now - last_ts) < _HOOK_WARN_DEDUPE_WINDOW_S:
-            logger.debug("  [CLI stderr] repeated hook callback failure suppressed")
-            return
-        _LAST_HOOK_WARNING = (fingerprint, now)
-        logger.warning(
-            "  [CLI stderr] "
-            + _clip(text, limit=220)
-            + " (hook callback failure; stack details suppressed)"
-        )
         return
     if _SOURCE_SNIPPET_RE.match(text) or _STACK_FRAME_RE.match(text):
-        logger.debug("  [CLI stderr] (stack/source detail suppressed)")
         return
     if "stream closed" in lowered:
         logger.warning("  [CLI stderr] stream closed during hook/control processing")

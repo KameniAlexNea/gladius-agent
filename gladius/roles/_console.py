@@ -118,6 +118,9 @@ def _fmt_result(content: Any, max_len: int = 400) -> str:
 
 _TODO_ICON = {"completed": "✅", "in_progress": "🔧", "pending": "⬜"}
 
+# Maps Agent/Task tool_use_id → subagent name so sub-messages can show it.
+_subagent_names: dict[str, str] = {}
+
 
 def _log_message(agent_name: str, message: Any) -> None:
     """Pretty-print a single SDK message to stdout."""
@@ -216,7 +219,11 @@ def _log_message(agent_name: str, message: Any) -> None:
             logger.debug(
                 _c(_RED, f"  ⚠ [{agent_name}] AssistantMessage error: {message.error}")
             )
-        sub_tag = _c(_DIM + _GREY, " ➣subagent") if message.parent_tool_use_id else ""
+        sub_tag = (
+            _c(_DIM + _GREY, f" ➣{_subagent_names.get(message.parent_tool_use_id, '?')}")
+            if message.parent_tool_use_id
+            else ""
+        )
 
         for block in message.content:
             if isinstance(block, TextBlock) and block.text.strip():
@@ -308,6 +315,7 @@ def _log_tool_use(agent_name: str, sub_tag: str, block: ToolUseBlock) -> None:
             maybe_name = description.split(":", 1)[0].strip().lower()
             if maybe_name:
                 target = maybe_name
+        _subagent_names[block.id] = target
         snippet = block.input.get("prompt", "")[:80].replace("\n", " ")
         logger.debug(
             _c(_BOLD + _BLUE, f"  🤖 [{agent_name}]{sub_tag} {block.name} → {target}")

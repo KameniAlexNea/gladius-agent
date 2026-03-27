@@ -44,8 +44,7 @@ def configure_logging(project_dir: str | Path | None = None) -> None:
         fmt = (
             "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> "
             "<level>{level:<8}</level> "
-            "[run={extra[run_id]} it={extra[iteration]} at={extra[attempt]} "
-            "agent={extra[agent]} sid={extra[session_id]}] "
+            "[it={extra[iteration]} at={extra[attempt]} agent={extra[agent]}] "
             "<level>{message}</level>"
         )
         logger.add(
@@ -71,8 +70,7 @@ def configure_logging(project_dir: str | Path | None = None) -> None:
     level = os.getenv("GLADIUS_LOG_LEVEL", "DEBUG").strip().upper() or "DEBUG"
     text_fmt = (
         "{time:YYYY-MM-DD HH:mm:ss.SSS} {level:<8} "
-        "run={extra[run_id]} it={extra[iteration]} at={extra[attempt]} "
-        "agent={extra[agent]} sid={extra[session_id]} "
+        "it={extra[iteration]} at={extra[attempt]} agent={extra[agent]} "
         "{message}"
     )
     logger.add(
