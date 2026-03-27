@@ -244,10 +244,16 @@ def test_run_competition_single_iteration_success(monkeypatch, tmp_path: Path):
             max_iterations=1,
         ),
     )
-    monkeypatch.setattr("gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff")
+    monkeypatch.setattr(
+        "gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        "gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff"
+    )
     monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
-    monkeypatch.setattr("gladius.orchestrator.should_cleanup_orphan_processes", lambda: True)
+    monkeypatch.setattr(
+        "gladius.orchestrator.should_cleanup_orphan_processes", lambda: True
+    )
     monkeypatch.setattr(
         "gladius.orchestrator.cleanup_orphan_processes",
         lambda _project_dir: calls.__setitem__("cleanup", calls["cleanup"] + 1),
@@ -308,10 +314,16 @@ def test_run_competition_redispatches_then_succeeds(monkeypatch, tmp_path: Path)
             max_iterations=1,
         ),
     )
-    monkeypatch.setattr("gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff")
+    monkeypatch.setattr(
+        "gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        "gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff"
+    )
     monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
-    monkeypatch.setattr("gladius.orchestrator.should_cleanup_orphan_processes", lambda: False)
+    monkeypatch.setattr(
+        "gladius.orchestrator.should_cleanup_orphan_processes", lambda: False
+    )
 
     async def _fake_run_agent(**kwargs):
         calls["run_agent"] += 1
@@ -361,10 +373,16 @@ def test_run_competition_stops_on_consecutive_errors(monkeypatch, tmp_path: Path
             max_iterations=1,
         ),
     )
-    monkeypatch.setattr("gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff")
+    monkeypatch.setattr(
+        "gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        "gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff"
+    )
     monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
-    monkeypatch.setattr("gladius.orchestrator.should_cleanup_orphan_processes", lambda: False)
+    monkeypatch.setattr(
+        "gladius.orchestrator.should_cleanup_orphan_processes", lambda: False
+    )
     monkeypatch.setattr("gladius.orchestrator._MAX_REDISPATCH", 1)
     monkeypatch.setattr("gladius.orchestrator._MAX_CONSECUTIVE_ERRORS", 1)
 

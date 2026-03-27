@@ -427,7 +427,9 @@ async def run_competition(
                             f"EXPERIMENT_STATE_iter{state.iteration - 1}.json"
                         )
                         exp_path.rename(archive)
-                        logger.debug(f"Archived previous EXPERIMENT_STATE → {archive.name}")
+                        logger.debug(
+                            f"Archived previous EXPERIMENT_STATE → {archive.name}"
+                        )
 
                     # Archive stale artifacts and logs so agents can't confuse old outputs
                     # with current iteration results.  best_params.json is preserved
@@ -499,7 +501,9 @@ async def run_competition(
                                 )
                             state.consecutive_errors = 0
                         except Exception as exc:
-                            logger.error(f"Iteration {state.iteration} agent error: {exc}")
+                            logger.error(
+                                f"Iteration {state.iteration} agent error: {exc}"
+                            )
                             # Check whether the pipeline completed despite the exception
                             # (e.g. a forbidden-tool violation detected post-hoc).
                             exp_path = runtime_experiment_state_path(project_dir)
@@ -533,7 +537,9 @@ async def run_competition(
                                 )
                                 redispatches += 1
                                 prompt = _build_redispatch_prompt(
-                                    state, exp_path, incomplete,
+                                    state,
+                                    exp_path,
+                                    incomplete,
                                     error_hint=str(exc) if exc else None,
                                 )
                                 continue
@@ -561,7 +567,9 @@ async def run_competition(
                                 f"agents still pending: {incomplete}. Re-dispatching (attempt {attempt_no + 1}/{total_attempts})."
                             )
                             redispatches += 1
-                            prompt = _build_redispatch_prompt(state, exp_path, incomplete)
+                            prompt = _build_redispatch_prompt(
+                                state, exp_path, incomplete
+                            )
 
                     if incomplete and not _iteration_error:
                         logger.error(
@@ -640,7 +648,10 @@ async def run_competition(
         store.save(state)
         export_recent_session_diagnostics(
             project_dir=project_dir,
-            output_file=project_dir / ".gladius" / "runtime" / "session_diagnostics.json",
+            output_file=project_dir
+            / ".gladius"
+            / "runtime"
+            / "session_diagnostics.json",
             limit_sessions=3,
             limit_messages=30,
         )

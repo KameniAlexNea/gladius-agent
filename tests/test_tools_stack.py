@@ -72,7 +72,9 @@ def test_kaggle_tools_success_and_failure(monkeypatch):
 
 
 def test_fake_platform_history_save_and_load(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr("gladius.tools.fake_platform_tools._FAKE_PLATFORM_DIR", str(tmp_path / "p"))
+    monkeypatch.setattr(
+        "gladius.tools.fake_platform_tools._FAKE_PLATFORM_DIR", str(tmp_path / "p")
+    )
     _save_history([{"score": 1.0}])
     got = _load_history()
     assert got[0]["score"] == 1.0
@@ -81,8 +83,12 @@ def test_fake_platform_history_save_and_load(monkeypatch, tmp_path: Path):
 def test_fake_score_submission_and_tools(monkeypatch, tmp_path: Path):
     sub = tmp_path / "sub.csv"
     sub.write_text("id,target\n1,0.5\n", encoding="utf-8")
-    monkeypatch.setattr("gladius.tools.fake_platform_tools._FAKE_PLATFORM_DIR", str(tmp_path / "fp"))
-    monkeypatch.setattr("gladius.tools.fake_platform_tools._score_submission", lambda p: 0.75)
+    monkeypatch.setattr(
+        "gladius.tools.fake_platform_tools._FAKE_PLATFORM_DIR", str(tmp_path / "fp")
+    )
+    monkeypatch.setattr(
+        "gladius.tools.fake_platform_tools._score_submission", lambda p: 0.75
+    )
 
     res = asyncio.run(fake_submit.handler({"file_path": str(sub), "comment": "c"}))
     assert res["status"] == "ok"
@@ -122,7 +128,9 @@ def test_zindi_tools_with_fake_user(monkeypatch):
     monkeypatch.setattr("gladius.tools.zindi_tools._get_user", lambda: _User())
 
     assert (
-        asyncio.run(zindi_submit.handler({"file_path": "f.csv", "comment": "c"}))["status"]
+        asyncio.run(zindi_submit.handler({"file_path": "f.csv", "comment": "c"}))[
+            "status"
+        ]
         == "ok"
     )
     assert asyncio.run(zindi_leaderboard.handler({"top_n": 3}))["status"] == "ok"

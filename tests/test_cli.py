@@ -32,8 +32,12 @@ def test_cli_happy_path(monkeypatch, tmp_path):
 
     fake_orchestrator = types.SimpleNamespace(run_competition=_fake_run_competition)
 
-    monkeypatch.setitem(__import__("sys").modules, "gladius.project_setup", fake_project_setup)
-    monkeypatch.setitem(__import__("sys").modules, "gladius.orchestrator", fake_orchestrator)
+    monkeypatch.setitem(
+        __import__("sys").modules, "gladius.project_setup", fake_project_setup
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules, "gladius.orchestrator", fake_orchestrator
+    )
 
     main([str(cfg_path), "--max-turns", "11"])
 
@@ -50,7 +54,9 @@ def test_cli_exits_on_setup_error(monkeypatch, tmp_path):
         load_config=lambda path: {"project_dir": str(tmp_path)},
         setup=lambda path: (_ for _ in ()).throw(RuntimeError("boom")),
     )
-    monkeypatch.setitem(__import__("sys").modules, "gladius.project_setup", fake_project_setup)
+    monkeypatch.setitem(
+        __import__("sys").modules, "gladius.project_setup", fake_project_setup
+    )
 
     with pytest.raises(SystemExit) as exc:
         main([str(cfg_path)])

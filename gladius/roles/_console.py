@@ -43,7 +43,9 @@ _SENSITIVE_KEY_RE = re.compile(
     r"(?:pass|password|secret|token|api[_-]?key|auth|authorization|cookie)",
     re.IGNORECASE,
 )
-_SENSITIVE_VALUE_RE = re.compile(r"(sk-[A-Za-z0-9_-]{10,}|Bearer\s+[A-Za-z0-9._-]{10,})")
+_SENSITIVE_VALUE_RE = re.compile(
+    r"(sk-[A-Za-z0-9_-]{10,}|Bearer\s+[A-Za-z0-9._-]{10,})"
+)
 
 
 def _stream_event_logging_enabled() -> bool:
@@ -157,7 +159,10 @@ def _log_message(agent_name: str, message: Any) -> None:
             _task_names[message.task_id] = subagent_name
         name_tag = _c(_DIM + _GREY, f" ➣{subagent_name}") if subagent_name else ""
         logger.debug(
-            _c(_GREY, f"  🚀 [{agent_name}]{name_tag} task:{label} id={message.task_id[:10]}…")
+            _c(
+                _GREY,
+                f"  🚀 [{agent_name}]{name_tag} task:{label} id={message.task_id[:10]}…",
+            )
             + (_c(_DIM, f"  {desc}") if desc else "")
         )
         return
@@ -220,7 +225,10 @@ def _log_message(agent_name: str, message: Any) -> None:
                 _c(_RED, f"  ⚠ [{agent_name}] AssistantMessage error: {message.error}")
             )
         sub_tag = (
-            _c(_DIM + _GREY, f" ➣{_subagent_names.get(message.parent_tool_use_id, '?')}")
+            _c(
+                _DIM + _GREY,
+                f" ➣{_subagent_names.get(message.parent_tool_use_id, '?')}",
+            )
             if message.parent_tool_use_id
             else ""
         )

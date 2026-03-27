@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 
 import gladius.roles._console as c
 
@@ -138,9 +137,18 @@ def test_log_message_branches(monkeypatch):
             [
                 _Text("hello world"),
                 _Thinking("pondering"),
-                _ToolUse("TodoWrite", {"todos": [{"status": "completed", "content": "x"}]}),
+                _ToolUse(
+                    "TodoWrite", {"todos": [{"status": "completed", "content": "x"}]}
+                ),
                 _ToolUse("ExitPlanMode", {"plan": "line1"}),
-                _ToolUse("Agent", {"subagent_type": "feature-engineer", "description": "d", "prompt": "p"}),
+                _ToolUse(
+                    "Agent",
+                    {
+                        "subagent_type": "feature-engineer",
+                        "description": "d",
+                        "prompt": "p",
+                    },
+                ),
                 _ToolUse("Read", {"path": "x", "token": "sk-secret-token"}),
             ]
         ),

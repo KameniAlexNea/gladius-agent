@@ -55,7 +55,9 @@ def test_load_competition_config_missing_readme_raises(tmp_path: Path):
         ps.load_competition_config(str(tmp_path))
 
 
-def test_load_competition_config_uses_load_config_when_config_path(monkeypatch, tmp_path: Path):
+def test_load_competition_config_uses_load_config_when_config_path(
+    monkeypatch, tmp_path: Path
+):
     _write_readme(tmp_path, "---\ncompetition_id: c\n---")
     cfg_file = tmp_path / "project.yaml"
     cfg_file.write_text("x: 1\n", encoding="utf-8")
@@ -109,12 +111,28 @@ def test_setup_calls_subsystems(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(ps, "load_config", lambda p: cfg)
 
     called = {"roles": 0, "skills": 0, "tools": 0, "claude": 0}
-    monkeypatch.setattr(ps.roles, "copy", lambda *a, **k: called.__setitem__("roles", called["roles"] + 1))
-    monkeypatch.setattr(ps.skills, "copy", lambda *a, **k: called.__setitem__("skills", called["skills"] + 1))
+    monkeypatch.setattr(
+        ps.roles,
+        "copy",
+        lambda *a, **k: called.__setitem__("roles", called["roles"] + 1),
+    )
+    monkeypatch.setattr(
+        ps.skills,
+        "copy",
+        lambda *a, **k: called.__setitem__("skills", called["skills"] + 1),
+    )
     monkeypatch.setattr(ps.skills, "copy_scientific", lambda *a, **k: None)
     monkeypatch.setattr(ps.skills, "copy_custom", lambda *a, **k: None)
-    monkeypatch.setattr(ps.tools, "write_mcp_json", lambda *a, **k: called.__setitem__("tools", called["tools"] + 1))
-    monkeypatch.setattr(ps.claude_md, "write_from_project", lambda *a, **k: called.__setitem__("claude", called["claude"] + 1))
+    monkeypatch.setattr(
+        ps.tools,
+        "write_mcp_json",
+        lambda *a, **k: called.__setitem__("tools", called["tools"] + 1),
+    )
+    monkeypatch.setattr(
+        ps.claude_md,
+        "write_from_project",
+        lambda *a, **k: called.__setitem__("claude", called["claude"] + 1),
+    )
 
     root = ps.setup(cfg_file)
     assert root.exists()

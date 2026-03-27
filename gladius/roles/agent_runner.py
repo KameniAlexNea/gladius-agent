@@ -333,7 +333,9 @@ async def run_agent(
     else:
         _output_format = None
 
-    include_partial_messages = bool(option_kwargs.pop("include_partial_messages", verbose))
+    include_partial_messages = bool(
+        option_kwargs.pop("include_partial_messages", verbose)
+    )
     user_hooks = option_kwargs.pop("hooks", None)
     trace_hooks = _build_trace_hooks(
         agent_name=agent_name,
@@ -382,7 +384,9 @@ async def run_agent(
                 # FIFO queue of tool-lists for dispatched subagents.
                 # Used as a fallback when the CLI assigns a different parent_tool_use_id
                 # to subagent messages than the block.id stored in delegated_tool_policies.
-                _pending_subagent_tools: collections.deque[list[str]] = collections.deque()
+                _pending_subagent_tools: collections.deque[list[str]] = (
+                    collections.deque()
+                )
 
                 with logger.contextualize(attempt=str(attempt_no)):
                     if verbose:
@@ -409,7 +413,10 @@ async def run_agent(
                         if verbose:
                             _log_message(agent_name, message)
                         if isinstance(message, StreamEvent):
-                            if isinstance(message.session_id, str) and message.session_id:
+                            if (
+                                isinstance(message.session_id, str)
+                                and message.session_id
+                            ):
                                 early_session_id = message.session_id
                             _emit_trace(
                                 trace_sink,
@@ -420,11 +427,16 @@ async def run_agent(
                                 stream_type=message.event.get("type"),
                             )
                         if isinstance(message, SystemMessage):
-                            session_id = _extract_session_id_from_system_message(message)
+                            session_id = _extract_session_id_from_system_message(
+                                message
+                            )
                             if session_id:
                                 early_session_id = session_id
                         if isinstance(message, TaskStartedMessage):
-                            if isinstance(message.session_id, str) and message.session_id:
+                            if (
+                                isinstance(message.session_id, str)
+                                and message.session_id
+                            ):
                                 early_session_id = message.session_id
                             _register_subagent_policy_from_task_start(
                                 agent_name=agent_name,
@@ -559,7 +571,9 @@ async def run_agent(
 
             except ProcessError as e:
                 elapsed_ms = int((time.monotonic() - attempt_started) * 1000)
-                structured_fallback = result_msg.structured_output if result_msg else None
+                structured_fallback = (
+                    result_msg.structured_output if result_msg else None
+                )
                 source = "structured_output"
                 if structured_fallback is None:
                     recovered = _parse_structured_from_assistant_text(

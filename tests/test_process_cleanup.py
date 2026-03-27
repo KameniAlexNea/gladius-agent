@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import psutil
 
@@ -51,7 +50,9 @@ class _FakeProc:
         self.killed = True
 
 
-def test_cleanup_orphan_processes_returns_empty_when_no_candidates(monkeypatch, tmp_path: Path):
+def test_cleanup_orphan_processes_returns_empty_when_no_candidates(
+    monkeypatch, tmp_path: Path
+):
     monkeypatch.setattr("gladius.process_cleanup.os.getpid", lambda: 999)
     monkeypatch.setattr("gladius.process_cleanup.psutil.process_iter", lambda attrs: [])
     assert cleanup_orphan_processes(tmp_path) == []

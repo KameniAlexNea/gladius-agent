@@ -223,6 +223,7 @@ def _write_settings(root: Path, cfg: dict) -> None:
             "METRIC_DIRECTION": cfg["direction"] or "",
             "DATA_DIR": cfg["data_dir"],
             "TOPOLOGY": cfg["topology"],
+            "temperatureOverride": 0.2,
             # "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
         },
         "permissions": {

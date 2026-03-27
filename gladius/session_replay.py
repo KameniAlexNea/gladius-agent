@@ -61,6 +61,8 @@ def export_recent_session_diagnostics(
             entry["message_error"] = str(exc)
         payload.append(entry)
 
-    output_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8"
+    )
     logger.info(f"Wrote session diagnostics: {output_path}")
     return output_path

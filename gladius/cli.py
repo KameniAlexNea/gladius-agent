@@ -40,8 +40,8 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     try:
-        from gladius.project_setup import load_config, setup
         from gladius.config import load_project_env
+        from gladius.project_setup import load_config, setup
 
         cfg = load_config(config_path)
         loaded_env = load_project_env(cfg["project_dir"])

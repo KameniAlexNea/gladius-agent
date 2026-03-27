@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
 
 import pytest
 
@@ -92,7 +91,10 @@ def test_extract_subagent_type_aliases():
 
 
 def test_extract_session_id_from_system_message_guarded_type():
-    assert ar._extract_session_id_from_system_message(_FakeSystemMessage("init", {})) is None
+    assert (
+        ar._extract_session_id_from_system_message(_FakeSystemMessage("init", {}))
+        is None
+    )
     assert (
         ar._extract_session_id_from_system_message(
             _FakeSystemMessage("init", {"session_id": "abc"})
@@ -135,9 +137,9 @@ def test_parse_structured_from_assistant_text_returns_dict(monkeypatch):
     monkeypatch.setattr(ar, "_parse_json", lambda text: {"ok": 1})
     monkeypatch.setattr(ar, "TextBlock", _FakeTextBlock)
     msg = _FakeAssistantMessage([_FakeTextBlock('{"ok": 1}')])
-    assert ar._parse_structured_from_assistant_text(agent_name="a", last_assistant_msg=msg) == {
-        "ok": 1
-    }
+    assert ar._parse_structured_from_assistant_text(
+        agent_name="a", last_assistant_msg=msg
+    ) == {"ok": 1}
 
 
 def test_resolve_effective_allowed_tools_fifo_fallback():
@@ -197,7 +199,9 @@ def test_run_agent_structured_text_fallback(monkeypatch, tmp_path):
 
     async def _fake_query(prompt, options):
         yield _FakeAssistantMessage([_FakeTextBlock('{"rescued": true}')])
-        yield _FakeResultMessage(structured_output=None, is_error=False, session_id="s1")
+        yield _FakeResultMessage(
+            structured_output=None, is_error=False, session_id="s1"
+        )
 
     monkeypatch.setattr(ar, "query", _fake_query)
 
