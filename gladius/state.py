@@ -72,5 +72,8 @@ class CompetitionState:
     # Default False since local models typically cannot use WebSearch.
     use_web_search: bool = False
 
+    # Path to a custom phase_guidance.yaml; None = use the built-in default.
+    phase_guidance_path: Optional[str] = None
+
     # Leaderboard score tracking — each entry: {score, timestamp, public_lb}
     lb_scores: list = field(default_factory=list)

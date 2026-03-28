@@ -52,8 +52,6 @@ TOP_LEVEL_TOOLS = [
 ]
 
 
-
-
 def make_kickoff_prompt(state: CompetitionState) -> str:
     """Build an iteration-aware kickoff prompt."""
     flow = (
