@@ -54,8 +54,5 @@ def _parse(path: Path) -> TopologyDefinition:
 
 TOPOLOGY_CATALOG: dict[str, TopologyDefinition] = {
     t.name: t
-    for t in (
-        _parse(_TEMPLATES / f"{name}.md")
-        for name in ("functional", "two-pizza", "platform", "autonomous", "matrix")
-    )
+    for t in (_parse(path) for path in sorted(_TEMPLATES.glob("*.md")))
 }
