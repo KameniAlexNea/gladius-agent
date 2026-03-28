@@ -24,8 +24,7 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from gladius.config import FAKE_ANSWERS_PATH as _FAKE_ANSWERS_PATH
-from gladius.config import FAKE_PLATFORM_DIR as _FAKE_PLATFORM_DIR
+from gladius.config import SETTINGS as _SETTINGS
 from gladius.tools._response import err as _err
 from gladius.tools._response import ok as _ok
 
@@ -40,11 +39,11 @@ _FAKE_LEADERBOARD = [
 
 
 def _answers_path() -> Path:
-    return Path(_FAKE_ANSWERS_PATH)
+    return Path(_SETTINGS.fake_answers_path)
 
 
 def _platform_dir() -> Path:
-    d = Path(_FAKE_PLATFORM_DIR)
+    d = Path(_SETTINGS.fake_platform_dir)
     d.mkdir(parents=True, exist_ok=True)
     return d
 

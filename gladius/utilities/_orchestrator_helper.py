@@ -1,9 +1,4 @@
-from gladius import (
-    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
-    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
-    TEAM_LEAD_MEMORY_RELATIVE_PATH,
-)
-from gladius.config import SYSTEM_PROMPT_PATH as _SYSTEM_PROMPT_PATH
+from gladius.config import LAYOUT, SYSTEM_PROMPT_PATH as _SYSTEM_PROMPT_PATH
 from gladius.state import CompetitionState
 
 
@@ -13,13 +8,13 @@ def _load_system_prompt() -> str:
         _SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
         .replace(
             "{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}",
-            RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+            LAYOUT.runtime_experiment_state_relative_path,
         )
         .replace(
             "{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}",
-            RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+            LAYOUT.runtime_data_briefing_relative_path,
         )
-        .replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", TEAM_LEAD_MEMORY_RELATIVE_PATH)
+        .replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", LAYOUT.team_lead_memory_relative_path)
         .strip()
     )
     if len(text) < 500:
@@ -63,7 +58,7 @@ def make_kickoff_prompt(state: CompetitionState) -> str:
     if state.iteration == 1:
         return (
             "This is the FIRST iteration — no experiments have run yet.\n"
-            f"1. Check if `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` exists. If NOT, delegate to `scout` — "
+            f"1. Check if `{LAYOUT.runtime_data_briefing_relative_path}` exists. If NOT, delegate to `scout` — "
             "it will explore the data and write the briefing with shapes, distributions, "
             "risks, and strategic angles. If it already exists, skip scout entirely.\n"
             "2. Delegate to `team-lead` to plan a baseline experiment "
@@ -89,7 +84,7 @@ def make_kickoff_prompt(state: CompetitionState) -> str:
     return (
         f"This is iteration {state.iteration}/{state.max_iterations}. "
         f"Current best {metric_label}: **{best}**.\n\n"
-        f"1. Skip `scout` — `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` already exists from iteration 1.\n"
+        f"1. Skip `scout` — `{LAYOUT.runtime_data_briefing_relative_path}` already exists from iteration 1.\n"
         "2. Delegate to `team-lead` to plan the next experiment "
         "(team-lead must read DATA_BRIEFING.md, latest EXPERIMENT_STATE_iter*.json, "
         "current EXPERIMENT_STATE.json, and MEMORY.md before suggesting the next iteration; "

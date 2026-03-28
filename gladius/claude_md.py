@@ -16,23 +16,13 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from gladius import (
-    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
-    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
-    RUNTIME_RELATIVE_PATH,
-    TEAM_LEAD_MEMORY_RELATIVE_PATH,
-    runtime_data_briefing_path,
-    team_lead_memory_path,
-)
+from gladius.config import LAYOUT as _LAYOUT, SETTINGS as _SETTINGS
 from gladius.topologies._catalog import TOPOLOGY_CATALOG
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
 _TEMPLATE = Path(__file__).parent / "prompts" / "CLAUDE.md.template"
-
-_STAGNATION_THRESHOLD_METRIC = 0.001
-_STAGNATION_THRESHOLD_QUALITY = 3.0
 
 
 def _phase_guidance(iteration: int, max_iterations: int) -> str:
@@ -185,14 +175,14 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         score_key, threshold_label, threshold = (
             "oof_score",
             state.target_metric,
-            _STAGNATION_THRESHOLD_METRIC,
+            _SETTINGS.stagnation_threshold_metric,
         )
     else:
         scored = [e for e in state.experiments if e.get("quality_score") is not None]
         score_key, threshold_label, threshold = (
             "quality_score",
             "quality",
-            _STAGNATION_THRESHOLD_QUALITY,
+            _SETTINGS.stagnation_threshold_quality,
         )
 
     if len(scored) >= 3:
@@ -243,20 +233,20 @@ def render(state: "CompetitionState", project_dir: str) -> str:
             "5. Self-assess quality 0-100: rate completeness and correctness against README requirements."
         )
 
-    memory_path = str(team_lead_memory_path(project_dir).resolve())
+    memory_path = str(_LAYOUT.team_lead_memory_path(project_dir).resolve())
 
     # ── data briefing (produced by scout in iteration 1) ─────────────────────
-    briefing_path = runtime_data_briefing_path(project_dir)
+    briefing_path = _LAYOUT.runtime_data_briefing_path(project_dir)
     if briefing_path.is_file():
         data_briefing_section = (
             "## Data Briefing\n\n"
-            f"> Produced by the scout agent. Read `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` for full data context.\n"
+            f"> Produced by the scout agent. Read `{_LAYOUT.runtime_data_briefing_relative_path}` for full data context.\n"
             "> Do **not** re-read it into this file — reference the path directly."
         )
     else:
         data_briefing_section = (
             "## Data Briefing\n\n"
-            f"_(not yet available — the scout agent will produce `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` "
+            f"_(not yet available — the scout agent will produce `{_LAYOUT.runtime_data_briefing_relative_path}` "
             "in iteration 1)_"
         )
 
@@ -282,10 +272,10 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         "data_briefing_section": data_briefing_section,
         "submission_section": submission_section,
         "memory_path": memory_path,
-        "RUNTIME_RELATIVE_PATH": RUNTIME_RELATIVE_PATH,
-        "RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH": RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
-        "RUNTIME_DATA_BRIEFING_RELATIVE_PATH": RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
-        "TEAM_LEAD_MEMORY_RELATIVE_PATH": TEAM_LEAD_MEMORY_RELATIVE_PATH,
+        "RUNTIME_RELATIVE_PATH": _LAYOUT.runtime_relative_path,
+        "RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH": _LAYOUT.runtime_experiment_state_relative_path,
+        "RUNTIME_DATA_BRIEFING_RELATIVE_PATH": _LAYOUT.runtime_data_briefing_relative_path,
+        "TEAM_LEAD_MEMORY_RELATIVE_PATH": _LAYOUT.team_lead_memory_relative_path,
     }
 
     content = template

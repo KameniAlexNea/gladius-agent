@@ -23,20 +23,8 @@ from pathlib import Path
 from loguru import logger
 
 import gladius.claude_md as claude_md
-from gladius import (
-    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
-    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
-    runtime_data_briefing_path,
-    runtime_experiment_state_path,
-    state_db_path,
-)
-from gladius.config import MAX_CONSECUTIVE_ERRORS as _MAX_CONSECUTIVE_ERRORS
-from gladius.config import MAX_REDISPATCH as _MAX_REDISPATCH
-from gladius.config import MAX_STATE_SNIPPET_CHARS as _MAX_STATE_SNIPPET_CHARS
-from gladius.config import MAX_TURNS as _DEFAULT_MAX_TURNS
-from gladius.config import PERSISTENT_ARTIFACTS as _PERSISTENT_ARTIFACTS
-from gladius.config import START_ITERATION_ENV_VAR as _START_ITERATION_ENV_VAR
-from gladius.config import load_project_env
+from gladius.config import LAYOUT, SETTINGS, load_project_env
+
 from gladius.db.store import StateStore
 from gladius.project_setup import load_competition_config
 from gladius.roles.agent_runner import run_agent
@@ -64,25 +52,25 @@ def _build_state(project_dir: Path, cfg: dict) -> CompetitionState:
 
 def _resolve_start_iteration(max_iterations: int) -> int:
     """Return the first iteration to execute, derived from env var if set."""
-    raw = os.getenv(_START_ITERATION_ENV_VAR, "").strip()
+    raw = os.getenv(SETTINGS.start_iteration_env_var, "").strip()
     if not raw:
         return 1
     try:
         start_iteration = int(raw)
     except ValueError:
         logger.warning(
-            f"Ignoring ${_START_ITERATION_ENV_VAR}={raw!r}: expected integer >= 1."
+            f"Ignoring ${SETTINGS.start_iteration_env_var}={raw!r}: expected integer >= 1."
         )
         return 1
 
     if start_iteration < 1:
         logger.warning(
-            f"Ignoring ${_START_ITERATION_ENV_VAR}={start_iteration}: value must be >= 1."
+            f"Ignoring ${SETTINGS.start_iteration_env_var}={start_iteration}: value must be >= 1."
         )
         return 1
     if start_iteration > max_iterations:
         logger.warning(
-            f"${_START_ITERATION_ENV_VAR}={start_iteration} exceeds max_iterations={max_iterations}; "
+            f"${SETTINGS.start_iteration_env_var}={start_iteration} exceeds max_iterations={max_iterations}; "
             f"clamping to {max_iterations}."
         )
         return max_iterations
@@ -111,7 +99,7 @@ def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
             logger.debug(f"Archived artifacts/ → {archive_dir.name}/")
 
             # Copy forward persistent artifacts
-            for keep in _PERSISTENT_ARTIFACTS:
+            for keep in SETTINGS.persistent_artifacts:
                 archived = archive_dir / keep
                 if archived.is_file():
                     shutil.copy2(str(archived), str(art_dir / keep))
@@ -143,7 +131,7 @@ def _archive_stale_outputs(project_dir: Path, iteration: int) -> None:
 
 def _update_state(state: CompetitionState, project_dir: Path) -> None:
     """Read EXPERIMENT_STATE.json written by agents and update CompetitionState."""
-    exp_path = runtime_experiment_state_path(project_dir)
+    exp_path = LAYOUT.runtime_experiment_state_path(project_dir)
     if not exp_path.exists():
         return
 
@@ -244,7 +232,7 @@ def _missing_scout_artifact(state: CompetitionState, project_dir: Path) -> bool:
     """Scout is mandatory in iteration 1 unless briefing already exists."""
     if state.iteration != 1:
         return False
-    briefing_path = runtime_data_briefing_path(project_dir)
+    briefing_path = LAYOUT.runtime_data_briefing_path(project_dir)
     return not briefing_path.exists()
 
 
@@ -253,17 +241,17 @@ def _read_experiment_state_snippet(exp_path: Path) -> str:
     if not exp_path.exists():
         return "{}"
     text = exp_path.read_text(encoding="utf-8")
-    if len(text) <= _MAX_STATE_SNIPPET_CHARS:
+    if len(text) <= SETTINGS.max_state_snippet_chars:
         return text
 
     # Prefer a compact status-focused summary to limit prompt/token overhead.
     try:
         data = json.loads(text)
     except Exception:
-        return text[:_MAX_STATE_SNIPPET_CHARS] + "\n...<truncated>..."
+        return text[:SETTINGS.max_state_snippet_chars] + "\n...<truncated>..."
 
     if not isinstance(data, dict):
-        return text[:_MAX_STATE_SNIPPET_CHARS] + "\n...<truncated>..."
+        return text[:SETTINGS.max_state_snippet_chars] + "\n...<truncated>..."
 
     summary: dict[str, object] = {
         "done": bool(data.get("done", False)),
@@ -296,9 +284,9 @@ def _read_experiment_state_snippet(exp_path: Path) -> str:
         summary["submission_error"] = data.get("submission_error")
 
     compact = json.dumps(summary, ensure_ascii=True, indent=2)
-    if len(compact) <= _MAX_STATE_SNIPPET_CHARS:
+    if len(compact) <= SETTINGS.max_state_snippet_chars:
         return compact
-    return compact[:_MAX_STATE_SNIPPET_CHARS] + "\n...<truncated>..."
+    return compact[:SETTINGS.max_state_snippet_chars] + "\n...<truncated>..."
 
 
 def _build_redispatch_prompt(
@@ -322,16 +310,16 @@ def _build_redispatch_prompt(
         + error_section
         + f"Iteration context: {state.iteration}/{state.max_iterations}, topology={state.topology}.\n"
         f"Pending required agents (non-success): {pending}.\n\n"
-        f"Current `{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}`:\n"
+        f"Current `{LAYOUT.runtime_experiment_state_relative_path}`:\n"
         f"```json\n{state_text}\n```\n\n"
         "Required actions:\n"
         "1. Start with a concise todo task list (3–7 bullets) and keep it updated while working.\n"
-        f"2. Read `{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}` first.\n"
+        f"2. Read `{LAYOUT.runtime_experiment_state_relative_path}` first.\n"
         "3. Dispatch only pending/failed specialists in correct topology order.\n"
         "4. Skip any specialist already marked `status: success` unless upstream changes require rerun.\n"
-        f"5. If dispatching `team-lead`, require it to read `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}`, "
+        f"5. If dispatching `team-lead`, require it to read `{LAYOUT.runtime_data_briefing_relative_path}`, "
         "latest EXPERIMENT_STATE_iter*.json, and current "
-        f"`{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}` "
+        f"`{LAYOUT.runtime_experiment_state_relative_path}` "
         "before suggesting the next iteration; team-lead is non-coding and must only return planning output.\n"
         "6. For each downstream specialist, include the exact relevant section under "
         "`## Your Instructions from the Team-Lead` verbatim.\n"
@@ -352,7 +340,7 @@ async def run_competition(
     if loaded_env is not None:
         logger.info(f"Loaded project env: {loaded_env}")
     run_id = f"{cfg.get('competition_id', 'run')}-{uuid.uuid4().hex[:8]}"
-    store = StateStore(str(state_db_path(project_dir)))
+    store = StateStore(str(LAYOUT.state_db_path(project_dir)))
 
     try:
         # Ensure GLADIUS_MODEL / GLADIUS_SMALL_MODEL are in the environment so
@@ -384,7 +372,7 @@ async def run_competition(
             # The loop increments state.iteration at the top of each cycle.
             state.iteration = start_iteration - 1
             logger.info(
-                f"Resuming run from iteration {start_iteration} via ${_START_ITERATION_ENV_VAR}."
+                f"Resuming run from iteration {start_iteration} via ${SETTINGS.start_iteration_env_var}."
             )
 
         logger.info(
@@ -423,7 +411,7 @@ async def run_competition(
                         cleanup_orphan_processes(project_dir)
 
                     # Archive EXPERIMENT_STATE from the previous iteration so agents start fresh
-                    exp_path = runtime_experiment_state_path(project_dir)
+                    exp_path = LAYOUT.runtime_experiment_state_path(project_dir)
                     if exp_path.exists():
                         archive = exp_path.with_name(
                             f"EXPERIMENT_STATE_iter{state.iteration - 1}.json"
@@ -455,7 +443,7 @@ async def run_competition(
 
                     # Agents that must reach status=success for the iteration to count.
                     # If the orchestrator returns early (text response without finishing the
-                    # pipeline), re-dispatch it up to _MAX_REDISPATCH times with current state.
+                    # pipeline), re-dispatch it up to SETTINGS.max_redispatch times with current state.
                     prompt = kickoff
                     incomplete: list[str] = []
                     _iteration_error = False
@@ -472,10 +460,10 @@ async def run_competition(
                             **payload,
                         )
 
-                    for _attempt in range(1 + _MAX_REDISPATCH):
+                    for _attempt in range(1 + SETTINGS.max_redispatch):
                         attempt_no = _attempt + 1
                         attempts_used = attempt_no
-                        total_attempts = _MAX_REDISPATCH + 1
+                        total_attempts = SETTINGS.max_redispatch + 1
                         logger.info(
                             f"Iteration {state.iteration}: orchestrator attempt {attempt_no}/{total_attempts}"
                         )
@@ -489,8 +477,8 @@ async def run_competition(
                                 output_schema=None,
                                 cwd=str(project_dir),
                                 resume=resume_session,
-                                max_turns=max_turns or _DEFAULT_MAX_TURNS,
-                                max_retries=_MAX_CONSECUTIVE_ERRORS,
+                                max_turns=max_turns or SETTINGS.max_turns,
+                                max_retries=SETTINGS.max_consecutive_errors,
                                 trace_sink=_trace_sink,
                                 trace_context={
                                     "run_id": run_id,
@@ -512,7 +500,7 @@ async def run_competition(
                             )
                             # Check whether the pipeline completed despite the exception
                             # (e.g. a forbidden-tool violation detected post-hoc).
-                            exp_path = runtime_experiment_state_path(project_dir)
+                            exp_path = LAYOUT.runtime_experiment_state_path(project_dir)
                             incomplete = _incomplete_agents(exp_path)
                             if _missing_scout_artifact(state, project_dir):
                                 incomplete = ["scout", *incomplete]
@@ -536,7 +524,7 @@ async def run_competition(
                                     "error": str(exc),
                                 }
                             )
-                            if _attempt < _MAX_REDISPATCH:
+                            if _attempt < SETTINGS.max_redispatch:
                                 logger.warning(
                                     f"Iteration {state.iteration}: agent error on attempt {attempt_no}/{total_attempts} "
                                     f"— re-dispatching. agents still pending: {incomplete}"
@@ -551,9 +539,9 @@ async def run_competition(
                                 continue
                             # All redispatch attempts exhausted — count as one iteration failure.
                             state.consecutive_errors += 1
-                            if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                            if state.consecutive_errors >= SETTINGS.max_consecutive_errors:
                                 logger.error(
-                                    f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
+                                    f"{SETTINGS.max_consecutive_errors} consecutive errors — stopping run."
                                 )
                                 state.last_stop_reason = "consecutive_errors"
                                 state.done = True
@@ -561,13 +549,13 @@ async def run_competition(
                             break
 
                         # Check whether the pipeline actually completed.
-                        exp_path = runtime_experiment_state_path(project_dir)
+                        exp_path = LAYOUT.runtime_experiment_state_path(project_dir)
                         incomplete = _incomplete_agents(exp_path)
                         if _missing_scout_artifact(state, project_dir):
                             incomplete = ["scout", *incomplete]
                         if not incomplete:
                             break
-                        if _attempt < _MAX_REDISPATCH:
+                        if _attempt < SETTINGS.max_redispatch:
                             logger.warning(
                                 f"Iteration {state.iteration}: orchestrator returned early — "
                                 f"agents still pending: {incomplete}. Re-dispatching (attempt {attempt_no + 1}/{total_attempts})."
@@ -580,7 +568,7 @@ async def run_competition(
                     if incomplete and not _iteration_error:
                         logger.error(
                             f"Iteration {state.iteration}: required agents still incomplete after "
-                            f"{_MAX_REDISPATCH + 1} orchestrator attempt(s): {incomplete}"
+                            f"{SETTINGS.max_redispatch + 1} orchestrator attempt(s): {incomplete}"
                         )
                         state.consecutive_errors += 1
                         state.error_log.append(
@@ -589,9 +577,9 @@ async def run_competition(
                                 "error": f"incomplete_pipeline: {incomplete}",
                             }
                         )
-                        if state.consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                        if state.consecutive_errors >= SETTINGS.max_consecutive_errors:
                             logger.error(
-                                f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors — stopping run."
+                                f"{SETTINGS.max_consecutive_errors} consecutive errors — stopping run."
                             )
                             state.last_stop_reason = "consecutive_errors"
                             state.done = True

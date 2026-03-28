@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from gladius import STATE_DB_RELATIVE_PATH
+from gladius.config import LAYOUT as _LAYOUT
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 class StateStore:
     """SQLite-backed state and execution trace store."""
 
-    def __init__(self, db_path: str = STATE_DB_RELATIVE_PATH) -> None:
+    def __init__(self, db_path: str = _LAYOUT.state_db_relative_path) -> None:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._db_path))

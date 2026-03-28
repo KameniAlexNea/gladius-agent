@@ -4,7 +4,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from gladius.config import SCIENTIFIC_SKILLS_PATH as _SCIENTIFIC_SKILLS_PATH
+from gladius.config import SETTINGS as _SETTINGS
 
 _SRC_SKILLS = Path(__file__).parent
 
@@ -47,8 +47,8 @@ def copy_scientific(dst: Path, override_path: str = "", *, force: bool = False) 
         catalog = Path(override_path).expanduser().resolve()
     else:
         catalog = (
-            Path(_SCIENTIFIC_SKILLS_PATH).expanduser().resolve()
-            if _SCIENTIFIC_SKILLS_PATH
+            Path(_SETTINGS.scientific_skills_path).expanduser().resolve()
+            if _SETTINGS.scientific_skills_path
             else (
                 Path(__file__).parent.parent.parent
                 / "claude-scientific-skills"

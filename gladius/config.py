@@ -96,6 +96,8 @@ class RuntimeSettings:
     fake_platform_dir: str
     persistent_artifacts: set[str]
     max_state_snippet_chars: int
+    stagnation_threshold_metric: float
+    stagnation_threshold_quality: float
 
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
@@ -115,6 +117,12 @@ class RuntimeSettings:
             max_state_snippet_chars=int(
                 os.getenv("GLADIUS_MAX_STATE_SNIPPET_CHARS", "6000")
             ),
+            stagnation_threshold_metric=float(
+                os.getenv("GLADIUS_STAGNATION_THRESHOLD_METRIC", "0.001")
+            ),
+            stagnation_threshold_quality=float(
+                os.getenv("GLADIUS_STAGNATION_THRESHOLD_QUALITY", "3.0")
+            ),
         )
 
 
@@ -123,63 +131,3 @@ SYSTEM_PROMPT_PATH: Path = PROMPTS_DIR / "orchestrator_system_prompt.md"
 
 LAYOUT = WorkspaceLayout()
 SETTINGS = RuntimeSettings.from_env()
-
-# Backward-compatible constant aliases
-GLADIUS_DIRNAME = LAYOUT.gladius_dirname
-RUNTIME_DIRNAME = LAYOUT.runtime_dirname
-AGENT_MEMORY_DIRNAME = LAYOUT.agent_memory_dirname
-TEAM_LEAD_ROLE_NAME = LAYOUT.team_lead_role_name
-
-EXPERIMENT_STATE_FILENAME = LAYOUT.experiment_state_filename
-DATA_BRIEFING_FILENAME = LAYOUT.data_briefing_filename
-TEAM_LEAD_MEMORY_FILENAME = LAYOUT.team_lead_memory_filename
-STATE_DB_FILENAME = LAYOUT.state_db_filename
-
-GLADIUS_RELATIVE_PATH = LAYOUT.gladius_relative_path
-RUNTIME_RELATIVE_PATH = LAYOUT.runtime_relative_path
-RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH = LAYOUT.runtime_experiment_state_relative_path
-RUNTIME_DATA_BRIEFING_RELATIVE_PATH = LAYOUT.runtime_data_briefing_relative_path
-TEAM_LEAD_MEMORY_RELATIVE_PATH = LAYOUT.team_lead_memory_relative_path
-STATE_DB_RELATIVE_PATH = LAYOUT.state_db_relative_path
-
-
-def gladius_workspace_path(project_dir: str | Path) -> Path:
-    return LAYOUT.gladius_workspace_path(project_dir)
-
-
-def runtime_workspace_path(project_dir: str | Path) -> Path:
-    return LAYOUT.runtime_workspace_path(project_dir)
-
-
-def runtime_experiment_state_path(project_dir: str | Path) -> Path:
-    return LAYOUT.runtime_experiment_state_path(project_dir)
-
-
-def runtime_data_briefing_path(project_dir: str | Path) -> Path:
-    return LAYOUT.runtime_data_briefing_path(project_dir)
-
-
-def team_lead_memory_path(project_dir: str | Path) -> Path:
-    return LAYOUT.team_lead_memory_path(project_dir)
-
-
-def state_db_path(project_dir: str | Path) -> Path:
-    return LAYOUT.state_db_path(project_dir)
-
-
-# ── Runtime tuning (env-configurable) ─────────────────────────────────────────
-
-MAX_TURNS: int = SETTINGS.max_turns
-MAX_CONSECUTIVE_ERRORS: int = SETTINGS.max_consecutive_errors
-MAX_REDISPATCH: int = SETTINGS.max_redispatch
-START_ITERATION_ENV_VAR: str = SETTINGS.start_iteration_env_var
-SCIENTIFIC_SKILLS_PATH: str = SETTINGS.scientific_skills_path
-
-# ── Test / fake-platform (dev only) ───────────────────────────────────────────
-
-FAKE_ANSWERS_PATH: str = SETTINGS.fake_answers_path
-FAKE_PLATFORM_DIR: str = SETTINGS.fake_platform_dir
-
-# Files in artifacts/ that are intentionally reusable across iterations.
-PERSISTENT_ARTIFACTS = SETTINGS.persistent_artifacts
-MAX_STATE_SNIPPET_CHARS = SETTINGS.max_state_snippet_chars

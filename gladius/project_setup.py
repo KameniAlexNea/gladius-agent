@@ -14,13 +14,7 @@ import gladius.claude_md as claude_md
 import gladius.roles as roles
 import gladius.skills as skills
 import gladius.tools as tools
-from gladius import (
-    AGENT_MEMORY_DIRNAME,
-    GLADIUS_DIRNAME,
-    RUNTIME_DIRNAME,
-    TEAM_LEAD_MEMORY_RELATIVE_PATH,
-    team_lead_memory_path,
-)
+from gladius.config import LAYOUT as _LAYOUT
 
 _TEMPLATES = Path(__file__).parent
 
@@ -178,7 +172,7 @@ def _dir_skeleton(root: Path) -> None:
     for sub in (
         root / ".claude" / "agents",
         root / ".claude" / "skills",
-        root / GLADIUS_DIRNAME / RUNTIME_DIRNAME / AGENT_MEMORY_DIRNAME,
+        root / _LAYOUT.gladius_dirname / _LAYOUT.runtime_dirname / _LAYOUT.agent_memory_dirname,
         root / "src",
         root / "scripts",
         root / "artifacts",
@@ -265,7 +259,7 @@ def _write_settings(root: Path, cfg: dict) -> None:
 
 
 def _seed_memory(root: Path, cfg: dict, *, force: bool) -> None:
-    mem_file = team_lead_memory_path(root)
+    mem_file = _LAYOUT.team_lead_memory_path(root)
     if mem_file.exists() and not force:
         return
     template_name = "MEMORY-ml.md" if cfg["metric"] else "MEMORY-task.md"
@@ -273,7 +267,7 @@ def _seed_memory(root: Path, cfg: dict, *, force: bool) -> None:
     if template.exists():
         mem_file.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(template, mem_file)
-        print(f"  memory → {TEAM_LEAD_MEMORY_RELATIVE_PATH}")
+        print(f"  memory → {_LAYOUT.team_lead_memory_relative_path}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

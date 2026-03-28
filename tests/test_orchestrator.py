@@ -383,8 +383,13 @@ def test_run_competition_stops_on_consecutive_errors(monkeypatch, tmp_path: Path
     monkeypatch.setattr(
         "gladius.orchestrator.should_cleanup_orphan_processes", lambda: False
     )
-    monkeypatch.setattr("gladius.orchestrator._MAX_REDISPATCH", 1)
-    monkeypatch.setattr("gladius.orchestrator._MAX_CONSECUTIVE_ERRORS", 1)
+    import dataclasses
+    import gladius.orchestrator as _orch_mod
+
+    fast_settings = dataclasses.replace(
+        _orch_mod.SETTINGS, max_redispatch=1, max_consecutive_errors=1
+    )
+    monkeypatch.setattr(_orch_mod, "SETTINGS", fast_settings)
 
     async def _always_fail(**kwargs):
         calls["run_agent"] += 1

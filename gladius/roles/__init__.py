@@ -14,12 +14,7 @@ from pathlib import Path
 
 from claude_agent_sdk import AgentDefinition
 
-from gladius import (
-    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
-    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
-    RUNTIME_RELATIVE_PATH,
-    TEAM_LEAD_MEMORY_RELATIVE_PATH,
-)
+from gladius.config import LAYOUT as _LAYOUT
 
 _TEMPLATES = Path(__file__).parent / "templates"
 
@@ -52,14 +47,14 @@ def _apply_path_placeholders(content: str) -> str:
     return (
         content.replace(
             "{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}",
-            RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+            _LAYOUT.runtime_experiment_state_relative_path,
         )
         .replace(
             "{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}",
-            RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+            _LAYOUT.runtime_data_briefing_relative_path,
         )
-        .replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", TEAM_LEAD_MEMORY_RELATIVE_PATH)
-        .replace("{{RUNTIME_RELATIVE_PATH}}", RUNTIME_RELATIVE_PATH)
+        .replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", _LAYOUT.team_lead_memory_relative_path)
+        .replace("{{RUNTIME_RELATIVE_PATH}}", _LAYOUT.runtime_relative_path)
     )
 
 
