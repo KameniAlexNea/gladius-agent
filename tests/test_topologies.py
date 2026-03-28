@@ -21,9 +21,9 @@ EXPECTED_TOPOLOGIES = {"functional", "two-pizza", "platform", "autonomous", "mat
 
 class TestCatalogCompleteness:
     def test_all_five_topologies_present(self):
-        assert EXPECTED_TOPOLOGIES <= set(TOPOLOGY_CATALOG.keys()), (
-            f"Missing: {EXPECTED_TOPOLOGIES - set(TOPOLOGY_CATALOG.keys())}"
-        )
+        assert EXPECTED_TOPOLOGIES <= set(
+            TOPOLOGY_CATALOG.keys()
+        ), f"Missing: {EXPECTED_TOPOLOGIES - set(TOPOLOGY_CATALOG.keys())}"
 
     def test_extra_topologies_not_present(self):
         assert set(TOPOLOGY_CATALOG.keys()) == EXPECTED_TOPOLOGIES
@@ -48,9 +48,9 @@ class TestTopologyDefinitionFields:
     def test_claude_md_section_is_substantial(self, name):
         topo = TOPOLOGY_CATALOG[name]
         # Should contain the Mermaid diagram at minimum
-        assert len(topo.claude_md_section) > 200, (
-            f"{name}: claude_md_section is suspiciously short ({len(topo.claude_md_section)} chars)"
-        )
+        assert (
+            len(topo.claude_md_section) > 200
+        ), f"{name}: claude_md_section is suspiciously short ({len(topo.claude_md_section)} chars)"
 
     @pytest.mark.parametrize("name", sorted(EXPECTED_TOPOLOGIES))
     def test_claude_md_section_contains_mermaid(self, name):
