@@ -36,15 +36,15 @@ EXPECTED_ROLES = {
 
 class TestCatalogCompleteness:
     def test_all_expected_roles_present(self):
-        assert EXPECTED_ROLES <= set(
-            ROLE_CATALOG.keys()
-        ), f"Missing roles: {EXPECTED_ROLES - set(ROLE_CATALOG.keys())}"
+        assert EXPECTED_ROLES <= set(ROLE_CATALOG.keys()), (
+            f"Missing roles: {EXPECTED_ROLES - set(ROLE_CATALOG.keys())}"
+        )
 
     def test_roles_tuple_matches_catalog(self):
         for name in ROLES:
-            assert (
-                name in ROLE_CATALOG
-            ), f"ROLES lists '{name}' but it is not in ROLE_CATALOG"
+            assert name in ROLE_CATALOG, (
+                f"ROLES lists '{name}' but it is not in ROLE_CATALOG"
+            )
 
 
 class TestRoleDefinitionFields:
@@ -54,17 +54,17 @@ class TestRoleDefinitionFields:
         role = ROLE_CATALOG[name]
         assert role.name == name
         assert role.description.strip(), f"{name}: description is empty"
-        assert (
-            len(role.prompt.strip()) > 50
-        ), f"{name}: system_prompt is suspiciously short"
+        assert len(role.prompt.strip()) > 50, (
+            f"{name}: system_prompt is suspiciously short"
+        )
         assert role.session in (
             "persistent",
             "fresh",
         ), f"{name}: unexpected session value '{role.session}'"
         assert len(role.tools) > 0, f"{name}: tools tuple is empty"
-        assert (
-            "GLADIUS" in role.model
-        ), f"{name}: model field '{role.model}' does not contain GLADIUS placeholder"
+        assert "GLADIUS" in role.model, (
+            f"{name}: model field '{role.model}' does not contain GLADIUS placeholder"
+        )
 
 
 class TestSessionConstraints:
@@ -83,9 +83,9 @@ class TestSessionConstraints:
             "full-stack-coordinator",
         }
         for name in fresh_roles:
-            assert (
-                ROLE_CATALOG[name].session == "fresh"
-            ), f"{name} should be 'fresh' but is '{ROLE_CATALOG[name].session}'"
+            assert ROLE_CATALOG[name].session == "fresh", (
+                f"{name} should be 'fresh' but is '{ROLE_CATALOG[name].session}'"
+            )
 
 
 class TestSkillsAndMcpServers:

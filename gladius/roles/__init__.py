@@ -11,7 +11,6 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
 
 from claude_agent_sdk import AgentDefinition
 
