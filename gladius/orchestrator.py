@@ -27,17 +27,21 @@ from gladius.db.store import StateStore
 from gladius.project_setup import load_competition_config
 from gladius.roles.agent_runner import run_agent
 from gladius.state import CompetitionState
+from gladius.utilities._orchestrator_helper import SYSTEM_PROMPT as _SYSTEM_PROMPT
+from gladius.utilities._orchestrator_helper import TOP_LEVEL_TOOLS as _TOP_LEVEL_TOOLS
 from gladius.utilities._orchestrator_helper import (
-    SYSTEM_PROMPT as _SYSTEM_PROMPT,
-    TOP_LEVEL_TOOLS as _TOP_LEVEL_TOOLS,
     archive_stale_outputs,
     build_redispatch_prompt,
     build_state,
     incomplete_agents,
+)
+from gladius.utilities._orchestrator_helper import (
+    make_kickoff_prompt as _make_kickoff_prompt,
+)
+from gladius.utilities._orchestrator_helper import (
     missing_scout_artifact,
     resolve_start_iteration,
     update_state,
-    make_kickoff_prompt as _make_kickoff_prompt,
 )
 from gladius.utilities.langsmith_tracing import init_langsmith_tracing
 from gladius.utilities.logging_setup import configure_logging
@@ -260,7 +264,10 @@ async def run_competition(
                                 continue
                             # All redispatch attempts exhausted — count as one iteration failure.
                             state.consecutive_errors += 1
-                            if state.consecutive_errors >= SETTINGS.max_consecutive_errors:
+                            if (
+                                state.consecutive_errors
+                                >= SETTINGS.max_consecutive_errors
+                            ):
                                 logger.error(
                                     f"{SETTINGS.max_consecutive_errors} consecutive errors — stopping run."
                                 )

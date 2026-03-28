@@ -172,7 +172,10 @@ def _dir_skeleton(root: Path) -> None:
     for sub in (
         root / ".claude" / "agents",
         root / ".claude" / "skills",
-        root / _LAYOUT.gladius_dirname / _LAYOUT.runtime_dirname / _LAYOUT.agent_memory_dirname,
+        root
+        / _LAYOUT.gladius_dirname
+        / _LAYOUT.runtime_dirname
+        / _LAYOUT.agent_memory_dirname,
         root / "src",
         root / "scripts",
         root / "artifacts",

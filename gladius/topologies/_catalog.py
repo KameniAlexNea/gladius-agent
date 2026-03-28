@@ -28,7 +28,9 @@ def _apply_path_placeholders(content: str) -> str:
     return content.replace(
         "{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}",
         _LAYOUT.runtime_data_briefing_relative_path,
-    ).replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", _LAYOUT.team_lead_memory_relative_path)
+    ).replace(
+        "{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", _LAYOUT.team_lead_memory_relative_path
+    )
 
 
 def _parse(path: Path) -> TopologyDefinition:

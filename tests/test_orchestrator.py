@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from gladius.orchestrator import run_competition
+from gladius.state import CompetitionState
 from gladius.utilities._orchestrator_helper import (
     archive_stale_outputs,
     incomplete_agents,
@@ -16,7 +17,6 @@ from gladius.utilities._orchestrator_helper import (
     resolve_start_iteration,
     update_state,
 )
-from gladius.state import CompetitionState
 from gladius.utilities.langsmith_tracing import configure_langsmith_env
 
 
@@ -384,6 +384,7 @@ def test_run_competition_stops_on_consecutive_errors(monkeypatch, tmp_path: Path
         "gladius.orchestrator.should_cleanup_orphan_processes", lambda: False
     )
     import dataclasses
+
     import gladius.orchestrator as _orch_mod
 
     fast_settings = dataclasses.replace(

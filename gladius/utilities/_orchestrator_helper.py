@@ -6,7 +6,8 @@ from pathlib import Path
 from loguru import logger
 
 import gladius.claude_md as claude_md
-from gladius.config import LAYOUT, SETTINGS, SYSTEM_PROMPT_PATH as _SYSTEM_PROMPT_PATH
+from gladius.config import LAYOUT, SETTINGS
+from gladius.config import SYSTEM_PROMPT_PATH as _SYSTEM_PROMPT_PATH
 from gladius.state import CompetitionState
 
 
@@ -22,7 +23,9 @@ def _load_system_prompt() -> str:
             "{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}",
             LAYOUT.runtime_data_briefing_relative_path,
         )
-        .replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", LAYOUT.team_lead_memory_relative_path)
+        .replace(
+            "{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", LAYOUT.team_lead_memory_relative_path
+        )
         .strip()
     )
     if len(text) < 500:
@@ -316,10 +319,10 @@ def read_experiment_state_snippet(exp_path: Path) -> str:
     try:
         data = json.loads(text)
     except Exception:
-        return text[:SETTINGS.max_state_snippet_chars] + "\n...<truncated>..."
+        return text[: SETTINGS.max_state_snippet_chars] + "\n...<truncated>..."
 
     if not isinstance(data, dict):
-        return text[:SETTINGS.max_state_snippet_chars] + "\n...<truncated>..."
+        return text[: SETTINGS.max_state_snippet_chars] + "\n...<truncated>..."
 
     summary: dict[str, object] = {
         "done": bool(data.get("done", False)),
@@ -354,7 +357,7 @@ def read_experiment_state_snippet(exp_path: Path) -> str:
     compact = json.dumps(summary, ensure_ascii=True, indent=2)
     if len(compact) <= SETTINGS.max_state_snippet_chars:
         return compact
-    return compact[:SETTINGS.max_state_snippet_chars] + "\n...<truncated>..."
+    return compact[: SETTINGS.max_state_snippet_chars] + "\n...<truncated>..."
 
 
 def build_redispatch_prompt(

@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from gladius.config import LAYOUT as _LAYOUT, SETTINGS as _SETTINGS
+from gladius.config import LAYOUT as _LAYOUT
+from gladius.config import SETTINGS as _SETTINGS
 from gladius.topologies._catalog import TOPOLOGY_CATALOG
 
 if TYPE_CHECKING:
