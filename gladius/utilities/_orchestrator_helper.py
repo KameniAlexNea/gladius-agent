@@ -41,6 +41,7 @@ TOP_LEVEL_TOOLS = [
     "Grep",
     "TodoWrite",
     "Agent",
+    "TaskOutput",
 ]
 
 

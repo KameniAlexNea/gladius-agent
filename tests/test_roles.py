@@ -88,6 +88,26 @@ class TestSessionConstraints:
             )
 
 
+class TestSkillsAndMcpServers:
+    def test_domain_expert_skills_parsed(self):
+        role = ROLE_CATALOG["domain-expert"]
+        assert role.skills == [
+            "ml-competition",
+            "ml-competition-features",
+            "ml-competition-pre-submit",
+        ]
+
+    def test_domain_expert_mcp_servers_parsed(self):
+        role = ROLE_CATALOG["domain-expert"]
+        assert role.mcpServers == ["skills-on-demand"]
+
+    def test_role_without_skills_or_mcp_is_none(self):
+        """memory-keeper has no skills or mcpServers in its frontmatter."""
+        role = ROLE_CATALOG["memory-keeper"]
+        assert role.skills is None
+        assert role.mcpServers is None
+
+
 class TestReadOnlyRoles:
     def test_evaluator_has_no_write_tool(self):
         """evaluator only needs Read-class tools."""
