@@ -9,6 +9,7 @@ import gladius.claude_md as claude_md
 from gladius.config import LAYOUT, SETTINGS
 from gladius.config import SYSTEM_PROMPT_PATH as _SYSTEM_PROMPT_PATH
 from gladius.state import CompetitionState
+from gladius.topologies._catalog import TOPOLOGY_CATALOG
 
 
 def _load_system_prompt() -> str:
@@ -51,19 +52,14 @@ TOP_LEVEL_TOOLS = [
 ]
 
 
-_TOPOLOGY_FIRST_STEP: dict[str, str] = {
-    "functional": "data-expert → feature-engineer → ml-engineer → evaluator → validator → memory-keeper",
-    "two-pizza": "full-stack-coordinator (who decides which specialists to spawn) → validator → memory-keeper",
-    "matrix": "ml-engineer (full pipeline) → dual review (team-lead + domain-expert) → evaluator → validator → memory-keeper",
-    "autonomous": "N parallel mini-teams each running (data-expert → feature-engineer → ml-engineer → evaluator) → validator → memory-keeper",
-    "platform": "platform-layer (data-expert) → product-layer (feature-engineer → ml-engineer) → evaluator → validator → memory-keeper",
-}
 
 
 def make_kickoff_prompt(state: CompetitionState) -> str:
     """Build an iteration-aware kickoff prompt."""
-    flow = _TOPOLOGY_FIRST_STEP.get(
-        state.topology, "follow the topology defined in CLAUDE.md"
+    flow = (
+        TOPOLOGY_CATALOG[state.topology].flow
+        if state.topology in TOPOLOGY_CATALOG
+        else "follow the topology defined in CLAUDE.md"
     )
 
     if state.iteration == 1:

@@ -248,7 +248,7 @@ def test_run_competition_single_iteration_success(monkeypatch, tmp_path: Path):
         "gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
-        "gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff"
+        "gladius.utilities._orchestrator_helper.make_kickoff_prompt", lambda state: "kickoff"
     )
     monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
     monkeypatch.setattr(
@@ -318,7 +318,7 @@ def test_run_competition_redispatches_then_succeeds(monkeypatch, tmp_path: Path)
         "gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
-        "gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff"
+        "gladius.utilities._orchestrator_helper.make_kickoff_prompt", lambda state: "kickoff"
     )
     monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
     monkeypatch.setattr(
@@ -377,7 +377,7 @@ def test_run_competition_stops_on_consecutive_errors(monkeypatch, tmp_path: Path
         "gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
-        "gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff"
+        "gladius.utilities._orchestrator_helper.make_kickoff_prompt", lambda state: "kickoff"
     )
     monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
     monkeypatch.setattr(

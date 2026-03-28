@@ -34,11 +34,7 @@ from gladius.utilities._orchestrator_helper import (
     build_redispatch_prompt,
     build_state,
     incomplete_agents,
-)
-from gladius.utilities._orchestrator_helper import (
-    make_kickoff_prompt as _make_kickoff_prompt,
-)
-from gladius.utilities._orchestrator_helper import (
+    make_kickoff_prompt,
     missing_scout_artifact,
     resolve_start_iteration,
     update_state,
@@ -159,7 +155,7 @@ async def run_competition(
                         f"best={state.best_oof_score or state.best_quality_score or 'none'}"
                     )
 
-                    kickoff = _make_kickoff_prompt(state)
+                    kickoff = make_kickoff_prompt(state)
 
                     # Reset consecutive error counter at the start of each iteration — the
                     # threshold is meant to stop a genuinely stuck run, not to penalise the
