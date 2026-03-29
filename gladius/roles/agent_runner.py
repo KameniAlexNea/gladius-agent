@@ -11,10 +11,10 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     CLIJSONDecodeError,
     CLINotFoundError,
+    ClaudeSDKClient,
     HookMatcher,
     ProcessError,
     ResultMessage,
-    query,
 )
 from claude_agent_sdk._errors import MessageParseError
 from claude_agent_sdk.types import (
@@ -46,6 +46,14 @@ class ToolPermissionError(RuntimeError):
 
 class AgentDispatchError(RuntimeError):
     """Raised when delegation metadata is invalid or missing."""
+
+
+async def _stream_via_client(prompt: str, options: "ClaudeAgentOptions"):  # type: ignore[return]
+    """Yield SDK messages using ClaudeSDKClient instead of the standalone query()."""
+    async with ClaudeSDKClient(options=options) as client:
+        await client.query(prompt)
+        async for message in client.receive_response():
+            yield message
 
 
 TraceSink = Callable[[dict[str, Any]], None]
@@ -414,7 +422,7 @@ async def run_agent(
                         resume=resume,
                     )
 
-                    async for message in query(prompt=prompt, options=options):
+                    async for message in _stream_via_client(prompt=prompt, options=options):
                         if verbose:
                             _log_message(agent_name, message)
                         if isinstance(message, StreamEvent):
