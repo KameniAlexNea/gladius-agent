@@ -9,9 +9,9 @@ from typing import Any, Callable
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
+    ClaudeSDKClient,
     CLIJSONDecodeError,
     CLINotFoundError,
-    ClaudeSDKClient,
     HookMatcher,
     ProcessError,
     ResultMessage,
@@ -422,7 +422,9 @@ async def run_agent(
                         resume=resume,
                     )
 
-                    async for message in _stream_via_client(prompt=prompt, options=options):
+                    async for message in _stream_via_client(
+                        prompt=prompt, options=options
+                    ):
                         if verbose:
                             _log_message(agent_name, message)
                         if isinstance(message, StreamEvent):

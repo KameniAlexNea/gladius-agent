@@ -320,7 +320,11 @@ def write_from_project(root: Path, cfg: dict) -> "CompetitionState":
         submission_threshold=submission_threshold,
         max_submissions_per_day=max_sub_day,
         use_web_search=bool(cfg.get("use_web_search", False)),
-        phase_guidance_path=str((root / raw_pgp).resolve()) if (raw_pgp := cfg.get("phase_guidance_path")) else None,
+        phase_guidance_path=(
+            str((root / raw_pgp).resolve())
+            if (raw_pgp := cfg.get("phase_guidance_path"))
+            else None
+        ),
     )
     write(state, str(root))
     print("  claude → CLAUDE.md")
