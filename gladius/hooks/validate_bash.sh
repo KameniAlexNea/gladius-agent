@@ -72,20 +72,24 @@ fi
 # Matches execution via: python[3], bash, uv run, or direct ./
 # Does NOT match read-only uses like: cat, tail, grep, head, py_compile, or --help invocations.
 if echo "$COMMAND" | grep -qE '(python3?|bash)[[:space:]]+[^[:space:]]*train[^[:space:]]*(\.(py|sh))|uv[[:space:]]+run[[:space:]].*\btrain[^[:space:]]*(\.(py|sh))|\./[^[:space:]]*train[^[:space:]]*(\.(py|sh))'; then
-    # Exclude syntax checks and help requests — these are not training runs.
+    # Exclude syntax checks, help requests, and kill commands targeting training scripts.
     if ! echo "$COMMAND" | grep -qE '(-m[[:space:]]+py_compile|py_compile[[:space:]]|--help|--version)'; then
-        if ! echo "$COMMAND" | grep -qE 'logs/train\.log'; then
-            echo "Blocked: any training script must redirect output to logs/train.log. Required format: nohup uv run python train.py > logs/train.log 2>&1 &" >&2
-            exit 2
+        if ! echo "$COMMAND" | grep -qE '^[[:space:]]*(pkill|kill)[[:space:]]'; then
+            if ! echo "$COMMAND" | grep -qE 'logs/train\.log'; then
+                echo "Blocked: any training script must redirect output to logs/train.log. Required format: nohup uv run python train.py > logs/train.log 2>&1 &" >&2
+                exit 2
+            fi
         fi
     fi
 fi
 
 # Require any script with "tune" in its name to redirect output to logs/tune.log.
 if echo "$COMMAND" | grep -qE '(python3?|bash)[[:space:]]+[^[:space:]]*tune[^[:space:]]*(\.(py|sh))|uv[[:space:]]+run[[:space:]].*\btune[^[:space:]]*(\.(py|sh))|\./[^[:space:]]*tune[^[:space:]]*(\.(py|sh))'; then
-    if ! echo "$COMMAND" | grep -qE 'logs/tune\.log'; then
-        echo "Blocked: any tune script must redirect output to logs/tune.log. Required format: nohup uv run python tune.py > logs/tune.log 2>&1 &" >&2
-        exit 2
+    if ! echo "$COMMAND" | grep -qE '^[[:space:]]*(pkill|kill)[[:space:]]'; then
+        if ! echo "$COMMAND" | grep -qE 'logs/tune\.log'; then
+            echo "Blocked: any tune script must redirect output to logs/tune.log. Required format: nohup uv run python tune.py > logs/tune.log 2>&1 &" >&2
+            exit 2
+        fi
     fi
 fi
 

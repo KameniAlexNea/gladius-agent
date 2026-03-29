@@ -52,8 +52,19 @@ async def _stream_via_client(prompt: str, options: "ClaudeAgentOptions"):  # typ
     """Yield SDK messages using ClaudeSDKClient instead of the standalone query()."""
     async with ClaudeSDKClient(options=options) as client:
         await client.query(prompt)
-        async for message in client.receive_response():
-            yield message
+        completed = False
+        try:
+            async for message in client.receive_response():
+                yield message
+            completed = True
+        finally:
+            if not completed:
+                # Generator was closed early (caller broke out of the loop).
+                # Interrupt the subprocess so the anyio task group inside the
+                # client can shut down cleanly — without this, the cancel-scope
+                # teardown conflicts with asyncio and raises CancelledError on
+                # the next attempt's connect().
+                await client.interrupt()
 
 
 TraceSink = Callable[[dict[str, Any]], None]
@@ -533,12 +544,15 @@ async def run_agent(
                                                 message=forbidden_tool_error,
                                             )
                                             logger.warning(
-                                                f"[{agent_name}] policy violation — aborting stream."
+                                                f"[{agent_name}] policy violation — draining stream after interrupt."
                                             )
-                                            break
+                                            # Do NOT break here — let the stream drain after
+                                            # the client.interrupt() in _stream_via_client so
+                                            # the anyio cancel scope shuts down cleanly.
                             last_assistant_msg = message
-                            if forbidden_tool_error is not None:
-                                break
+                            # Do not break on forbidden_tool_error — stream must drain
+                            # naturally (or after interrupt) to avoid anyio/asyncio
+                            # cancel-scope conflicts on the next retry.
                         if isinstance(message, ResultMessage):
                             result_msg = message
                             _emit_trace(
