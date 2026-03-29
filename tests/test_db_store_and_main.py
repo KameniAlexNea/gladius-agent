@@ -13,8 +13,6 @@ def test_state_store_roundtrip_and_noops():
     assert s.load() == obj
     s.close()
     s.record_event(iteration=1, topology="t", event="e")
-    s.record_plan(iteration=1, approach_summary="a", plan_text="p", session_id=None)
-    s.record_code_snapshots(iteration=1, solution_files=[], project_dir=".")
     s.record_agent_run(x=1)
 
 

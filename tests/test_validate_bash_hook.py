@@ -38,3 +38,10 @@ def test_allows_pkill_f_specific_script_name():
 def test_allows_pkill_f_specific_script_path():
     result = _run_hook('pkill -f "python scripts/hpo.py" 2>/dev/null || true')
     assert result.returncode == 0
+
+
+def test_allows_pkill_f_uv_run_train_script():
+    # Regression: pkill -f targeting a train script must not be blocked by the
+    # train-redirect rule (the pattern contains "train.py" but it's a kill, not a run).
+    result = _run_hook('pkill -f "uv run python scripts/train.py" 2>/dev/null; sleep 2; echo "Killed existing processes"')
+    assert result.returncode == 0

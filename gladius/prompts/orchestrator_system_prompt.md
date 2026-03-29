@@ -41,7 +41,7 @@ Specialists are located in `.claude/agents/`:
 - `scout` — fast data reconnaissance; produces `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}`
   - Run once, before `team-lead`.
   - Skip if `{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}` already exists.
-  - Accept output only if briefing includes a `## Skill Usage Evidence` section confirming `Skill({"skill": "ml-competition"})` was loaded before `## Submission Format`.
+  - Accept output only if briefing includes a `## Skill Usage Evidence` section confirming `Skill({"skill": "ml-competition"})` or `Skill({"skill": "ml-competition-training"})` was loaded before `## Submission Format`.
   - Do **not** check `EXPERIMENT_STATE` for scout status; `scout` has no entry there.
 - `team-lead` — strategic + technical planner (non-coding); always first after `scout`
   - Must not write or edit code files.

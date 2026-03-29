@@ -6,6 +6,12 @@ description: Delivery lead for the Platform Layer in the platform topology. Rece
 tools: Agent(data-expert), Read, Write, Glob, TodoWrite, StructuredOutput
 model: {{GLADIUS_MODEL}}
 maxTurns: 20
+skills:
+  - ml-competition
+  - ml-competition-setup
+  - ml-competition-features
+mcpServers:
+  - skills-on-demand
 ---
 # Platform Coordinator
 

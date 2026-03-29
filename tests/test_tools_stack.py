@@ -72,8 +72,14 @@ def test_kaggle_tools_success_and_failure(monkeypatch):
 
 
 def test_fake_platform_history_save_and_load(monkeypatch, tmp_path: Path):
+    import dataclasses
+
+    import gladius.tools.fake_platform_tools as _mod
+
     monkeypatch.setattr(
-        "gladius.tools.fake_platform_tools._FAKE_PLATFORM_DIR", str(tmp_path / "p")
+        _mod,
+        "_SETTINGS",
+        dataclasses.replace(_mod._SETTINGS, fake_platform_dir=str(tmp_path / "p")),
     )
     _save_history([{"score": 1.0}])
     got = _load_history()
@@ -83,8 +89,14 @@ def test_fake_platform_history_save_and_load(monkeypatch, tmp_path: Path):
 def test_fake_score_submission_and_tools(monkeypatch, tmp_path: Path):
     sub = tmp_path / "sub.csv"
     sub.write_text("id,target\n1,0.5\n", encoding="utf-8")
+    import dataclasses
+
+    import gladius.tools.fake_platform_tools as _mod
+
     monkeypatch.setattr(
-        "gladius.tools.fake_platform_tools._FAKE_PLATFORM_DIR", str(tmp_path / "fp")
+        _mod,
+        "_SETTINGS",
+        dataclasses.replace(_mod._SETTINGS, fake_platform_dir=str(tmp_path / "fp")),
     )
     monkeypatch.setattr(
         "gladius.tools.fake_platform_tools._score_submission", lambda p: 0.75

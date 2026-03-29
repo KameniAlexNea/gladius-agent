@@ -1,0 +1,41 @@
+# Phase guidance shown in CLAUDE.md each iteration.
+#
+# min_iterations_for_phasing: skip phasing entirely when max_iterations is
+#   at or below this value (too few iterations to bother splitting phases).
+#
+# Each phase has:
+#   label   — human-readable name shown in the heading
+#   advice  — markdown block injected into CLAUDE.md
+#
+# Thresholds (in iterations, counted from the edges):
+#   early applies when:  iteration <= early.threshold
+#   late  applies when:  iteration >= max_iterations - late.threshold
+#   mid   applies otherwise
+
+min_iterations_for_phasing: 2
+
+early:
+  threshold: 2
+  label: "🟢 Early (baseline)"
+  advice: |
+    > **Priority: get a clean, reproducible baseline.**
+    > - Don't over-engineer features or models.
+    > - Validate the full pipeline end-to-end (data → features → train → OOF → submission).
+    > - A simple model with correct CV is worth more than a complex model with broken validation.
+
+mid:
+  label: "🟡 Mid (explore)"
+  advice: |
+    > **Priority: try diverse approaches to find signal.**
+    > - Feature engineering and model variety are high-impact.
+    > - HPO is worthwhile once you have a strong feature set.
+    > - If stagnating, pivot to a fundamentally different strategy.
+
+late:
+  threshold: 2
+  label: "🔴 Late (polish)"
+  advice: |
+    > **Priority: maximise the final score — no risky pivots.**
+    > - Ensemble top-performing models from prior iterations.
+    > - Run HPO on the best model if not done yet.
+    > - Ensure the best submission is saved. Do NOT start a new approach from scratch.

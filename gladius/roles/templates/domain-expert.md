@@ -6,6 +6,10 @@ description: Review and fix specialist in the matrix topology. Checks ML deliver
 tools: Read, Write, Edit, Bash, Glob, Grep, TodoWrite, Skill, mcp__skills-on-demand__search_skills, StructuredOutput
 model: {{GLADIUS_MODEL}}
 maxTurns: 40
+skills:
+  - ml-competition
+  - ml-competition-features
+  - ml-competition-pre-submit
 mcpServers:
   - skills-on-demand
 ---
@@ -28,7 +32,7 @@ Use `mcp__skills-on-demand__search_skills` to load the most relevant skill for t
 
 | When                                           | Skill                            |
 | ---------------------------------------------- | -------------------------------- |
-| Leakage, CV contamination, fold integrity      | `pre-submit`                   |
+| Leakage, CV contamination, fold integrity      | `ml-competition-pre-submit`                   |
 | Distribution shift, KS tests, class imbalance  | `statistical-analysis`         |
 | Feature importance / leakage signal from model | `shap`                         |
 | Logical review of code structure               | `peer-review`                  |

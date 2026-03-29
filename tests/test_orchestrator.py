@@ -7,42 +7,42 @@ import json
 import os
 from pathlib import Path
 
-from gladius.orchestrator import (
-    _archive_stale_outputs,
-    _incomplete_agents,
-    _missing_scout_artifact,
-    _read_experiment_state_snippet,
-    _resolve_start_iteration,
-    _update_state,
-    run_competition,
-)
+from gladius.orchestrator import run_competition
 from gladius.state import CompetitionState
+from gladius.utilities._orchestrator_helper import (
+    archive_stale_outputs,
+    incomplete_agents,
+    missing_scout_artifact,
+    read_experiment_state_snippet,
+    resolve_start_iteration,
+    update_state,
+)
 from gladius.utilities.langsmith_tracing import configure_langsmith_env
 
 
 def test_resolve_start_iteration_default_when_env_missing(monkeypatch):
     monkeypatch.delenv("GLADIUS_START_ITERATION", raising=False)
-    assert _resolve_start_iteration(max_iterations=20) == 1
+    assert resolve_start_iteration(max_iterations=20) == 1
 
 
 def test_resolve_start_iteration_uses_env_value(monkeypatch):
     monkeypatch.setenv("GLADIUS_START_ITERATION", "4")
-    assert _resolve_start_iteration(max_iterations=20) == 4
+    assert resolve_start_iteration(max_iterations=20) == 4
 
 
 def test_resolve_start_iteration_rejects_non_integer(monkeypatch):
     monkeypatch.setenv("GLADIUS_START_ITERATION", "abc")
-    assert _resolve_start_iteration(max_iterations=20) == 1
+    assert resolve_start_iteration(max_iterations=20) == 1
 
 
 def test_resolve_start_iteration_rejects_values_below_one(monkeypatch):
     monkeypatch.setenv("GLADIUS_START_ITERATION", "0")
-    assert _resolve_start_iteration(max_iterations=20) == 1
+    assert resolve_start_iteration(max_iterations=20) == 1
 
 
 def test_resolve_start_iteration_clamps_to_max_iterations(monkeypatch):
     monkeypatch.setenv("GLADIUS_START_ITERATION", "99")
-    assert _resolve_start_iteration(max_iterations=7) == 7
+    assert resolve_start_iteration(max_iterations=7) == 7
 
 
 def test_langsmith_env_not_enabled_without_ollama_bridge(monkeypatch):
@@ -108,7 +108,7 @@ def test_update_state_updates_submission_path_on_tie_maximize(tmp_path: Path):
         encoding="utf-8",
     )
 
-    _update_state(state, tmp_path)
+    update_state(state, tmp_path)
     assert state.best_submission_path == "submissions/new.csv"
 
 
@@ -122,7 +122,7 @@ def test_read_experiment_state_snippet_prefers_compact_summary(tmp_path: Path):
     }
     exp.write_text(json.dumps(payload), encoding="utf-8")
 
-    snippet = _read_experiment_state_snippet(exp)
+    snippet = read_experiment_state_snippet(exp)
     summary = json.loads(snippet)
     assert "pending_agents" in summary
     assert "ml_engineer" in summary["pending_agents"]
@@ -130,11 +130,11 @@ def test_read_experiment_state_snippet_prefers_compact_summary(tmp_path: Path):
 
 def test_incomplete_agents_handles_missing_and_invalid_json(tmp_path: Path):
     missing = tmp_path / "missing.json"
-    assert _incomplete_agents(missing) == ["team_lead", "ml_engineer", "evaluator"]
+    assert incomplete_agents(missing) == ["team_lead", "ml_engineer", "evaluator"]
 
     bad = tmp_path / "bad.json"
     bad.write_text("{", encoding="utf-8")
-    assert _incomplete_agents(bad) == ["team_lead", "ml_engineer", "evaluator"]
+    assert incomplete_agents(bad) == ["team_lead", "ml_engineer", "evaluator"]
 
 
 def test_incomplete_agents_returns_only_non_success(tmp_path: Path):
@@ -149,7 +149,7 @@ def test_incomplete_agents_returns_only_non_success(tmp_path: Path):
         ),
         encoding="utf-8",
     )
-    assert _incomplete_agents(exp) == ["ml_engineer"]
+    assert incomplete_agents(exp) == ["ml_engineer"]
 
 
 def test_missing_scout_artifact_only_first_iteration(tmp_path: Path):
@@ -161,15 +161,15 @@ def test_missing_scout_artifact_only_first_iteration(tmp_path: Path):
         metric_direction="maximize",
     )
     state.iteration = 1
-    assert _missing_scout_artifact(state, tmp_path) is True
+    assert missing_scout_artifact(state, tmp_path) is True
 
     runtime_dir = tmp_path / ".gladius" / "runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "DATA_BRIEFING.md").write_text("ok", encoding="utf-8")
-    assert _missing_scout_artifact(state, tmp_path) is False
+    assert missing_scout_artifact(state, tmp_path) is False
 
     state.iteration = 2
-    assert _missing_scout_artifact(state, tmp_path) is False
+    assert missing_scout_artifact(state, tmp_path) is False
 
 
 def test_archive_stale_outputs_moves_artifacts_and_logs(tmp_path: Path):
@@ -182,7 +182,7 @@ def test_archive_stale_outputs_moves_artifacts_and_logs(tmp_path: Path):
     (logs / "train.log").write_text("l", encoding="utf-8")
     (logs / "gladius.log").write_text("keep", encoding="utf-8")
 
-    _archive_stale_outputs(tmp_path, iteration=2)
+    archive_stale_outputs(tmp_path, iteration=2)
 
     assert (tmp_path / "artifacts_iter1" / "junk.bin").exists()
     assert (tmp_path / "artifacts" / "best_params.json").exists()
@@ -219,7 +219,7 @@ def test_update_state_updates_submission_path_on_tie_minimize(tmp_path: Path):
         encoding="utf-8",
     )
 
-    _update_state(state, tmp_path)
+    update_state(state, tmp_path)
     assert state.best_submission_path == "submissions/new_min.csv"
 
 
@@ -234,7 +234,7 @@ def test_run_competition_single_iteration_success(monkeypatch, tmp_path: Path):
         lambda *args, **kwargs: {"competition_id": "comp-x", "max_iterations": 1},
     )
     monkeypatch.setattr(
-        "gladius.orchestrator._build_state",
+        "gladius.orchestrator.build_state",
         lambda project_dir, cfg: CompetitionState(
             competition_id="comp-x",
             data_dir=str(project_dir / "data"),
@@ -248,7 +248,8 @@ def test_run_competition_single_iteration_success(monkeypatch, tmp_path: Path):
         "gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
-        "gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff"
+        "gladius.utilities._orchestrator_helper.make_kickoff_prompt",
+        lambda state: "kickoff",
     )
     monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
     monkeypatch.setattr(
@@ -304,7 +305,7 @@ def test_run_competition_redispatches_then_succeeds(monkeypatch, tmp_path: Path)
         lambda *args, **kwargs: {"competition_id": "comp-x", "max_iterations": 1},
     )
     monkeypatch.setattr(
-        "gladius.orchestrator._build_state",
+        "gladius.orchestrator.build_state",
         lambda project_dir, cfg: CompetitionState(
             competition_id="comp-x",
             data_dir=str(project_dir / "data"),
@@ -318,7 +319,8 @@ def test_run_competition_redispatches_then_succeeds(monkeypatch, tmp_path: Path)
         "gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
-        "gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff"
+        "gladius.utilities._orchestrator_helper.make_kickoff_prompt",
+        lambda state: "kickoff",
     )
     monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
     monkeypatch.setattr(
@@ -363,7 +365,7 @@ def test_run_competition_stops_on_consecutive_errors(monkeypatch, tmp_path: Path
         lambda *args, **kwargs: {"competition_id": "comp-x", "max_iterations": 1},
     )
     monkeypatch.setattr(
-        "gladius.orchestrator._build_state",
+        "gladius.orchestrator.build_state",
         lambda project_dir, cfg: CompetitionState(
             competition_id="comp-x",
             data_dir=str(project_dir / "data"),
@@ -377,14 +379,21 @@ def test_run_competition_stops_on_consecutive_errors(monkeypatch, tmp_path: Path
         "gladius.orchestrator.claude_md.write", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
-        "gladius.orchestrator._make_kickoff_prompt", lambda state: "kickoff"
+        "gladius.utilities._orchestrator_helper.make_kickoff_prompt",
+        lambda state: "kickoff",
     )
     monkeypatch.setattr("gladius.orchestrator.init_langsmith_tracing", lambda: False)
     monkeypatch.setattr(
         "gladius.orchestrator.should_cleanup_orphan_processes", lambda: False
     )
-    monkeypatch.setattr("gladius.orchestrator._MAX_REDISPATCH", 1)
-    monkeypatch.setattr("gladius.orchestrator._MAX_CONSECUTIVE_ERRORS", 1)
+    import dataclasses
+
+    import gladius.orchestrator as _orch_mod
+
+    fast_settings = dataclasses.replace(
+        _orch_mod.SETTINGS, max_redispatch=1, max_consecutive_errors=1
+    )
+    monkeypatch.setattr(_orch_mod, "SETTINGS", fast_settings)
 
     async def _always_fail(**kwargs):
         calls["run_agent"] += 1

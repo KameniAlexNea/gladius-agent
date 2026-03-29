@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from gladius import RUNTIME_DATA_BRIEFING_RELATIVE_PATH, TEAM_LEAD_MEMORY_RELATIVE_PATH
+from gladius.config import LAYOUT as _LAYOUT
 
 _TEMPLATES = Path(__file__).parent / "templates"
 
@@ -27,8 +27,10 @@ class TopologyDefinition:
 def _apply_path_placeholders(content: str) -> str:
     return content.replace(
         "{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}",
-        RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
-    ).replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", TEAM_LEAD_MEMORY_RELATIVE_PATH)
+        _LAYOUT.runtime_data_briefing_relative_path,
+    ).replace(
+        "{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", _LAYOUT.team_lead_memory_relative_path
+    )
 
 
 def _parse(path: Path) -> TopologyDefinition:
@@ -51,9 +53,5 @@ def _parse(path: Path) -> TopologyDefinition:
 
 
 TOPOLOGY_CATALOG: dict[str, TopologyDefinition] = {
-    t.name: t
-    for t in (
-        _parse(_TEMPLATES / f"{name}.md")
-        for name in ("functional", "two-pizza", "platform", "autonomous", "matrix")
-    )
+    t.name: t for t in (_parse(path) for path in sorted(_TEMPLATES.glob("*.md")))
 }

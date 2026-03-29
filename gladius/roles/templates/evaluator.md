@@ -6,6 +6,10 @@ description: Verifies the training pipeline completed successfully, re-computes 
 tools: Read, Write, Bash, Glob, Grep, StructuredOutput
 model: {{GLADIUS_SMALL_MODEL}}
 maxTurns: 15
+skills:
+  - ml-competition
+  - ml-competition-training
+  - ml-competition-pre-submit
 ---
 # Evaluator
 

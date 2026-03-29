@@ -177,7 +177,7 @@ def test_run_agent_raises_tool_permission_error(monkeypatch, tmp_path):
         yield _FakeAssistantMessage([_FakeToolUseBlock("Read", {})])
         yield _FakeResultMessage(structured_output={})
 
-    monkeypatch.setattr(ar, "query", _fake_query)
+    monkeypatch.setattr(ar, "_stream_via_client", _fake_query)
 
     with pytest.raises(ar.ToolPermissionError):
         asyncio.run(
@@ -203,7 +203,7 @@ def test_run_agent_structured_text_fallback(monkeypatch, tmp_path):
             structured_output=None, is_error=False, session_id="s1"
         )
 
-    monkeypatch.setattr(ar, "query", _fake_query)
+    monkeypatch.setattr(ar, "_stream_via_client", _fake_query)
 
     out, sid = asyncio.run(
         ar.run_agent(
@@ -231,7 +231,7 @@ def test_run_agent_process_error_recovers_from_assistant_text(monkeypatch, tmp_p
         yield _FakeAssistantMessage([_FakeTextBlock('{"rescued": 1}')])
         raise _FakeProcessError("boom")
 
-    monkeypatch.setattr(ar, "query", _fake_query)
+    monkeypatch.setattr(ar, "_stream_via_client", _fake_query)
 
     out, sid = asyncio.run(
         ar.run_agent(

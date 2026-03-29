@@ -11,14 +11,10 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
 
-from gladius import (
-    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
-    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
-    RUNTIME_RELATIVE_PATH,
-    TEAM_LEAD_MEMORY_RELATIVE_PATH,
-)
+from claude_agent_sdk import AgentDefinition
+
+from gladius.config import LAYOUT as _LAYOUT
 
 _TEMPLATES = Path(__file__).parent / "templates"
 
@@ -37,38 +33,30 @@ ROLES = (
 )
 
 
-@dataclass(frozen=True)
-class RoleDefinition:
+@dataclass
+class RoleDefinition(AgentDefinition):
     """
-    RoleDefinition aka AgentDefinition
+    RoleDefinition extends AgentDefinition with gladius-specific fields.
     """
 
-    name: str
-    session: str  # "persistent" | "fresh"
-    max_turns: int
-
-    description: str
-    prompt: str
-    tools: list[str] | None = None
-    model: Literal["sonnet", "opus", "haiku", "inherit"] | None = None
-    skills: list[str] | None = None
-    memory: Literal["user", "project", "local"] | None = None
-    # Each entry is a server name (str) or an inline {name: config} dict.
-    mcpServers: list[str | dict[str, Any]] | None = None  # noqa: N815
+    name: str = ""
+    session: str = "fresh"  # "persistent" | "fresh"
 
 
 def _apply_path_placeholders(content: str) -> str:
     return (
         content.replace(
             "{{RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH}}",
-            RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
+            _LAYOUT.runtime_experiment_state_relative_path,
         )
         .replace(
             "{{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}}",
-            RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
+            _LAYOUT.runtime_data_briefing_relative_path,
         )
-        .replace("{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", TEAM_LEAD_MEMORY_RELATIVE_PATH)
-        .replace("{{RUNTIME_RELATIVE_PATH}}", RUNTIME_RELATIVE_PATH)
+        .replace(
+            "{{TEAM_LEAD_MEMORY_RELATIVE_PATH}}", _LAYOUT.team_lead_memory_relative_path
+        )
+        .replace("{{RUNTIME_RELATIVE_PATH}}", _LAYOUT.runtime_relative_path)
     )
 
 
@@ -89,6 +77,16 @@ def _parse(path: Path) -> RoleDefinition:
             return " ".join(line.strip() for line in m.group(1).splitlines()).strip()
         return _get(key)
 
+    def _get_list(key: str) -> list[str] | None:
+        m = re.search(rf"^{key}:\n((?:[ \t]+-[ \t]+.+\n?)+)", front, re.MULTILINE)
+        if m:
+            return [
+                re.sub(r"^[ \t]+-[ \t]+", "", line).strip()
+                for line in m.group(1).splitlines()
+                if line.strip()
+            ]
+        return None
+
     tools_str = _get("tools")
     max_turns_str = _get("maxTurns")
 
@@ -96,9 +94,11 @@ def _parse(path: Path) -> RoleDefinition:
         name=_get("name"),
         session=_get("session"),
         description=_get_multiline("description"),
-        tools=tuple(t.strip() for t in tools_str.split(",") if t.strip()),
+        tools=[t.strip() for t in tools_str.split(",") if t.strip()],
         model=_get("model"),
-        max_turns=int(max_turns_str) if max_turns_str.isdigit() else 0,
+        maxTurns=int(max_turns_str) if max_turns_str.isdigit() else None,
+        skills=_get_list("skills"),
+        mcpServers=_get_list("mcpServers"),
         prompt=body,
     )
 

@@ -16,66 +16,40 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from gladius import (
-    RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
-    RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
-    RUNTIME_RELATIVE_PATH,
-    TEAM_LEAD_MEMORY_RELATIVE_PATH,
-    runtime_data_briefing_path,
-    team_lead_memory_path,
-)
+from gladius.config import LAYOUT as _LAYOUT
+from gladius.config import SETTINGS as _SETTINGS
 from gladius.topologies._catalog import TOPOLOGY_CATALOG
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
 
 _TEMPLATE = Path(__file__).parent / "prompts" / "CLAUDE.md.template"
-
-_STAGNATION_THRESHOLD_METRIC = 0.001
-_STAGNATION_THRESHOLD_QUALITY = 3.0
+_PHASE_GUIDANCE_PATH = Path(__file__).parent / "prompts" / "phase_guidance.yaml"
 
 
-def _phase_guidance(iteration: int, max_iterations: int) -> str:
+def _load_phase_guidance(custom_path: str | None = None) -> dict:
+    path = Path(custom_path) if custom_path else _PHASE_GUIDANCE_PATH
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _phase_guidance(
+    iteration: int, max_iterations: int, custom_path: str | None = None
+) -> str:
     """Return a short phase-appropriate guidance block."""
-    if max_iterations <= 2:
-        # Too few iterations for phasing — skip
+    cfg = _load_phase_guidance(custom_path)
+    if max_iterations <= cfg.get("min_iterations_for_phasing", 2):
         return ""
 
-    if iteration <= 2:
-        phase, label, advice = (
-            "EARLY",
-            "🟢 Early (baseline)",
-            (
-                "> **Priority: get a clean, reproducible baseline.**\n"
-                "> - Don't over-engineer features or models.\n"
-                "> - Validate the full pipeline end-to-end (data → features → train → OOF → submission).\n"
-                "> - A simple model with correct CV is worth more than a complex model with broken validation."
-            ),
-        )
-    elif iteration >= max_iterations - 2:
-        phase, label, advice = (
-            "LATE",
-            "🔴 Late (polish)",
-            (
-                "> **Priority: maximise the final score — no risky pivots.**\n"
-                "> - Ensemble top-performing models from prior iterations.\n"
-                "> - Run HPO on the best model if not done yet.\n"
-                "> - Ensure the best submission is saved. Do NOT start a new approach from scratch."
-            ),
-        )
+    if iteration <= cfg["early"]["threshold"]:
+        phase, entry = "EARLY", cfg["early"]
+    elif iteration >= max_iterations - cfg["late"]["threshold"]:
+        phase, entry = "LATE", cfg["late"]
     else:
-        phase, label, advice = (
-            "MID",
-            "🟡 Mid (explore)",
-            (
-                "> **Priority: try diverse approaches to find signal.**\n"
-                "> - Feature engineering and model variety are high-impact.\n"
-                "> - HPO is worthwhile once you have a strong feature set.\n"
-                "> - If stagnating, pivot to a fundamentally different strategy."
-            ),
-        )
+        phase, entry = "MID", cfg["mid"]
 
-    return f"## Iteration Phase ({phase}): {label}\n\n{advice}"
+    return (
+        f"## Iteration Phase ({phase}): {entry['label']}\n\n{entry['advice'].rstrip()}"
+    )
 
 
 def render(state: "CompetitionState", project_dir: str) -> str:
@@ -185,14 +159,14 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         score_key, threshold_label, threshold = (
             "oof_score",
             state.target_metric,
-            _STAGNATION_THRESHOLD_METRIC,
+            _SETTINGS.stagnation_threshold_metric,
         )
     else:
         scored = [e for e in state.experiments if e.get("quality_score") is not None]
         score_key, threshold_label, threshold = (
             "quality_score",
             "quality",
-            _STAGNATION_THRESHOLD_QUALITY,
+            _SETTINGS.stagnation_threshold_quality,
         )
 
     if len(scored) >= 3:
@@ -243,25 +217,27 @@ def render(state: "CompetitionState", project_dir: str) -> str:
             "5. Self-assess quality 0-100: rate completeness and correctness against README requirements."
         )
 
-    memory_path = str(team_lead_memory_path(project_dir).resolve())
+    memory_path = str(_LAYOUT.team_lead_memory_path(project_dir).resolve())
 
     # ── data briefing (produced by scout in iteration 1) ─────────────────────
-    briefing_path = runtime_data_briefing_path(project_dir)
+    briefing_path = _LAYOUT.runtime_data_briefing_path(project_dir)
     if briefing_path.is_file():
         data_briefing_section = (
             "## Data Briefing\n\n"
-            f"> Produced by the scout agent. Read `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` for full data context.\n"
+            f"> Produced by the scout agent. Read `{_LAYOUT.runtime_data_briefing_relative_path}` for full data context.\n"
             "> Do **not** re-read it into this file — reference the path directly."
         )
     else:
         data_briefing_section = (
             "## Data Briefing\n\n"
-            f"_(not yet available — the scout agent will produce `{RUNTIME_DATA_BRIEFING_RELATIVE_PATH}` "
+            f"_(not yet available — the scout agent will produce `{_LAYOUT.runtime_data_briefing_relative_path}` "
             "in iteration 1)_"
         )
 
     # ── phase guidance ───────────────────────────────────────────────────────
-    phase_guidance = _phase_guidance(state.iteration, state.max_iterations)
+    phase_guidance = _phase_guidance(
+        state.iteration, state.max_iterations, state.phase_guidance_path
+    )
 
     # ── substitute ───────────────────────────────────────────────────────────
     replacements = {
@@ -282,10 +258,10 @@ def render(state: "CompetitionState", project_dir: str) -> str:
         "data_briefing_section": data_briefing_section,
         "submission_section": submission_section,
         "memory_path": memory_path,
-        "RUNTIME_RELATIVE_PATH": RUNTIME_RELATIVE_PATH,
-        "RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH": RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH,
-        "RUNTIME_DATA_BRIEFING_RELATIVE_PATH": RUNTIME_DATA_BRIEFING_RELATIVE_PATH,
-        "TEAM_LEAD_MEMORY_RELATIVE_PATH": TEAM_LEAD_MEMORY_RELATIVE_PATH,
+        "RUNTIME_RELATIVE_PATH": _LAYOUT.runtime_relative_path,
+        "RUNTIME_EXPERIMENT_STATE_RELATIVE_PATH": _LAYOUT.runtime_experiment_state_relative_path,
+        "RUNTIME_DATA_BRIEFING_RELATIVE_PATH": _LAYOUT.runtime_data_briefing_relative_path,
+        "TEAM_LEAD_MEMORY_RELATIVE_PATH": _LAYOUT.team_lead_memory_relative_path,
     }
 
     content = template
@@ -344,6 +320,11 @@ def write_from_project(root: Path, cfg: dict) -> "CompetitionState":
         submission_threshold=submission_threshold,
         max_submissions_per_day=max_sub_day,
         use_web_search=bool(cfg.get("use_web_search", False)),
+        phase_guidance_path=(
+            str((root / raw_pgp).resolve())
+            if (raw_pgp := cfg.get("phase_guidance_path"))
+            else None
+        ),
     )
     write(state, str(root))
     print("  claude → CLAUDE.md")

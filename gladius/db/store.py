@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from gladius import STATE_DB_RELATIVE_PATH
+from gladius.config import LAYOUT as _LAYOUT
 
 if TYPE_CHECKING:
     from gladius.state import CompetitionState
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 class StateStore:
     """SQLite-backed state and execution trace store."""
 
-    def __init__(self, db_path: str = STATE_DB_RELATIVE_PATH) -> None:
+    def __init__(self, db_path: str = _LAYOUT.state_db_relative_path) -> None:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._db_path))
@@ -49,23 +49,6 @@ class StateStore:
                 topology TEXT,
                 event TEXT NOT NULL,
                 detail_json TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS plans (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL,
-                iteration INTEGER NOT NULL,
-                approach_summary TEXT,
-                plan_text TEXT,
-                session_id TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS code_snapshots (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL,
-                iteration INTEGER NOT NULL,
-                project_dir TEXT NOT NULL,
-                solution_files_json TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS agent_runs (
@@ -138,44 +121,6 @@ class StateStore:
                 topology,
                 event,
                 json.dumps({"detail": detail}),
-            ),
-        )
-        self._conn.commit()
-
-    def record_plan(
-        self,
-        *,
-        iteration: int,
-        approach_summary: str,
-        plan_text: str,
-        session_id: str | None,
-    ) -> None:
-        if not self._is_open():
-            return
-        self._conn.execute(
-            """
-            INSERT INTO plans(created_at, iteration, approach_summary, plan_text, session_id)
-            VALUES(?, ?, ?, ?, ?)
-            """,
-            (self._utc_now(), iteration, approach_summary, plan_text, session_id),
-        )
-        self._conn.commit()
-
-    def record_code_snapshots(
-        self, iteration: int, solution_files: list[str], project_dir: str
-    ) -> None:
-        if not self._is_open():
-            return
-        self._conn.execute(
-            """
-            INSERT INTO code_snapshots(created_at, iteration, project_dir, solution_files_json)
-            VALUES(?, ?, ?, ?)
-            """,
-            (
-                self._utc_now(),
-                iteration,
-                project_dir,
-                json.dumps(solution_files),
             ),
         )
         self._conn.commit()
